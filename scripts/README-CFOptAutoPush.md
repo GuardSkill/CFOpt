@@ -6,6 +6,30 @@ This repository automation generates CloudflareSpeedTest CSV files from `ip.zip`
 
 - Windows/CD script default: `CloudflareSpeedTest_CD.csv`
 - Linux/BJ script default: `CloudflareSpeedTest_BJ.csv`
+- Subconverter config: `CFOpt_Subconverter.ini`
+
+## Subconverter Config
+
+Root file:
+
+```text
+CFOpt_Subconverter.ini
+```
+
+Raw URL:
+
+```text
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter.ini
+```
+
+Use this URL as edgetunnel `订阅转换配置.SUBCONFIG`.
+
+The config does not hard-code proxy IPs. It selects nodes by the online CSV-generated remarks:
+
+- `Polymarket`: only `KR`, `HK`, `MY`, `IE`
+- `ClaudeCode`: countries/regions suitable for both Claude/Claude Code and OpenAI/Codex: `KR`, `SG`, `VN`, `MY`, `KZ`, `IE`, `US`, with `PH` and `MN` reserved for future upstream availability
+
+Because generated nodes look like `198.41.223.63:2096#SG [86ms 76.20Mbps]`, the config filters by country/region prefix rather than fixed IPs.
 
 Both scripts:
 
