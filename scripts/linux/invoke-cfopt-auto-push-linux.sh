@@ -14,6 +14,7 @@ TARGET_PATH="${TARGET_PATH:-CloudflareSpeedTest_BJ.csv}"
 INTERVAL_DAYS="${INTERVAL_DAYS:-6}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
+MAX_PER_CITY="${MAX_PER_CITY:-10}"
 TOKEN_ENV_NAME="${TOKEN_ENV_NAME:-GITHUB_TOKEN_CFOPT}"
 FORCE="${FORCE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -136,25 +137,30 @@ run_cfst() {
 
 filter_csv() {
   local tmp_csv="$CSV_PATH.filtered"
-  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v port="$PORT" '
+  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v port="$PORT" -v max_per_city="$MAX_PER_CITY" '
     FNR == NR {
       if (NF >= 2 && !($1 in city_by_ip)) {
         city_by_ip[$1] = $2
       }
       next
     }
-    FNR == 1 {
-      print $0 ",城市,端口"
-      next
-    }
+    FNR == 1 { next }
     NF < 5 { removed++; next }
     {
       ip = $1
       received = $3 + 0
       loss = $4 + 0
       latency = $5 + 0
+      speed = $6 + 0
       if (received >= min_received && loss < 1 && latency <= max_latency) {
-        print $0 "," city_by_ip[ip] "," port
+        city = city_by_ip[ip]
+        speed_mbps = speed * 8
+        remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
+        datacenter = $7
+        row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s", ip, port, datacenter, remark, $2, $3, $4, $5, $6)
+        key = city
+        sortkey = sprintf("%s\t%012.6f\t%012.6f\t%s", key, 999999-speed, latency, row)
+        rows[++count] = sortkey
         kept++
       } else {
         removed++
@@ -164,12 +170,37 @@ filter_csv() {
       if (kept < 1) {
         exit 2
       }
+      print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
+      # Simple selection: insertion sort is fine for this small CSV.
+      for (i = 1; i <= count; i++) {
+        for (j = i + 1; j <= count; j++) {
+          if (rows[j] < rows[i]) {
+            tmp = rows[i]; rows[i] = rows[j]; rows[j] = tmp
+          }
+        }
+      }
+      current_city = ""
+      city_count = 0
+      for (i = 1; i <= count; i++) {
+        split(rows[i], parts, "\t")
+        city = parts[1]
+        if (city != current_city) {
+          current_city = city
+          city_count = 0
+        }
+        if (city_count < max_per_city) {
+          print parts[4]
+          city_count++
+        } else {
+          removed++
+        }
+      }
     }
   ' "$SELECTED_IP_CITY_MAP_PATH" "$CSV_PATH" > "$tmp_csv"
   mv "$tmp_csv" "$CSV_PATH"
   local kept
   kept=$(( $(wc -l < "$CSV_PATH") - 1 ))
-  log "Filtered CSV rows and added city/port columns. Kept $kept. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms."
+  log "Filtered CSV rows, added API-compatible columns, and kept at most $MAX_PER_CITY per city/group. Kept $kept. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms."
 }
 
 json_escape() {
