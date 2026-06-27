@@ -1,0 +1,1 @@
+vless://00000000-0000-4000-8000-000000000000@1.1.1.1:443?security=tls&type=ws&host=example.com&path=%2F&encryption=none#TEST
