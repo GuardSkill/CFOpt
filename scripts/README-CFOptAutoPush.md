@@ -15,10 +15,12 @@ Both scripts:
 4. Save an IP-to-group map in `selected-ip-city-map.csv`
 5. Run `cfst`
 6. Filter unusable or extreme rows
-7. Append final `城市` and `端口` columns from the source group file name and configured port
-8. Upload the CSV to GitHub
+7. Keep at most 10 best rows per source group
+8. Output API-compatible columns including `IP地址`, `端口`, `数据中心`, `城市`, and `TLS`
+9. Put subscription remarks in `城市`, such as `SG [86ms 76.20Mbps]`
+10. Upload the CSV to GitHub
 
-The current zip groups are country/region codes, so the `城市` value is currently `HK`, `KR`, `SG`, `US`, and similar. If the upstream zip later uses city-level filenames, the same mapping will use those filenames. The `端口` value is the configured port, such as `443` or `8443`.
+The current zip groups are country/region codes, so the `城市` value starts with `HK`, `KR`, `SG`, `US`, and similar. It also includes latency and converted Mbps speed so edgetunnel can produce lines such as `198.41.223.63:2096#SG [86ms 76.20Mbps]`.
 
 ## Filtering Rules
 
@@ -27,6 +29,7 @@ Defaults:
 - Keep rows with `已接收 >= 1`
 - Keep rows with `丢包率 < 1`
 - Keep rows with `平均延迟 <= 420`
+- Keep at most `10` rows per source group, sorted by higher download speed first, then lower latency
 
 Change the latency threshold when running manually:
 
@@ -148,6 +151,7 @@ PORT=443
 TARGET_PATH="CloudflareSpeedTest_BJ.csv"
 INTERVAL_DAYS=6
 MAX_LATENCY_MS=420
+MAX_PER_CITY=10
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
 ```
 
@@ -239,7 +243,7 @@ Important files:
 - `extract`: extracted zip contents
 - `selected-ip.txt`: merged cfst input
 - `selected-ip-city-map.csv`: IP-to-group map used for the `城市` column
-- `CloudflareSpeedTest.csv`: generated and filtered CSV before upload, including `城市` and `端口`
+- `CloudflareSpeedTest.csv`: generated and filtered CSV before upload, using edgetunnel-compatible columns
 - `cfst-stdin.txt` on Windows: blank line for cfst final Enter prompt
 - `cfst-stdout.log` and `cfst-stderr.log`: captured cfst output
 
