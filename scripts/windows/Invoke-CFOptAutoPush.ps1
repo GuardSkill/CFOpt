@@ -12,6 +12,7 @@ param(
     [int]$IntervalDays = 6,
     [int]$MaxLatencyMs = 420,
     [int]$MinReceived = 1,
+    [int]$MaxPerCity = 10,
     [string]$TokenEnvName = "GITHUB_TOKEN_CFOPT",
     [switch]$Force,
     [switch]$DryRun,
@@ -201,15 +202,16 @@ function Filter-CfstCsv {
     $cityHeaderName = [string]([char]0x57CE) + [string]([char]0x5E02)
     $portHeaderName = [string]([char]0x7AEF) + [string]([char]0x53E3)
 
-    $kept = New-Object System.Collections.Generic.List[string]
-    $header = $lines[0]
-    if ($header -notmatch "(^|,)$cityHeaderName($|,)") {
-        $header = "$header,$cityHeaderName"
-    }
-    if ($header -notmatch "(^|,)$portHeaderName($|,)") {
-        $header = "$header,$portHeaderName"
-    }
-    $kept.Add($header)
+    $ipHeaderName = "IP" + [string]([char]0x5730) + [string]([char]0x5740)
+    $coloHeaderName = [string]([char]0x6570) + [string]([char]0x636E) + [string]([char]0x4E2D) + [string]([char]0x5FC3)
+    $tlsHeaderName = "TLS"
+    $sentHeaderName = [string]([char]0x5DF2) + [string]([char]0x53D1) + [string]([char]0x9001)
+    $receivedHeaderName = [string]([char]0x5DF2) + [string]([char]0x63A5) + [string]([char]0x6536)
+    $lossHeaderName = [string]([char]0x4E22) + [string]([char]0x5305) + [string]([char]0x7387)
+    $latencyHeaderName = [string]([char]0x5E73) + [string]([char]0x5747) + [string]([char]0x5EF6) + [string]([char]0x8FDF)
+    $speedHeaderName = [string]([char]0x4E0B) + [string]([char]0x8F7D) + [string]([char]0x901F) + [string]([char]0x5EA6) + "(MB/s)"
+
+    $candidateRows = New-Object System.Collections.Generic.List[object]
     $removed = 0
 
     for ($i = 1; $i -lt $lines.Count; $i++) {
@@ -228,8 +230,9 @@ function Filter-CfstCsv {
         $received = Convert-ToNumber $columns[2]
         $lossRate = Convert-ToNumber $columns[3]
         $latency = Convert-ToNumber $columns[4]
+        $speed = Convert-ToNumber $columns[5]
 
-        if ($null -eq $received -or $null -eq $lossRate -or $null -eq $latency) {
+        if ($null -eq $received -or $null -eq $lossRate -or $null -eq $latency -or $null -eq $speed) {
             $removed++
             continue
         }
@@ -244,12 +247,43 @@ function Filter-CfstCsv {
             $city = $cityByIp[$ip]
         }
 
-        if ($lines[0] -match "(^|,)$cityHeaderName($|,)" -and $lines[0] -match "(^|,)$portHeaderName($|,)") {
-            $kept.Add($line)
-        }
-        else {
-            $kept.Add("$line,$city,$Port")
-        }
+        $speedMbps = [math]::Round($speed * 8, 2).ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture)
+        $latencyText = [math]::Round($latency, 0).ToString("0", [System.Globalization.CultureInfo]::InvariantCulture)
+        $remark = "$city [$($latencyText)ms $($speedMbps)Mbps]"
+        $candidateRows.Add([pscustomobject]@{
+            Ip = $ip
+            Port = [string]$Port
+            DataCenter = if ($columns.Count -gt 6) { $columns[6].Trim() } else { "" }
+            City = $remark
+            Tls = "true"
+            Sent = $columns[1].Trim()
+            Received = $columns[2].Trim()
+            Loss = $columns[3].Trim()
+            Latency = $columns[4].Trim()
+            Speed = $columns[5].Trim()
+            CityKey = $city
+            SpeedNumber = $speed
+            LatencyNumber = $latency
+        })
+    }
+
+    $keptRows = @(
+        $candidateRows |
+            Group-Object CityKey |
+            ForEach-Object {
+                $_.Group | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false } | Select-Object -First $MaxPerCity
+            } |
+            Sort-Object CityKey, @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false }
+    )
+
+    if ($keptRows.Count -lt $candidateRows.Count) {
+        $removed += ($candidateRows.Count - $keptRows.Count)
+    }
+
+    $kept = New-Object System.Collections.Generic.List[string]
+    $kept.Add("$ipHeaderName,$portHeaderName,$coloHeaderName,$cityHeaderName,$tlsHeaderName,$sentHeaderName,$receivedHeaderName,$lossHeaderName,$latencyHeaderName,$speedHeaderName")
+    foreach ($row in $keptRows) {
+        $kept.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$($row.City),$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)")
     }
 
     if ($kept.Count -le 1) {
@@ -257,7 +291,7 @@ function Filter-CfstCsv {
     }
 
     [System.IO.File]::WriteAllLines($csvPath, $kept.ToArray(), $utf8NoBom)
-    Write-Log "Filtered CSV rows and added city/port columns. Kept $($kept.Count - 1), removed $removed. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms."
+    Write-Log "Filtered CSV rows, added API-compatible columns, and kept at most $MaxPerCity per city/group. Kept $($kept.Count - 1), removed $removed. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms."
 }
 
 function Update-ZipCache {
