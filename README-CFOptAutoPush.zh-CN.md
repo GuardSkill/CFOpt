@@ -1,6 +1,6 @@
 # CFOpt 自动测速与推送
 
-这套脚本会自动下载 `ip.zip`，按端口和分组整理 IP，调用 `cfst` 测速，过滤不可用或高延迟结果，给最终 CSV 增加 `城市` 和 `端口` 两列，然后推送到 `GuardSkill/CFOpt`。
+这套脚本会自动下载 `ip.zip`，按多个端口并行测速，合并结果，过滤不可用或高延迟节点，然后把最终 CSV 上传到 `GuardSkill/CFOpt`。
 
 ## 上传文件
 
@@ -8,50 +8,31 @@
 - Linux/BJ 默认上传：`CloudflareSpeedTest_BJ.csv`
 - 订阅转换配置：`CFOpt_Subconverter.ini`
 
-## 订阅转换配置
-
-仓库根目录提供：
-
-```text
-CFOpt_Subconverter.ini
-```
-
-raw 地址：
-
-```text
-https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter.ini
-```
-
-在 edgetunnel 的 `订阅转换配置.SUBCONFIG` 中使用这个地址即可。
-
-当前配置不会写死任何节点 IP，只按线上 CSV 解析出的节点备注筛选：
-
-- `Polymarket`：只选择 `KR`、`HK`、`MY`、`IE`
-- `ClaudeCode`：只选择同时适合 Claude/Claude Code 与 OpenAI/Codex 的国家/地区，当前包含 `KR`、`SG`、`VN`、`MY`、`KZ`、`IE`、`US`，并预留 `PH`、`MN`
-
-因为 CSV 节点会生成类似 `198.41.223.63:2096#SG [86ms 76.20Mbps]` 的备注，所以配置使用国家/地区前缀筛选节点，不依赖固定 IP。
-
 ## 数据流程
 
 1. 下载 `https://zip.cm.edu.kg/ip.zip`
-2. 解压并选择端口目录，例如 `443`
-3. 合并指定分组文件，例如 `HK.txt`、`KR.txt`、`SG.txt`
-4. 生成 `selected-ip-city-map.csv`，记录每个 IP 来自哪个分组
-5. 调用 `cfst` 测速
-6. 过滤结果
-7. 每个分组最多保留最优 10 个 IP
-8. 输出兼容 edgetunnel 的列：`IP地址`、`端口`、`数据中心`、`城市`、`TLS`
-9. `城市` 列会写成订阅备注，例如 `SG [86ms 76.20Mbps]`
+2. 解压并读取多个端口目录，默认 `443`、`2053`、`2083`、`2087`、`2096`、`8443`
+3. 每个端口分别合并指定国家/地区文件，例如 `HK.txt`、`KR.txt`、`SG.txt`
+4. 每个端口生成独立的 IP 到国家/地区映射，例如 `selected-ip-city-map-443.csv`
+5. 每个端口启动一个 `cfst` 进程，并行测速
+6. 合并所有端口的 CSV 结果
+7. 过滤不可用或高延迟结果
+8. 每个国家/地区最多保留 Top 20，优先下载速度更高，其次平均延迟更低
+9. 输出 edgetunnel 兼容列：`IP地址`、`端口`、`数据中心`、`城市`、`TLS`
 10. 上传到 GitHub
 
-当前 `ip.zip` 的分组主要是国家/地区代码，所以 `城市` 列会以 `HK`、`KR`、`SG`、`US` 这类值开头，并追加延迟和 Mbps 速度。edgetunnel 会把它转换成类似 `198.41.223.63:2096#SG [86ms 76.20Mbps]` 的行。
+最终节点备注会类似：
+
+```text
+198.41.223.63:2096#SG [86ms 76.20Mbps]
+```
 
 ## 默认过滤规则
 
 - 保留 `已接收 >= 1`
 - 保留 `丢包率 < 1`
 - 保留 `平均延迟 <= 420`
-- 每个分组最多保留 10 个，优先下载速度更高，其次平均延迟更低
+- 每个国家/地区最多保留 `20` 条，跨所有测试端口一起排名
 
 临时调整延迟阈值：
 
@@ -63,44 +44,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1"
 FORCE=1 MAX_LATENCY_MS=300 ./invoke-cfopt-auto-push-linux.sh
 ```
 
-## GitHub Token
-
-创建一个 GitHub fine-grained personal access token，给 `GuardSkill/CFOpt` 仓库 Contents 写入权限。
-
-Windows 设置：
-
-```powershell
-[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "你的 token", "User")
-```
-
-设置后重新打开 PowerShell。
-
-Linux 设置：
-
-```bash
-export GITHUB_TOKEN_CFOPT="你的 token"
-```
-
 ## Windows 使用
 
-文件：
-
-- `scripts/windows/Invoke-CFOptAutoPush.ps1`
-- `scripts/windows/Install-CFOptAutoPushTask.ps1`
-
-默认 `cfst` 路径：
+默认路径：
 
 ```text
 H:\PyProjects\cfst_windows_amd64\cfst.exe
-```
-
-默认工作目录：
-
-```text
 H:\PyProjects\CFOptAutoPush
 ```
 
-只下载、解压、合并，不测速、不上传：
+只下载、解压、准备输入，不测速、不上传：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -DryRun
@@ -112,29 +65,27 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1"
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -Force -SkipUpload
 ```
 
-生成并上传 `CloudflareSpeedTest_CD.csv`：
+默认多端口并行测速并上传：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -Force
 ```
 
-安装开机自动任务：
+指定一组端口：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\Install-CFOptAutoPushTask.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -Force -Ports "443,2053,2083,2087,2096,8443"
 ```
 
-计划任务名是 `CFOpt Auto Push`。它会在开机后延迟一小会儿运行。脚本内部会检查 `last-success.txt`，默认距离上次成功上传满 6 天才再次执行。
+临时只测单端口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -Force -Port 8443
+```
 
 ## Linux 使用
 
-文件：
-
-- `scripts/linux/invoke-cfopt-auto-push-linux.sh`
-
-你需要自己准备 Linux 版 `cfst` 二进制文件。
-
-示例：
+准备 `cfst`：
 
 ```bash
 mkdir -p "$HOME/cfopt-auto-push"
@@ -144,10 +95,10 @@ chmod +x ./invoke-cfopt-auto-push-linux.sh
 export GITHUB_TOKEN_CFOPT="你的 token"
 ```
 
-只下载、解压、合并：
+默认多端口并行测速并上传：
 
 ```bash
-DRY_RUN=1 ./invoke-cfopt-auto-push-linux.sh
+FORCE=1 ./invoke-cfopt-auto-push-linux.sh
 ```
 
 生成 CSV 但不上传：
@@ -156,10 +107,16 @@ DRY_RUN=1 ./invoke-cfopt-auto-push-linux.sh
 FORCE=1 SKIP_UPLOAD=1 ./invoke-cfopt-auto-push-linux.sh
 ```
 
-生成并上传 `CloudflareSpeedTest_BJ.csv`：
+指定端口列表：
 
 ```bash
-FORCE=1 ./invoke-cfopt-auto-push-linux.sh
+FORCE=1 PORTS="443,2053,2083,2087,2096,8443" ./invoke-cfopt-auto-push-linux.sh
+```
+
+临时只测单端口：
+
+```bash
+FORCE=1 PORT=8443 ./invoke-cfopt-auto-push-linux.sh
 ```
 
 常用环境变量：
@@ -167,69 +124,25 @@ FORCE=1 ./invoke-cfopt-auto-push-linux.sh
 ```bash
 WORK_DIR="$HOME/cfopt-auto-push"
 CFST_PATH="$HOME/cfopt-auto-push/cfst"
-PORT=443
+PORTS="443,2053,2083,2087,2096,8443"
 TARGET_PATH="CloudflareSpeedTest_BJ.csv"
 INTERVAL_DAYS=6
 MAX_LATENCY_MS=420
-MAX_PER_CITY=10
+MAX_PER_CITY=20
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
 ```
 
-## Linux 自动化
-
-开机运行一次：
-
-```cron
-@reboot GITHUB_TOKEN_CFOPT=你的token CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst /home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh >> /home/ubuntu/cfopt-auto-push/cron.log 2>&1
-```
-
-每天运行一次，让脚本内部判断是否满 6 天：
-
-```cron
-20 4 * * * GITHUB_TOKEN_CFOPT=你的token CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst /home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh >> /home/ubuntu/cfopt-auto-push/cron.log 2>&1
-```
-
-systemd service 示例：
-
-```ini
-[Unit]
-Description=CFOpt Auto Push
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-Environment=GITHUB_TOKEN_CFOPT=你的token
-Environment=WORK_DIR=/home/ubuntu/cfopt-auto-push
-Environment=CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst
-ExecStart=/home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh
-```
-
-systemd timer 示例：
-
-```ini
-[Unit]
-Description=Run CFOpt Auto Push daily
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=1d
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-脚本内部仍然会按 6 天间隔控制真实执行。
-
 ## 端口说明
 
-`ip.zip` 里面已经按端口分目录。脚本只读取和配置端口一致的目录。
+`ip.zip` 里面已经按端口分目录。脚本现在默认读取多个端口目录并并行测速，最后合并成一个 CSV。
 
-- `443`：读取 `443` 目录，不给 `cfst` 传 `-tp`，使用 cfst 默认 443
-- `8443`：读取 `8443` 目录，并给 `cfst` 传 `-tp 8443`
+- Windows 默认：`-Ports "443,2053,2083,2087,2096,8443"`
+- Linux 默认：`PORTS="443,2053,2083,2087,2096,8443"`
+- 单端口覆盖：Windows 用 `-Port 8443`，Linux 用 `PORT=8443`
+- `443` 不给 `cfst` 传 `-tp`，使用 cfst 默认 443
+- 非 443 端口会给 `cfst` 传 `-tp <端口>`
 
-如果测速 80 端口，cfst 还需要 HTTP 下载测速地址：
+如果测速 `80` 端口，`cfst` 还需要 HTTP 下载测速地址：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -Force -Port 80 -DownloadTestUrl "http://speed.cloudflare.com/__down?bytes=99999999"
@@ -241,38 +154,26 @@ FORCE=1 PORT=80 DOWNLOAD_TEST_URL="http://speed.cloudflare.com/__down?bytes=9999
 
 前提是下载的 `ip.zip` 里存在 `80` 目录。
 
-## 日志和中间文件
+## GitHub Token
 
-Windows 默认目录：
+Windows：
 
-```text
-H:\PyProjects\CFOptAutoPush
+```powershell
+[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "你的 token", "User")
 ```
 
-Linux 默认目录：
+Linux：
 
-```text
-$HOME/cfopt-auto-push
+```bash
+export GITHUB_TOKEN_CFOPT="你的 token"
 ```
 
-重要文件：
+## 中间文件
 
-- `auto-push.log`：运行日志
+- `CloudflareSpeedTest.csv`：最终合并过滤后准备上传的 CSV
+- `CloudflareSpeedTest-443.csv`：单个端口的原始测速 CSV
+- `selected-ip-443.txt`：给 `cfst` 使用的单端口输入
+- `selected-ip-city-map-443.csv`：单端口 IP 到国家/地区的映射
+- `cfst-443-stdout.log` / `cfst-443-stderr.log`：单端口测速日志
+- `auto-push.log`：总日志
 - `last-success.txt`：上次成功上传时间
-- `ip.zip`：下载缓存
-- `extract`：解压目录
-- `selected-ip.txt`：给 cfst 使用的合并 IP 文件
-- `selected-ip-city-map.csv`：IP 到分组的映射，用于生成 `城市` 列
-- `CloudflareSpeedTest.csv`：过滤后准备上传的 CSV，使用 edgetunnel 兼容列
-- `cfst-stdin.txt`：Windows 下自动给 cfst 最后的“按回车退出”喂空行
-- `cfst-stdout.log` / `cfst-stderr.log`：cfst 输出日志
-
-## 常见问题
-
-- 缺少 token：设置 `GITHUB_TOKEN_CFOPT`
-- 缺少 cfst：Windows 检查 `CfstPath`，Linux 检查 `CFST_PATH`
-- 下载被 Cloudflare 拦截：如果本地已有 `ip.zip` 缓存，脚本会复用缓存
-- 某个分组文件不存在：脚本会 warning 并跳过
-- 端口目录不存在：脚本会停止，避免混用其他端口 IP
-- GitHub metadata 404：表示目标文件还不存在，脚本会创建
-- GitHub upload 仍然 404：检查仓库名、分支、token 权限和私有仓库访问权限
