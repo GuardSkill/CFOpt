@@ -6,6 +6,30 @@
 
 - Windows/CD 默认上传：`CloudflareSpeedTest_CD.csv`
 - Linux/BJ 默认上传：`CloudflareSpeedTest_BJ.csv`
+- 订阅转换配置：`CFOpt_Subconverter.ini`
+
+## 订阅转换配置
+
+仓库根目录提供：
+
+```text
+CFOpt_Subconverter.ini
+```
+
+raw 地址：
+
+```text
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter.ini
+```
+
+在 edgetunnel 的 `订阅转换配置.SUBCONFIG` 中使用这个地址即可。
+
+当前配置不会写死任何节点 IP，只按线上 CSV 解析出的节点备注筛选：
+
+- `Polymarket`：只选择 `KR`、`HK`、`MY`、`IE`
+- `ClaudeCode`：只选择同时适合 Claude/Claude Code 与 OpenAI/Codex 的国家/地区，当前包含 `KR`、`SG`、`VN`、`MY`、`KZ`、`IE`、`US`，并预留 `PH`、`MN`
+
+因为 CSV 节点会生成类似 `198.41.223.63:2096#SG [86ms 76.20Mbps]` 的备注，所以配置使用国家/地区前缀筛选节点，不依赖固定 IP。
 
 ## 数据流程
 
