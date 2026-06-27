@@ -15,16 +15,19 @@
 4. 生成 `selected-ip-city-map.csv`，记录每个 IP 来自哪个分组
 5. 调用 `cfst` 测速
 6. 过滤结果
-7. 给 CSV 增加 `城市` 和 `端口` 两列
-8. 上传到 GitHub
+7. 每个分组最多保留最优 10 个 IP
+8. 输出兼容 edgetunnel 的列：`IP地址`、`端口`、`数据中心`、`城市`、`TLS`
+9. `城市` 列会写成订阅备注，例如 `SG [86ms 76.20Mbps]`
+10. 上传到 GitHub
 
-当前 `ip.zip` 的分组主要是国家/地区代码，所以 `城市` 列目前会是 `HK`、`KR`、`SG`、`US` 这类值。如果以后上游 zip 改成城市级文件名，脚本会自然使用对应文件名。
+当前 `ip.zip` 的分组主要是国家/地区代码，所以 `城市` 列会以 `HK`、`KR`、`SG`、`US` 这类值开头，并追加延迟和 Mbps 速度。edgetunnel 会把它转换成类似 `198.41.223.63:2096#SG [86ms 76.20Mbps]` 的行。
 
 ## 默认过滤规则
 
 - 保留 `已接收 >= 1`
 - 保留 `丢包率 < 1`
 - 保留 `平均延迟 <= 420`
+- 每个分组最多保留 10 个，优先下载速度更高，其次平均延迟更低
 
 临时调整延迟阈值：
 
@@ -144,6 +147,7 @@ PORT=443
 TARGET_PATH="CloudflareSpeedTest_BJ.csv"
 INTERVAL_DAYS=6
 MAX_LATENCY_MS=420
+MAX_PER_CITY=10
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
 ```
 
@@ -235,7 +239,7 @@ $HOME/cfopt-auto-push
 - `extract`：解压目录
 - `selected-ip.txt`：给 cfst 使用的合并 IP 文件
 - `selected-ip-city-map.csv`：IP 到分组的映射，用于生成 `城市` 列
-- `CloudflareSpeedTest.csv`：过滤后准备上传的 CSV，包含 `城市` 和 `端口`
+- `CloudflareSpeedTest.csv`：过滤后准备上传的 CSV，使用 edgetunnel 兼容列
 - `cfst-stdin.txt`：Windows 下自动给 cfst 最后的“按回车退出”喂空行
 - `cfst-stdout.log` / `cfst-stderr.log`：cfst 输出日志
 
