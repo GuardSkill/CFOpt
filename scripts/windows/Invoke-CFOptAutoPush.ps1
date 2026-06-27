@@ -10,7 +10,7 @@ param(
     [string]$Branch = "main",
     [string]$TargetPath = "CloudflareSpeedTest_CD.csv",
     [int]$IntervalDays = 6,
-    [int]$MaxLatencyMs = 999,
+    [int]$MaxLatencyMs = 420,
     [int]$MinReceived = 1,
     [string]$TokenEnvName = "GITHUB_TOKEN_CFOPT",
     [switch]$Force,
@@ -23,6 +23,7 @@ $ErrorActionPreference = "Stop"
 $zipPath = Join-Path $WorkDir "ip.zip"
 $extractDir = Join-Path $WorkDir "extract"
 $selectedIpPath = Join-Path $WorkDir "selected-ip.txt"
+$selectedIpCityMapPath = Join-Path $WorkDir "selected-ip-city-map.csv"
 $csvPath = Join-Path $WorkDir "CloudflareSpeedTest.csv"
 $stateFile = Join-Path $WorkDir "last-success.txt"
 $logFile = Join-Path $WorkDir "auto-push.log"
@@ -183,8 +184,29 @@ function Filter-CfstCsv {
         throw "CSV has no data rows: $csvPath"
     }
 
+    $cityByIp = @{}
+    if (Test-Path -LiteralPath $selectedIpCityMapPath) {
+        $mapLines = [System.IO.File]::ReadAllLines($selectedIpCityMapPath, $utf8NoBom)
+        foreach ($mapLine in $mapLines) {
+            if ([string]::IsNullOrWhiteSpace($mapLine)) {
+                continue
+            }
+            $parts = $mapLine -split ",", 2
+            if ($parts.Count -eq 2 -and -not $cityByIp.ContainsKey($parts[0])) {
+                $cityByIp[$parts[0]] = $parts[1]
+            }
+        }
+    }
+
     $kept = New-Object System.Collections.Generic.List[string]
-    $kept.Add($lines[0])
+    $header = $lines[0]
+    if ($header -notmatch "(^|,)城市($|,)") {
+        $header = "$header,城市"
+    }
+    if ($header -notmatch "(^|,)端口($|,)") {
+        $header = "$header,端口"
+    }
+    $kept.Add($header)
     $removed = 0
 
     for ($i = 1; $i -lt $lines.Count; $i++) {
@@ -199,6 +221,7 @@ function Filter-CfstCsv {
             continue
         }
 
+        $ip = $columns[0].Trim()
         $received = Convert-ToNumber $columns[2]
         $lossRate = Convert-ToNumber $columns[3]
         $latency = Convert-ToNumber $columns[4]
@@ -213,7 +236,17 @@ function Filter-CfstCsv {
             continue
         }
 
-        $kept.Add($line)
+        $city = ""
+        if ($cityByIp.ContainsKey($ip)) {
+            $city = $cityByIp[$ip]
+        }
+
+        if ($lines[0] -match "(^|,)城市($|,)" -and $lines[0] -match "(^|,)端口($|,)") {
+            $kept.Add($line)
+        }
+        else {
+            $kept.Add("$line,$city,$Port")
+        }
     }
 
     if ($kept.Count -le 1) {
@@ -221,7 +254,7 @@ function Filter-CfstCsv {
     }
 
     [System.IO.File]::WriteAllLines($csvPath, $kept.ToArray(), $utf8NoBom)
-    Write-Log "Filtered CSV rows. Kept $($kept.Count - 1), removed $removed. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms."
+    Write-Log "Filtered CSV rows and added city/port columns. Kept $($kept.Count - 1), removed $removed. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms."
 }
 
 function Update-ZipCache {
@@ -347,11 +380,20 @@ try {
     if (Test-Path -LiteralPath $selectedIpPath) {
         Remove-Item -LiteralPath $selectedIpPath -Force
     }
+    if (Test-Path -LiteralPath $selectedIpCityMapPath) {
+        Remove-Item -LiteralPath $selectedIpCityMapPath -Force
+    }
 
     foreach ($file in $selectedFiles) {
-        Get-Content -LiteralPath $file.FullName | Where-Object {
+        $city = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+        $ipLines = @(Get-Content -LiteralPath $file.FullName | Where-Object {
             -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith("#")
-        } | Add-Content -LiteralPath $selectedIpPath -Encoding ASCII
+        } | ForEach-Object { $_.Trim() })
+
+        $ipLines | Add-Content -LiteralPath $selectedIpPath -Encoding ASCII
+        foreach ($ipLine in $ipLines) {
+            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ipLine,$city" -Encoding ASCII
+        }
     }
 
     $lineCount = (Get-Content -LiteralPath $selectedIpPath | Where-Object {
