@@ -198,13 +198,16 @@ function Filter-CfstCsv {
         }
     }
 
+    $cityHeaderName = [string]([char]0x57CE) + [string]([char]0x5E02)
+    $portHeaderName = [string]([char]0x7AEF) + [string]([char]0x53E3)
+
     $kept = New-Object System.Collections.Generic.List[string]
     $header = $lines[0]
-    if ($header -notmatch "(^|,)城市($|,)") {
-        $header = "$header,城市"
+    if ($header -notmatch "(^|,)$cityHeaderName($|,)") {
+        $header = "$header,$cityHeaderName"
     }
-    if ($header -notmatch "(^|,)端口($|,)") {
-        $header = "$header,端口"
+    if ($header -notmatch "(^|,)$portHeaderName($|,)") {
+        $header = "$header,$portHeaderName"
     }
     $kept.Add($header)
     $removed = 0
@@ -241,7 +244,7 @@ function Filter-CfstCsv {
             $city = $cityByIp[$ip]
         }
 
-        if ($lines[0] -match "(^|,)城市($|,)" -and $lines[0] -match "(^|,)端口($|,)") {
+        if ($lines[0] -match "(^|,)$cityHeaderName($|,)" -and $lines[0] -match "(^|,)$portHeaderName($|,)") {
             $kept.Add($line)
         }
         else {
