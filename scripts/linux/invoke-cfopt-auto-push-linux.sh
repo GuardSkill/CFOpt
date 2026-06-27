@@ -12,7 +12,7 @@ REPO="${REPO:-CFOpt}"
 BRANCH="${BRANCH:-main}"
 TARGET_PATH="${TARGET_PATH:-CloudflareSpeedTest_BJ.csv}"
 INTERVAL_DAYS="${INTERVAL_DAYS:-6}"
-MAX_LATENCY_MS="${MAX_LATENCY_MS:-999}"
+MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 TOKEN_ENV_NAME="${TOKEN_ENV_NAME:-GITHUB_TOKEN_CFOPT}"
 FORCE="${FORCE:-0}"
@@ -23,6 +23,7 @@ ZIP_PATH="$WORK_DIR/ip.zip"
 TMP_ZIP_PATH="$WORK_DIR/ip.download.zip"
 EXTRACT_DIR="$WORK_DIR/extract"
 SELECTED_IP_PATH="$WORK_DIR/selected-ip.txt"
+SELECTED_IP_CITY_MAP_PATH="$WORK_DIR/selected-ip-city-map.csv"
 CSV_PATH="$WORK_DIR/CloudflareSpeedTest.csv"
 STATE_FILE="$WORK_DIR/last-success.txt"
 LOG_FILE="$WORK_DIR/auto-push.log"
@@ -82,6 +83,7 @@ merge_country_files() {
 
   log "Using IP files from zip port folder: $port_dir"
   : > "$SELECTED_IP_PATH"
+  : > "$SELECTED_IP_CITY_MAP_PATH"
 
   IFS=',' read -r -a countries <<< "$COUNTRIES_CSV"
   local found=0
@@ -91,7 +93,8 @@ merge_country_files() {
       log "WARN: Country file not found in extracted zip: ${country}.txt. Skipping $country."
       continue
     fi
-    grep -vE '^[[:space:]]*(#|$)' "$file" >> "$SELECTED_IP_PATH" || true
+    grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' >> "$SELECTED_IP_PATH" || true
+    grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | awk -v city="$country" 'NF { print $0 "," city }' >> "$SELECTED_IP_CITY_MAP_PATH" || true
     found=$((found + 1))
   done
 
@@ -133,15 +136,25 @@ run_cfst() {
 
 filter_csv() {
   local tmp_csv="$CSV_PATH.filtered"
-  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" '
-    NR == 1 { print; next }
+  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v port="$PORT" '
+    FNR == NR {
+      if (NF >= 2 && !($1 in city_by_ip)) {
+        city_by_ip[$1] = $2
+      }
+      next
+    }
+    FNR == 1 {
+      print $0 ",城市,端口"
+      next
+    }
     NF < 5 { removed++; next }
     {
+      ip = $1
       received = $3 + 0
       loss = $4 + 0
       latency = $5 + 0
       if (received >= min_received && loss < 1 && latency <= max_latency) {
-        print
+        print $0 "," city_by_ip[ip] "," port
         kept++
       } else {
         removed++
@@ -152,11 +165,11 @@ filter_csv() {
         exit 2
       }
     }
-  ' "$CSV_PATH" > "$tmp_csv"
+  ' "$SELECTED_IP_CITY_MAP_PATH" "$CSV_PATH" > "$tmp_csv"
   mv "$tmp_csv" "$CSV_PATH"
   local kept
   kept=$(( $(wc -l < "$CSV_PATH") - 1 ))
-  log "Filtered CSV rows. Kept $kept. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms."
+  log "Filtered CSV rows and added city/port columns. Kept $kept. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms."
 }
 
 json_escape() {
