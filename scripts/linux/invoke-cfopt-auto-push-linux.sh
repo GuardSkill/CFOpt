@@ -12,11 +12,12 @@ OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
 BRANCH="${BRANCH:-main}"
 TARGET_PATH="${TARGET_PATH:-CloudflareSpeedTest_BJ.csv}"
-INTERVAL_DAYS="${INTERVAL_DAYS:-3}"
+INTERVAL_DAYS="${INTERVAL_DAYS:-1}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.01}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
+ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.33}"
 CFST_THREADS="${CFST_THREADS:-160}"
 CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-6}"
 CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-60}"
@@ -42,6 +43,9 @@ TMP_ZIP_PATH="$WORK_DIR/ip.download.zip"
 EXTRACT_DIR="$WORK_DIR/extract"
 CSV_PATH="$WORK_DIR/CloudflareSpeedTest.csv"
 COMBINED_CANDIDATES_PATH="$WORK_DIR/CloudflareSpeedTest.candidates.csv"
+PREVIOUS_CSV_PATH="$WORK_DIR/previous-CloudflareSpeedTest.csv"
+PREVIOUS_NODES_PATH="$WORK_DIR/previous-nodes.csv"
+PREVIOUS_NODE_KEYS_PATH="$WORK_DIR/previous-node-keys.txt"
 VPS789_CT_IP_PATH="$WORK_DIR/vps789-ct-ip.txt"
 VPS789_CT_CSV_PATH="$WORK_DIR/VPS789_CF_CT_Candidates.csv"
 STATE_FILE="$WORK_DIR/last-success.txt"
@@ -103,6 +107,56 @@ update_zip_cache() {
 
   log "ERROR: Download failed and no zip cache exists."
   return 1
+}
+
+fetch_previous_csv_nodes() {
+  : > "$PREVIOUS_NODES_PATH"
+  : > "$PREVIOUS_NODE_KEYS_PATH"
+
+  local raw_url="https://raw.githubusercontent.com/$OWNER/$REPO/$BRANCH/$TARGET_PATH"
+  log "Fetching previous CSV for rolling retest: $raw_url"
+  if ! curl -fsSL --retry 2 --connect-timeout 20 -o "$PREVIOUS_CSV_PATH" "$raw_url"; then
+    log "WARN: Failed to fetch previous CSV for rolling retest."
+    return 0
+  fi
+
+  python3 - "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH" <<'PY'
+import csv
+import re
+import sys
+
+csv_path, nodes_path, keys_path = sys.argv[1:4]
+city_re = re.compile(r"^([A-Za-z0-9_-]+)")
+rows = []
+
+with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
+    reader = csv.reader(f)
+    next(reader, None)
+    for row in reader:
+        if len(row) < 4:
+            continue
+        ip = row[0].strip()
+        port = row[1].strip()
+        city_text = row[3].strip()
+        match = city_re.match(city_text)
+        if not match:
+            continue
+        city = match.group(1).upper()
+        if re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", ip) and port.isdigit():
+            rows.append((ip, port, city))
+
+with open(nodes_path, "w", encoding="ascii", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerows(rows)
+
+with open(keys_path, "w", encoding="ascii", newline="") as f:
+    for ip, port, city in rows:
+        f.write(f"{ip}|{port}|{city}\n")
+PY
+
+  local count
+  count="$(wc -l < "$PREVIOUS_NODES_PATH" | tr -d ' ')"
+  log "Loaded $count previous CSV nodes for rolling retest."
 }
 
 fetch_vps789_ct_ips() {
@@ -234,6 +288,38 @@ append_cfbestip_for_port() {
   printf '%s\n' "$added"
 }
 
+append_previous_for_port() {
+  local port="$1"
+  local countries_csv="$2"
+  local selected_ip_path="$3"
+  local map_path="$4"
+  local added=0
+
+  [[ -s "$PREVIOUS_NODES_PATH" ]] || {
+    printf '0\n'
+    return 0
+  }
+
+  local countries_pattern
+  countries_pattern="$(tr ',' '\n' <<< "$countries_csv" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]' | awk 'NF { printf "%s%s", sep, $0; sep="|" }')"
+  [[ -n "$countries_pattern" ]] || {
+    printf '0\n'
+    return 0
+  }
+
+  while IFS=',' read -r ip prev_port city; do
+    [[ "$prev_port" == "$port" ]] || continue
+    [[ "$city" =~ ^($countries_pattern)$ ]] || continue
+    if ! grep -Fxq "$ip" "$selected_ip_path"; then
+      printf '%s\n' "$ip" >> "$selected_ip_path"
+      printf '%s,%s\n' "$ip" "$city" >> "$map_path"
+      added=$((added + 1))
+    fi
+  done < "$PREVIOUS_NODES_PATH"
+
+  printf '%s\n' "$added"
+}
+
 merge_country_files_for_port() {
   local port="$1"
   local scope="${2:-all}"
@@ -266,6 +352,9 @@ merge_country_files_for_port() {
     found=$((found + 1))
   done
 
+  local previous_added
+  previous_added="$(append_previous_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+
   local cfbestip_added
   cfbestip_added="$(append_cfbestip_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
 
@@ -288,7 +377,7 @@ merge_country_files_for_port() {
     return 1
   fi
 
-  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. cf-bestip added: $cfbestip_added. vps789 CT added: $vps789_added."
+  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. previous added: $previous_added. cf-bestip added: $cfbestip_added. vps789 CT added: $vps789_added."
   printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
@@ -371,7 +460,12 @@ build_combined_candidates() {
 
 filter_csv() {
   local tmp_csv="$CSV_PATH.filtered"
-  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" '
+  [[ -s "$PREVIOUS_NODE_KEYS_PATH" ]] || printf '__none__\n' > "$PREVIOUS_NODE_KEYS_PATH"
+  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" '
+    FNR == NR {
+      previous[$0] = 1
+      next
+    }
     {
       port = $1
       city = $2
@@ -386,15 +480,22 @@ filter_csv() {
       if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
         row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s", ip, port, datacenter, remark, sent, received, loss, latency, speed)
-        rows[++count] = sprintf("%s\t%012.6f\t%012.6f\t%s", city, 999999-speed, latency, row)
+        key = ip "|" port "|" city
+        is_previous = (key in previous) ? 1 : 0
+        dedupe_key = ip "|" port "|" city
+        dedupe_row = sprintf("%s\t%012.6f\t%012.6f\t%d\t%s", city, 999999-speed, latency, is_previous, row)
+        if (!(dedupe_key in best_row) || dedupe_row < best_row[dedupe_key]) {
+          best_row[dedupe_key] = dedupe_row
+        }
         kept++
       } else {
         removed++
       }
     }
     END {
-      if (kept < 1) exit 2
-      print "IP鍦板潃,绔彛,鏁版嵁涓績,鍩庡競,TLS,宸插彂閫?宸叉帴鏀?涓㈠寘鐜?骞冲潎寤惰繜,涓嬭浇閫熷害(MB/s)"
+      for (dedupe_key in best_row) rows[++count] = best_row[dedupe_key]
+      if (count < 1) exit 2
+      print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
       for (i = 1; i <= count; i++) {
         for (j = i + 1; j <= count; j++) {
           if (rows[j] < rows[i]) {
@@ -404,27 +505,48 @@ filter_csv() {
       }
       current_city = ""
       city_count = 0
+      max_previous_keep = int(max_per_city * (1 - rolling_replace_fraction))
       for (i = 1; i <= count; i++) {
         split(rows[i], parts, "\t")
         city = parts[1]
+        is_previous = parts[4] + 0
         if (city != current_city) {
           current_city = city
           city_count = 0
         }
-        if (city_count < max_per_city) {
+        if (city_count < max_per_city && !(is_previous == 1 && previous_city_count[city] >= max_previous_keep)) {
           city_count++
-          col_count = split(parts[4], cols, ",")
-          numbered_city = city "[" test_location_name sprintf("%02d", city_count) "]"
+          selected_total[city]++
+          if (is_previous == 1) previous_city_count[city]++
+          selected[++selected_count] = parts[5]
+        } else if (is_previous == 1) {
+          overflow_old[++overflow_count] = rows[i]
+        }
+      }
+      for (i = 1; i <= overflow_count; i++) {
+        split(overflow_old[i], parts, "\t")
+        city = parts[1]
+        if (selected_total[city] < max_per_city) {
+          selected_total[city]++
+          selected[++selected_count] = parts[5]
+        }
+      }
+      for (i = 1; i <= selected_count; i++) {
+          col_count = split(selected[i], cols, ",")
+          city = cols[4]
+          sub(/ .*/, "", city)
+          sub(/\[.*/, "", city)
+          output_city_count[city]++
+          numbered_city = city "[" test_location_name sprintf("%02d", output_city_count[city]) "]"
           cols[4] = numbered_city
           out = cols[1]
           for (k = 2; k <= col_count; k++) {
             out = out "," cols[k]
           }
           print out
-        }
       }
     }
-  ' "$COMBINED_CANDIDATES_PATH" > "$tmp_csv"; then
+  ' "$PREVIOUS_NODE_KEYS_PATH" "$COMBINED_CANDIDATES_PATH" > "$tmp_csv"; then
     log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
     rm -f "$tmp_csv"
     return 1
@@ -521,9 +643,10 @@ main() {
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
-  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH"
+  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
 
   update_zip_cache
+  fetch_previous_csv_nodes
   fetch_vps789_ct_ips
   log "Extracting $ZIP_PATH"
   unzip -oq "$ZIP_PATH" -d "$EXTRACT_DIR"
