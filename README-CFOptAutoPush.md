@@ -53,6 +53,7 @@ Defaults:
 - Keep rows with `已接收 >= 1`
 - Keep rows with `丢包率 < 1`
 - Keep rows with `平均延迟 <= 420`
+- Keep rows with download speed `>= 0.01 Mbps`, so `0.00` speed results do not enter the subscription
 - Keep at most `20` rows per source group across all tested ports, sorted by higher download speed first, then lower latency
 
 Change the latency threshold when running manually:
@@ -63,6 +64,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1"
 
 ```bash
 FORCE=1 MAX_LATENCY_MS=300 ./invoke-cfopt-auto-push-linux.sh
+```
+
+If every result is `0.00 MB/s`, enable cfst debug output to inspect download URL, IP, or network failures:
+
+```bash
+FORCE=1 CFST_DEBUG=1 ./invoke-cfopt-auto-push-linux.sh
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
 ```
 
 ## GitHub Token
@@ -188,6 +199,7 @@ PORTS="443,2053,2083,2087,2096,8443"
 TARGET_PATH="CloudflareSpeedTest_BJ.csv"
 INTERVAL_DAYS=3
 MAX_LATENCY_MS=420
+MIN_SPEED_MBPS=0.01
 MAX_PER_CITY=20
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
 ```
