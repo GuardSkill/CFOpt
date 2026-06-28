@@ -7,7 +7,7 @@ CFST_PATH="${CFST_PATH:-$WORK_DIR/cfst}"
 PORT="${PORT:-}"
 PORTS="${PORTS:-443,2053,2083,2087,2096,8443}"
 DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://speed.cloudflare.com/__down?bytes=100000000}"
-COUNTRIES_CSV="${COUNTRIES_CSV:-HK,KR,SG,PH,VN,MY,KZ,MN,IE,US}"
+COUNTRIES_CSV="${COUNTRIES_CSV:-HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US}"
 OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
 BRANCH="${BRANCH:-main}"
@@ -22,7 +22,11 @@ CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-6}"
 CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-60}"
 CFST_DOWNLOAD_TEST_TIME="${CFST_DOWNLOAD_TEST_TIME:-15}"
 CFST_LOSS_RATE_LIMIT="${CFST_LOSS_RATE_LIMIT:-0}"
-FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-HK}"
+FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-HK,JP}"
+TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
+ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
+CFBESTIP_BASE_URL="${CFBESTIP_BASE_URL:-https://zoroaaa.github.io/cf-bestip}"
+CFBESTIP_PER_COUNTRY_LIMIT="${CFBESTIP_PER_COUNTRY_LIMIT:-200}"
 ENABLE_VPS789_CT="${ENABLE_VPS789_CT:-0}"
 VPS789_CT_LIMIT="${VPS789_CT_LIMIT:-50}"
 VPS789_MAX_DX_LATENCY_MS="${VPS789_MAX_DX_LATENCY_MS:-260}"
@@ -42,6 +46,10 @@ VPS789_CT_IP_PATH="$WORK_DIR/vps789-ct-ip.txt"
 VPS789_CT_CSV_PATH="$WORK_DIR/VPS789_CF_CT_Candidates.csv"
 STATE_FILE="$WORK_DIR/last-success.txt"
 LOG_FILE="$WORK_DIR/auto-push.log"
+
+if [[ -z "$TEST_LOCATION_NAME" ]]; then
+  TEST_LOCATION_NAME=$'\u5317\u4eac\u6d4b\u901f'
+fi
 
 log() {
   mkdir -p "$WORK_DIR"
@@ -186,6 +194,46 @@ PY
   log "Fetched $count vps789 CT candidates. Exported $VPS789_CT_CSV_PATH."
 }
 
+append_cfbestip_for_port() {
+  local port="$1"
+  local countries_csv="$2"
+  local selected_ip_path="$3"
+  local map_path="$4"
+  local added=0
+
+  if [[ "$ENABLE_CFBESTIP" != "1" ]]; then
+    printf '0\n'
+    return 0
+  fi
+
+  IFS=',' read -r -a cfbestip_countries <<< "$countries_csv"
+  for country in "${cfbestip_countries[@]}"; do
+    country="$(printf '%s' "$country" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
+    [[ -n "$country" ]] || continue
+
+    local url="${CFBESTIP_BASE_URL%/}/ip_${country}.txt"
+    local tmp_path="$WORK_DIR/cfbestip-${country}.txt"
+    if ! curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$url"; then
+      log "WARN: Failed to fetch cf-bestip candidates for $country: $url" >/dev/null
+      continue
+    fi
+
+    local count_for_country=0
+    while IFS= read -r ip; do
+      [[ -n "$ip" ]] || continue
+      if ! grep -Fxq "$ip" "$selected_ip_path"; then
+        printf '%s\n' "$ip" >> "$selected_ip_path"
+        printf '%s,%s\n' "$ip" "$country" >> "$map_path"
+        added=$((added + 1))
+        count_for_country=$((count_for_country + 1))
+      fi
+    done < <(awk -F'[:#]' -v port="$port" -v limit="$CFBESTIP_PER_COUNTRY_LIMIT" 'NF >= 3 && $2 == port && count < limit { print $1; count++ }' "$tmp_path")
+    log "Fetched $count_for_country cf-bestip candidates for $country on port $port." >/dev/null
+  done
+
+  printf '%s\n' "$added"
+}
+
 merge_country_files_for_port() {
   local port="$1"
   local scope="${2:-all}"
@@ -218,6 +266,9 @@ merge_country_files_for_port() {
     found=$((found + 1))
   done
 
+  local cfbestip_added
+  cfbestip_added="$(append_cfbestip_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+
   local vps789_added=0
   if [[ "$include_vps789" == "1" && -s "$VPS789_CT_IP_PATH" ]]; then
     while IFS= read -r ip; do
@@ -237,7 +288,7 @@ merge_country_files_for_port() {
     return 1
   fi
 
-  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. vps789 CT added: $vps789_added."
+  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. cf-bestip added: $cfbestip_added. vps789 CT added: $vps789_added."
   printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
@@ -320,7 +371,7 @@ build_combined_candidates() {
 
 filter_csv() {
   local tmp_csv="$CSV_PATH.filtered"
-  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" '
+  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" '
     {
       port = $1
       city = $2
@@ -343,7 +394,7 @@ filter_csv() {
     }
     END {
       if (kept < 1) exit 2
-      print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
+      print "IP鍦板潃,绔彛,鏁版嵁涓績,鍩庡競,TLS,宸插彂閫?宸叉帴鏀?涓㈠寘鐜?骞冲潎寤惰繜,涓嬭浇閫熷害(MB/s)"
       for (i = 1; i <= count; i++) {
         for (j = i + 1; j <= count; j++) {
           if (rows[j] < rows[i]) {
@@ -363,8 +414,8 @@ filter_csv() {
         if (city_count < max_per_city) {
           city_count++
           col_count = split(parts[4], cols, ",")
-          numbered_city = city sprintf("%02d", city_count)
-          sub("^" city, numbered_city, cols[4])
+          numbered_city = city "[" test_location_name sprintf("%02d", city_count) "]"
+          cols[4] = numbered_city
           out = cols[1]
           for (k = 2; k <= col_count; k++) {
             out = out "," cols[k]
