@@ -10,7 +10,7 @@ param(
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
     [string]$TargetPath = "CloudflareSpeedTest_CD.csv",
-    [int]$IntervalDays = 6,
+    [int]$IntervalDays = 3,
     [int]$MaxLatencyMs = 420,
     [int]$MinReceived = 1,
     [int]$MaxPerCity = 20,
