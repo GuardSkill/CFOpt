@@ -26,6 +26,14 @@ The default candidate source is:
 https://zip.cm.edu.kg/ip.zip
 ```
 
+The `cf-bestip` regional source is also enabled by default:
+
+```text
+https://zoroaaa.github.io/cf-bestip/ip_*.txt
+```
+
+The scripts parse entries like `IP:port#region-score`, keep only candidates that match the current CFST port, and then run local CFST download tests.
+
 Default ports:
 
 ```text
@@ -126,9 +134,37 @@ FORCE=1 ENABLE_VPS789_CT=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 Only `cfIpApi.data.CT` is used.
 
+## City Column
+
+Windows/CD defaults to `成都测速`:
+
+```text
+HK [成都测速#01]
+JP [成都测速#01]
+```
+
+Linux/BJ defaults to `北京测速`:
+
+```text
+HK[北京测速01]
+JP[北京测速01]
+```
+
 ## cf-bestip
 
-`Zoroaaa/cf-bestip` is a better regional candidate source than vps789 because it publishes region-specific Cloudflare Anycast IPv4 lists. It should still be treated as a candidate source rather than a final result source. The final CSV should continue to come from local CFST download tests.
+`Zoroaaa/cf-bestip` is enabled by default as an extra regional candidate source. The final CSV still comes from local CFST download tests.
+
+Disable it on Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -DisableCfBestIp
+```
+
+Disable it on Linux:
+
+```bash
+FORCE=1 ENABLE_CFBESTIP=0 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
 
 ## GitHub Token
 
