@@ -74,6 +74,39 @@ HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US
 
 最终 CSV 仍然会按地区/分组保留 Top 20。
 
+## 每日滚动复测
+
+脚本默认每天最多运行一次：
+
+```text
+IntervalDays=1
+```
+
+每次运行会先下载 GitHub 上当前目标 CSV，把旧节点重新加入 CFST 输入做复测。最终每个地区执行滚动保鲜：
+
+- 旧节点本轮测速不过线：直接淘汰
+- 每个地区最多保留约 2/3 旧节点
+- 至少约 1/3 位置优先由本轮新测出的最佳候选补上
+- 如果新候选不足，才继续用达标旧节点补满
+
+默认替换比例：
+
+```text
+0.33
+```
+
+Windows 可调整：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -RollingReplaceFraction 0.5
+```
+
+Linux 可调整：
+
+```bash
+FORCE=1 ROLLING_REPLACE_FRACTION=0.5 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
 ## 手动运行
 
 Windows：
@@ -239,3 +272,21 @@ Linux：
 ```bash
 export GITHUB_TOKEN_CFOPT="你的 token"
 ```
+
+## 后台自动运行
+
+Windows 安装计划任务：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
+```
+
+默认每天 `04:00` 运行，也会在开机后延迟 2 分钟检查一次。
+
+Linux 一键脚本会自动安装后台任务：
+
+```bash
+GITHUB_TOKEN_CFOPT="你的 token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+```
+
+优先安装用户级 `systemd` timer；如果不可用，则写入 `crontab`。默认每天 `04:00` 运行。
