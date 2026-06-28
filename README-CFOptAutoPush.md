@@ -60,6 +60,39 @@ Default CFST parameters:
 
 The final CSV still keeps the Top 20 rows per region/group.
 
+## Daily Rolling Retest
+
+The scripts run at most once per day by default:
+
+```text
+INTERVAL_DAYS=1
+```
+
+Each run downloads the current target CSV from GitHub, adds those existing nodes back into the CFST inputs, and retests them. For each region/group:
+
+- old nodes that fail the current filters are removed
+- at most about 2/3 of the final rows can be old nodes
+- at least about 1/3 is filled by the best newly tested candidates when available
+- if new candidates are not enough, passing old nodes can fill the remaining slots
+
+Default replacement fraction:
+
+```text
+0.33
+```
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -RollingReplaceFraction 0.5
+```
+
+Linux:
+
+```bash
+FORCE=1 ROLLING_REPLACE_FRACTION=0.5 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
 ## Run
 
 Windows:
@@ -179,3 +212,21 @@ Linux:
 ```bash
 export GITHUB_TOKEN_CFOPT="your token"
 ```
+
+## Background Autorun
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
+```
+
+The task runs daily at `04:00` and also checks shortly after startup.
+
+Linux:
+
+```bash
+GITHUB_TOKEN_CFOPT="your token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+```
+
+The bootstrap script installs a user `systemd` timer when available, otherwise it falls back to `crontab`. The default schedule is daily at `04:00`.
