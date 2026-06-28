@@ -15,7 +15,7 @@ TARGET_PATH="${TARGET_PATH:-CloudflareSpeedTest_BJ.csv}"
 INTERVAL_DAYS="${INTERVAL_DAYS:-1}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
-MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.01}"
+MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
 ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.33}"
 CFST_THREADS="${CFST_THREADS:-160}"
@@ -427,8 +427,8 @@ wait_cfst_processes() {
       failed=1
     fi
     local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
-    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" ]] && sed "s/^/cfst[$port/$scope]: /" "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" | tee -a "$LOG_FILE" >/dev/null || true
-    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" ]] && sed "s/^/cfst[$port/$scope] stderr: /" "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" | tee -a "$LOG_FILE" >/dev/null || true
+    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" ]] && awk -v prefix="cfst[$port/$scope]: " '{ print prefix $0 }' "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" | tee -a "$LOG_FILE" >/dev/null || true
+    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" ]] && awk -v prefix="cfst[$port/$scope] stderr: " '{ print prefix $0 }' "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" | tee -a "$LOG_FILE" >/dev/null || true
     if [[ ! -f "$csv_path" ]]; then
       log "WARN: cfst completed but CSV was not created for port $port scope $scope: $csv_path"
     fi

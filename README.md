@@ -108,7 +108,7 @@ HK,JP
 -dt 15
 -tl 420
 -tlr 0
--sl 0.01
+-sl 0
 -p 0
 ```
 
@@ -282,7 +282,7 @@ Default CFST parameters:
 -dt 15
 -tl 420
 -tlr 0
--sl 0.01
+-sl 0
 -p 0
 ```
 
