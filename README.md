@@ -32,6 +32,7 @@
 - 保留 `已接收 >= 1`
 - 保留 `丢包率 < 1`
 - 保留 `平均延迟 <= 420`
+- 保留 `下载速度 >= 0.01 Mbps`，避免 0.00 速结果进入订阅
 - 每个国家/地区最多保留 `20` 条，跨所有测试端口一起排名
 
 临时调整延迟阈值：
@@ -42,6 +43,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1"
 
 ```bash
 FORCE=1 MAX_LATENCY_MS=300 ./invoke-cfopt-auto-push-linux.sh
+```
+
+如果结果全是 `0.00 MB/s`，用 cfst 调试模式排查下载测速地址、IP 或网络问题：
+
+```bash
+FORCE=1 CFST_DEBUG=1 ./invoke-cfopt-auto-push-linux.sh
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
 ```
 
 ## Windows 使用
@@ -140,6 +151,7 @@ PORTS="443,2053,2083,2087,2096,8443"
 TARGET_PATH="CloudflareSpeedTest_BJ.csv"
 INTERVAL_DAYS=3
 MAX_LATENCY_MS=420
+MIN_SPEED_MBPS=0.01
 MAX_PER_CITY=20
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
 ```
