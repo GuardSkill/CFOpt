@@ -5,7 +5,7 @@ param(
     [string[]]$Countries = @("HK", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US"),
     [int]$Port = 0,
     [string]$Ports = "443,2053,2083,2087,2096,8443",
-    [string]$DownloadTestUrl = "https://speed.cloudflare.com/__down?bytes=100000000",
+    [string]$DownloadTestUrl = "https://cf.xiu2.xyz/url",
     [string]$Owner = "GuardSkill",
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
@@ -21,6 +21,7 @@ param(
     [int]$CfstDownloadTestTime = 15,
     [double]$CfstLossRateLimit = 0,
     [int]$MaxParallelCfst = 3,
+    [switch]$UseProxyForCfst,
     [string]$FocusCountries = "HK,JP",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
@@ -471,9 +472,9 @@ function New-PortWorkItem {
         SelectedIpPath = $selectedIpPath
         MapPath = $selectedIpCityMapPath
         CsvPath = $portCsvPath
-        StdoutPath = Join-Path $WorkDir "cfst-$CurrentPort-stdout.log"
-        StderrPath = Join-Path $WorkDir "cfst-$CurrentPort-stderr.log"
-        StdinPath = Join-Path $WorkDir "cfst-$CurrentPort-stdin.txt"
+        StdoutPath = Join-Path $WorkDir "cfst-$CurrentPort-$safeScopeName-stdout.log"
+        StderrPath = Join-Path $WorkDir "cfst-$CurrentPort-$safeScopeName-stderr.log"
+        StdinPath = Join-Path $WorkDir "cfst-$CurrentPort-$safeScopeName-stdin.txt"
     }
 }
 
@@ -488,7 +489,7 @@ function Start-CfstProcesses {
     $completed = New-Object System.Collections.Generic.List[object]
     foreach ($item in $WorkItems) {
         while ($running.Count -ge $MaxParallelCfst) {
-            $finished = @($running | Where-Object { $_.Process.HasExited })
+        $finished = @($running.ToArray() | Where-Object { $_.Process.HasExited })
             foreach ($finishedItem in $finished) {
                 $completed.Add($finishedItem) | Out-Null
                 [void]$running.Remove($finishedItem)
@@ -531,19 +532,43 @@ function Start-CfstProcesses {
 
         $argumentText = Join-ProcessArguments -Arguments $cfstArgs
         Write-Log "Starting cfst on port $($item.Port) scope $($item.Scope): $CfstPath $argumentText"
-        $process = Start-Process `
-            -FilePath $CfstPath `
-            -ArgumentList $argumentText `
-            -RedirectStandardInput $item.StdinPath `
-            -RedirectStandardOutput $item.StdoutPath `
-            -RedirectStandardError $item.StderrPath `
-            -NoNewWindow `
-            -PassThru
+        $proxyEnvNames = @("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy")
+        $savedProxyEnv = @{}
+        if (-not $UseProxyForCfst) {
+            foreach ($envName in $proxyEnvNames) {
+                $envItem = Get-Item -LiteralPath "Env:$envName" -ErrorAction SilentlyContinue
+                if ($null -ne $envItem) {
+                    $savedProxyEnv[$envName] = $envItem.Value
+                    Remove-Item -LiteralPath "Env:$envName" -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
+        try {
+            $process = Start-Process `
+                -FilePath $CfstPath `
+                -ArgumentList $argumentText `
+                -RedirectStandardInput $item.StdinPath `
+                -RedirectStandardOutput $item.StdoutPath `
+                -RedirectStandardError $item.StderrPath `
+                -NoNewWindow `
+                -PassThru
+        }
+        finally {
+            if (-not $UseProxyForCfst) {
+                foreach ($envName in $proxyEnvNames) {
+                    Remove-Item -LiteralPath "Env:$envName" -ErrorAction SilentlyContinue
+                }
+                foreach ($entry in $savedProxyEnv.GetEnumerator()) {
+                    Set-Item -LiteralPath "Env:$($entry.Key)" -Value $entry.Value
+                }
+            }
+        }
 
         $running.Add([pscustomobject]@{ Item = $item; Process = $process }) | Out-Null
     }
 
-    foreach ($remaining in @($running)) {
+    foreach ($remaining in $running.ToArray()) {
         $completed.Add($remaining) | Out-Null
     }
 
@@ -576,7 +601,7 @@ function Wait-CfstProcesses {
         }
 
         if (-not (Test-Path -LiteralPath $item.CsvPath)) {
-            $failed.Add("port $($item.Port) did not create CSV") | Out-Null
+            Write-Log "WARN: cfst completed but CSV was not created for port $($item.Port) scope $($item.Scope): $($item.CsvPath)"
         }
     }
 
@@ -901,5 +926,7 @@ try {
 }
 catch {
     Write-Log "ERROR: $($_.Exception.Message)"
+    Write-Log "ERROR_DETAIL: $($_.InvocationInfo.PositionMessage)"
+    Write-Log "ERROR_STACK: $($_.ScriptStackTrace)"
     throw
 }

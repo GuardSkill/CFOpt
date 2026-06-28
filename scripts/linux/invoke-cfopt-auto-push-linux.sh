@@ -6,7 +6,7 @@ WORK_DIR="${WORK_DIR:-$HOME/cfopt-auto-push}"
 CFST_PATH="${CFST_PATH:-$WORK_DIR/cfst}"
 PORT="${PORT:-}"
 PORTS="${PORTS:-443,2053,2083,2087,2096,8443}"
-DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://speed.cloudflare.com/__down?bytes=100000000}"
+DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://cf.xiu2.xyz/url}"
 COUNTRIES_CSV="${COUNTRIES_CSV:-HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US}"
 OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
@@ -24,6 +24,7 @@ CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-60}"
 CFST_DOWNLOAD_TEST_TIME="${CFST_DOWNLOAD_TEST_TIME:-15}"
 CFST_LOSS_RATE_LIMIT="${CFST_LOSS_RATE_LIMIT:-0}"
 MAX_PARALLEL_CFST="${MAX_PARALLEL_CFST:-3}"
+USE_PROXY_FOR_CFST="${USE_PROXY_FOR_CFST:-0}"
 FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-HK,JP}"
 TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
 ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
@@ -407,7 +408,14 @@ start_cfst_for_port() {
 
   rm -f "$csv_path" "$stdout_path" "$stderr_path"
   log "Starting cfst on port $port scope $scope: $CFST_PATH ${args[*]}"
-  (printf '\n' | "$CFST_PATH" "${args[@]}" > "$stdout_path" 2> "$stderr_path") &
+  if [[ "$USE_PROXY_FOR_CFST" == "1" ]]; then
+    (printf '\n' | "$CFST_PATH" "${args[@]}" > "$stdout_path" 2> "$stderr_path") &
+  else
+    (
+      unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy
+      printf '\n' | "$CFST_PATH" "${args[@]}" > "$stdout_path" 2> "$stderr_path"
+    ) &
+  fi
   printf '%s,%s,%s,%s,%s\n' "$port" "$scope" "$!" "$csv_path" "$selected_ip_path" >> "$WORK_DIR/cfst-processes.csv"
 }
 
@@ -422,8 +430,7 @@ wait_cfst_processes() {
     [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" ]] && sed "s/^/cfst[$port/$scope]: /" "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" | tee -a "$LOG_FILE" >/dev/null || true
     [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" ]] && sed "s/^/cfst[$port/$scope] stderr: /" "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" | tee -a "$LOG_FILE" >/dev/null || true
     if [[ ! -f "$csv_path" ]]; then
-      log "ERROR: cfst completed but CSV was not created for port $port: $csv_path"
-      failed=1
+      log "WARN: cfst completed but CSV was not created for port $port scope $scope: $csv_path"
     fi
   done < "$WORK_DIR/cfst-processes.csv"
 
