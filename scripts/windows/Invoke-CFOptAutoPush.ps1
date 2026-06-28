@@ -20,6 +20,7 @@ param(
     [int]$CfstDownloadTestCount = 60,
     [int]$CfstDownloadTestTime = 15,
     [double]$CfstLossRateLimit = 0,
+    [int]$MaxParallelCfst = 3,
     [string]$FocusCountries = "HK,JP",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
@@ -484,7 +485,19 @@ function Start-CfstProcesses {
     }
 
     $running = New-Object System.Collections.Generic.List[object]
+    $completed = New-Object System.Collections.Generic.List[object]
     foreach ($item in $WorkItems) {
+        while ($running.Count -ge $MaxParallelCfst) {
+            $finished = @($running | Where-Object { $_.Process.HasExited })
+            foreach ($finishedItem in $finished) {
+                $completed.Add($finishedItem) | Out-Null
+                [void]$running.Remove($finishedItem)
+            }
+            if ($running.Count -ge $MaxParallelCfst) {
+                Start-Sleep -Seconds 2
+            }
+        }
+
         foreach ($path in @($item.StdoutPath, $item.StderrPath, $item.StdinPath)) {
             if (Test-Path -LiteralPath $path) {
                 Remove-Item -LiteralPath $path -Force
@@ -530,7 +543,11 @@ function Start-CfstProcesses {
         $running.Add([pscustomobject]@{ Item = $item; Process = $process }) | Out-Null
     }
 
-    return $running.ToArray()
+    foreach ($remaining in @($running)) {
+        $completed.Add($remaining) | Out-Null
+    }
+
+    return $completed.ToArray()
 }
 
 function Wait-CfstProcesses {
