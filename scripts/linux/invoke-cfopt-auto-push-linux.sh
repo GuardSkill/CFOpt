@@ -17,6 +17,10 @@ MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.01}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
+ENABLE_VPS789_CT="${ENABLE_VPS789_CT:-1}"
+VPS789_CT_LIMIT="${VPS789_CT_LIMIT:-50}"
+VPS789_MAX_DX_LATENCY_MS="${VPS789_MAX_DX_LATENCY_MS:-260}"
+VPS789_MAX_DX_LOSS_RATE="${VPS789_MAX_DX_LOSS_RATE:-5}"
 TOKEN_ENV_NAME="${TOKEN_ENV_NAME:-GITHUB_TOKEN_CFOPT}"
 FORCE="${FORCE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -28,6 +32,8 @@ TMP_ZIP_PATH="$WORK_DIR/ip.download.zip"
 EXTRACT_DIR="$WORK_DIR/extract"
 CSV_PATH="$WORK_DIR/CloudflareSpeedTest.csv"
 COMBINED_CANDIDATES_PATH="$WORK_DIR/CloudflareSpeedTest.candidates.csv"
+VPS789_CT_IP_PATH="$WORK_DIR/vps789-ct-ip.txt"
+VPS789_CT_CSV_PATH="$WORK_DIR/VPS789_CF_CT_Candidates.csv"
 STATE_FILE="$WORK_DIR/last-success.txt"
 LOG_FILE="$WORK_DIR/auto-push.log"
 
@@ -85,6 +91,95 @@ update_zip_cache() {
   return 1
 }
 
+fetch_vps789_ct_ips() {
+  : > "$VPS789_CT_IP_PATH"
+  printf 'No,IP,Line,DXLatencyMs,DXLossRate,LTLatencyMs,LTLossRate,YDLatencyMs,YDLossRate,UpdatedAt,Remark\n' > "$VPS789_CT_CSV_PATH"
+
+  if [[ "$ENABLE_VPS789_CT" != "1" ]]; then
+    log "vps789 CT candidate source disabled."
+    return 0
+  fi
+
+  local json_path="$WORK_DIR/vps789-cfIpApi.json"
+  log "Fetching vps789 Cloudflare CT candidates."
+  if ! curl -fsSL --retry 2 --connect-timeout 20 -o "$json_path" "https://vps789.com/openApi/cfIpApi"; then
+    log "WARN: Failed to fetch vps789 CT candidates."
+    return 0
+  fi
+
+  if ! python3 - "$json_path" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$VPS789_CT_LIMIT" "$VPS789_MAX_DX_LATENCY_MS" "$VPS789_MAX_DX_LOSS_RATE" <<'PY'
+import csv
+import json
+import re
+import sys
+
+json_path, ip_path, csv_path = sys.argv[1:4]
+limit = int(sys.argv[4])
+max_latency = float(sys.argv[5])
+max_loss = float(sys.argv[6])
+ip_re = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+with open(json_path, "r", encoding="utf-8") as f:
+    payload = json.load(f)
+
+rows = payload.get("data", {}).get("CT", []) or []
+filtered = []
+for row in rows:
+    ip = str(row.get("ip", "")).strip()
+    try:
+        dx_latency = float(row.get("dxLatencyAvg", 999999))
+        dx_loss = float(row.get("dxPkgLostRateAvg", 999999))
+        avg_score = float(row.get("avgScore", 999999))
+    except (TypeError, ValueError):
+        continue
+    if ip_re.match(ip) and dx_latency <= max_latency and dx_loss <= max_loss:
+        filtered.append((dx_loss, dx_latency, avg_score, row))
+
+filtered.sort(key=lambda item: (item[0], item[1], item[2]))
+seen = set()
+kept = []
+for _, _, _, row in filtered:
+    ip = str(row.get("ip", "")).strip()
+    if ip in seen:
+        continue
+    seen.add(ip)
+    kept.append(row)
+    if len(kept) >= limit:
+        break
+
+with open(ip_path, "w", encoding="ascii", newline="") as f:
+    for row in kept:
+        f.write(str(row.get("ip", "")).strip() + "\n")
+
+with open(csv_path, "w", encoding="utf-8", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow(["No", "IP", "Line", "DXLatencyMs", "DXLossRate", "LTLatencyMs", "LTLossRate", "YDLatencyMs", "YDLossRate", "UpdatedAt", "Remark"])
+    for idx, row in enumerate(kept, start=1):
+        writer.writerow([
+            f"CT{idx:02d}",
+            row.get("ip", ""),
+            "CT",
+            row.get("dxLatencyAvg", ""),
+            row.get("dxPkgLostRateAvg", ""),
+            row.get("ltLatencyAvg", ""),
+            row.get("ltPkgLostRateAvg", ""),
+            row.get("ydLatencyAvg", ""),
+            row.get("ydPkgLostRateAvg", ""),
+            row.get("createdTime", ""),
+            "vps789-ct",
+        ])
+PY
+  then
+    log "WARN: Failed to parse vps789 CT candidates."
+    : > "$VPS789_CT_IP_PATH"
+    return 0
+  fi
+
+  local count
+  count="$(grep -vcE '^[[:space:]]*(#|$)' "$VPS789_CT_IP_PATH" || true)"
+  log "Fetched $count vps789 CT candidates. Exported $VPS789_CT_CSV_PATH."
+}
+
 merge_country_files_for_port() {
   local port="$1"
   local port_dir="$EXTRACT_DIR/$port"
@@ -113,6 +208,18 @@ merge_country_files_for_port() {
     found=$((found + 1))
   done
 
+  local vps789_added=0
+  if [[ -s "$VPS789_CT_IP_PATH" ]]; then
+    while IFS= read -r ip; do
+      [[ -n "$ip" ]] || continue
+      if ! grep -Fxq "$ip" "$selected_ip_path"; then
+        printf '%s\n' "$ip" >> "$selected_ip_path"
+        printf '%s,VPS789CT\n' "$ip" >> "$map_path"
+        vps789_added=$((vps789_added + 1))
+      fi
+    done < "$VPS789_CT_IP_PATH"
+  fi
+
   local line_count
   line_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
   if (( found == 0 || line_count == 0 )); then
@@ -120,7 +227,7 @@ merge_country_files_for_port() {
     return 1
   fi
 
-  log "Merged $line_count IP lines for port $port into $selected_ip_path."
+  log "Merged $line_count IP lines for port $port into $selected_ip_path. vps789 CT added: $vps789_added."
   printf '%s,%s,%s\n' "$port" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
@@ -183,6 +290,14 @@ build_combined_candidates() {
       NF >= 6 {
         ip = $1
         city = city_by_ip[ip]
+        datacenter = $7
+        if (city == "VPS789CT") {
+          if (datacenter != "" && datacenter != "N/A") {
+            city = datacenter
+          } else {
+            city = "CT"
+          }
+        }
         print port "," city "," $0
       }
     ' "$map_path" "$csv_path" >> "$COMBINED_CANDIDATES_PATH"
@@ -232,8 +347,15 @@ filter_csv() {
           city_count = 0
         }
         if (city_count < max_per_city) {
-          print parts[4]
           city_count++
+          col_count = split(parts[4], cols, ",")
+          numbered_city = city sprintf("%02d", city_count)
+          sub("^" city, numbered_city, cols[4])
+          out = cols[1]
+          for (k = 2; k <= col_count; k++) {
+            out = out "," cols[k]
+          }
+          print out
         }
       }
     }
@@ -334,9 +456,10 @@ main() {
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
-  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH"
+  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH"
 
   update_zip_cache
+  fetch_vps789_ct_ips
   log "Extracting $ZIP_PATH"
   unzip -oq "$ZIP_PATH" -d "$EXTRACT_DIR"
 
