@@ -6,7 +6,7 @@ WORK_DIR="${WORK_DIR:-$HOME/cfopt-auto-push}"
 CFST_PATH="${CFST_PATH:-$WORK_DIR/cfst}"
 PORT="${PORT:-}"
 PORTS="${PORTS:-443,2053,2083,2087,2096,8443}"
-DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-}"
+DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://speed.cloudflare.com/__down?bytes=100000000}"
 COUNTRIES_CSV="${COUNTRIES_CSV:-HK,KR,SG,PH,VN,MY,KZ,MN,IE,US}"
 OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
@@ -15,11 +15,13 @@ TARGET_PATH="${TARGET_PATH:-CloudflareSpeedTest_BJ.csv}"
 INTERVAL_DAYS="${INTERVAL_DAYS:-3}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
+MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.01}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
 TOKEN_ENV_NAME="${TOKEN_ENV_NAME:-GITHUB_TOKEN_CFOPT}"
 FORCE="${FORCE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
+CFST_DEBUG="${CFST_DEBUG:-0}"
 
 ZIP_PATH="$WORK_DIR/ip.zip"
 TMP_ZIP_PATH="$WORK_DIR/ip.download.zip"
@@ -136,6 +138,12 @@ start_cfst_for_port() {
   if [[ -n "$DOWNLOAD_TEST_URL" ]]; then
     args+=(-url "$DOWNLOAD_TEST_URL")
   fi
+  if awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
+    args+=(-sl "$MIN_SPEED_MBPS")
+  fi
+  if [[ "$CFST_DEBUG" == "1" ]]; then
+    args+=(-debug)
+  fi
 
   rm -f "$csv_path" "$stdout_path" "$stderr_path"
   log "Starting cfst on port $port: $CFST_PATH ${args[*]}"
@@ -183,7 +191,7 @@ build_combined_candidates() {
 
 filter_csv() {
   local tmp_csv="$CSV_PATH.filtered"
-  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v max_per_city="$MAX_PER_CITY" '
+  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" '
     {
       port = $1
       city = $2
@@ -194,8 +202,8 @@ filter_csv() {
       latency = $7 + 0
       speed = $8 + 0
       datacenter = $9
-      if (received >= min_received && loss < 1 && latency <= max_latency) {
-        speed_mbps = speed * 8
+      speed_mbps = speed * 8
+      if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
         row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s", ip, port, datacenter, remark, sent, received, loss, latency, speed)
         rows[++count] = sprintf("%s\t%012.6f\t%012.6f\t%s", city, 999999-speed, latency, row)
@@ -229,11 +237,20 @@ filter_csv() {
         }
       }
     }
-  ' "$COMBINED_CANDIDATES_PATH" > "$tmp_csv"
+  ' "$COMBINED_CANDIDATES_PATH" > "$tmp_csv"; then
+    log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
+    rm -f "$tmp_csv"
+    return 1
+  fi
+  if [[ ! -s "$tmp_csv" ]]; then
+    log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
+    rm -f "$tmp_csv"
+    return 1
+  fi
   mv "$tmp_csv" "$CSV_PATH"
   local kept
   kept=$(( $(wc -l < "$CSV_PATH") - 1 ))
-  log "Merged and filtered CSV rows across ports. Kept $kept. Top $MAX_PER_CITY per city/group. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms."
+  log "Merged and filtered CSV rows across ports. Kept $kept. Top $MAX_PER_CITY per city/group. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms, speed >= $MIN_SPEED_MBPS Mbps."
 }
 
 publish_to_github() {
@@ -340,6 +357,10 @@ main() {
       args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value.csv")
       [[ "$port_value" != "443" ]] && args+=(-tp "$port_value")
       [[ -n "$DOWNLOAD_TEST_URL" ]] && args+=(-url "$DOWNLOAD_TEST_URL")
+      if awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
+        args+=(-sl "$MIN_SPEED_MBPS")
+      fi
+      [[ "$CFST_DEBUG" == "1" ]] && args+=(-debug)
       log "Would run: $CFST_PATH ${args[*]}"
     done < "$WORK_DIR/port-work-items.csv"
     exit 0
