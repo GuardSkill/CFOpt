@@ -9,6 +9,8 @@ BASE_URL="${BASE_URL:-https://raw.githubusercontent.com/$OWNER/$REPO/$BRANCH}"
 SCRIPT_URL="${SCRIPT_URL:-$BASE_URL/scripts/linux/invoke-cfopt-auto-push-linux.sh}"
 CFST_URL="${CFST_URL:-$BASE_URL/scripts/linux/cfst}"
 CFST_TAR_URL="${CFST_TAR_URL:-$BASE_URL/scripts/linux/cfst_linux_amd64.tar.gz}"
+INSTALL_DAILY_AUTORUN="${INSTALL_DAILY_AUTORUN:-1}"
+DAILY_AT="${DAILY_AT:-04:00}"
 
 mkdir -p "$WORK_DIR"
 
@@ -43,6 +45,65 @@ if [[ ! -x "$WORK_DIR/cfst" ]]; then
     chmod +x "$WORK_DIR/cfst"
   fi
 fi
+
+install_daily_autorun() {
+  [[ "$INSTALL_DAILY_AUTORUN" == "1" ]] || return 0
+
+  local runner="$WORK_DIR/invoke-cfopt-auto-push-linux.sh"
+  local token_line=""
+  if [[ -n "${GITHUB_TOKEN_CFOPT:-}" ]]; then
+    token_line="Environment=GITHUB_TOKEN_CFOPT=${GITHUB_TOKEN_CFOPT}"
+  fi
+
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
+    local systemd_dir="$HOME/.config/systemd/user"
+    mkdir -p "$systemd_dir"
+    cat > "$systemd_dir/cfopt-auto-push.service" <<EOF
+[Unit]
+Description=CFOpt daily rolling retest and upload
+
+[Service]
+Type=oneshot
+Environment=WORK_DIR=$WORK_DIR
+Environment=CFST_PATH=$WORK_DIR/cfst
+Environment=INTERVAL_DAYS=1
+$token_line
+ExecStart=$runner
+EOF
+
+    cat > "$systemd_dir/cfopt-auto-push.timer" <<EOF
+[Unit]
+Description=Run CFOpt daily
+
+[Timer]
+OnCalendar=*-*-* $DAILY_AT:00
+Persistent=true
+Unit=cfopt-auto-push.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now cfopt-auto-push.timer
+    echo "Installed user systemd timer: cfopt-auto-push.timer ($DAILY_AT daily)"
+    return 0
+  fi
+
+  if command -v crontab >/dev/null 2>&1; then
+    local hour minute cron_line
+    hour="${DAILY_AT%%:*}"
+    minute="${DAILY_AT##*:}"
+    cron_line="$minute $hour * * * GITHUB_TOKEN_CFOPT=\"${GITHUB_TOKEN_CFOPT:-}\" WORK_DIR=\"$WORK_DIR\" CFST_PATH=\"$WORK_DIR/cfst\" INTERVAL_DAYS=1 \"$runner\" >> \"$WORK_DIR/cron.log\" 2>&1"
+    (crontab -l 2>/dev/null | grep -v 'cfopt-auto-push-linux.sh'; echo "$cron_line") | crontab -
+    echo "Installed crontab daily job at $DAILY_AT."
+    return 0
+  fi
+
+  echo "WARN: systemd user timer and crontab are unavailable. Daily autorun was not installed."
+}
+
+install_daily_autorun
 
 echo "Running CFOpt now. Set GITHUB_TOKEN_CFOPT before running if upload is needed."
 FORCE="${FORCE:-1}" \
