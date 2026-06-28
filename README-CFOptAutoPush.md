@@ -128,13 +128,25 @@ Install startup automation:
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\Install-CFOptAutoPushTask.ps1"
 ```
 
-The scheduled task is named `CFOpt Auto Push`. It runs at startup after a short delay. The main script records the last successful upload and only runs again after `IntervalDays`, default `6`.
+The scheduled task is named `CFOpt Auto Push`. It runs at startup after a short delay. The main script records the last successful upload and only runs again after `IntervalDays`, default `3`.
 
 ## Linux Usage
 
 File:
 
 - `scripts/linux/invoke-cfopt-auto-push-linux.sh`
+
+One-line install and immediate run:
+
+```bash
+GITHUB_TOKEN_CFOPT="your_token_here" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+```
+
+If you are already in the repo and only want to force a manual update:
+
+```bash
+FORCE=1 ./invoke-cfopt-auto-push-linux.sh
+```
 
 You provide the Linux `cfst` binary yourself.
 
@@ -174,7 +186,7 @@ CFST_PATH="$HOME/cfopt-auto-push/cfst"
 PORTS="443,2053,2083,2087,2096,8443"
 # Set PORT=443 to force a single-port run.
 TARGET_PATH="CloudflareSpeedTest_BJ.csv"
-INTERVAL_DAYS=6
+INTERVAL_DAYS=3
 MAX_LATENCY_MS=420
 MAX_PER_CITY=20
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
@@ -188,7 +200,7 @@ Cron example, run at reboot:
 @reboot GITHUB_TOKEN_CFOPT=your_token_here CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst /home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh >> /home/ubuntu/cfopt-auto-push/cron.log 2>&1
 ```
 
-Cron example, run daily and let the script enforce the 6-day interval:
+Cron example, run daily and let the script enforce the 3-day interval:
 
 ```cron
 20 4 * * * GITHUB_TOKEN_CFOPT=your_token_here CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst /home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh >> /home/ubuntu/cfopt-auto-push/cron.log 2>&1
@@ -225,7 +237,7 @@ Persistent=true
 WantedBy=timers.target
 ```
 
-The script still enforces the 6-day interval internally.
+The script still enforces the 3-day interval internally.
 
 ## Port Behavior
 
