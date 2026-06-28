@@ -34,7 +34,7 @@ Register-ScheduledTask `
     -Trigger $trigger `
     -Principal $principal `
     -Settings $settings `
-    -Description "Download IP lists, run cfst, and push CloudflareSpeedTest.csv to GitHub every 6 days after startup." | Out-Null
+    -Description "Download IP lists, run cfst, and push CloudflareSpeedTest.csv to GitHub every 3 days after startup." | Out-Null
 
 Write-Host "Scheduled task installed: $TaskName"
-Write-Host "It will run at startup after $StartupDelayMinutes minute(s). The main script enforces the 6-day interval."
+Write-Host "It will run at startup after $StartupDelayMinutes minute(s). The main script enforces the 3-day interval."
