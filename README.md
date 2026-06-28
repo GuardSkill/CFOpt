@@ -96,13 +96,13 @@ HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US
 默认额外重点测速地区：
 
 ```text
-HK,JP
+HK,KR,JP,SG
 ```
 
 默认 CFST 参数：
 
 ```text
--n 160
+-n 80
 -t 6
 -dn 60
 -dt 15
@@ -110,6 +110,13 @@ HK,JP
 -tlr 0
 -sl 0
 -p 0
+```
+
+默认外层 CFST 任务串行运行：
+
+```text
+MaxParallelCfst=1
+MAX_PARALLEL_CFST=1
 ```
 
 最终 CSV 会按地区 / 分组保留 Top 20。
@@ -276,7 +283,7 @@ Default ports:
 Default CFST parameters:
 
 ```text
--n 160
+-n 80
 -t 6
 -dn 60
 -dt 15
