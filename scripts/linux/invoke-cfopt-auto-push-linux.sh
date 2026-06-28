@@ -269,7 +269,7 @@ append_cfbestip_for_port() {
 
     local url="${CFBESTIP_BASE_URL%/}/ip_${country}.txt"
     local tmp_path="$WORK_DIR/cfbestip-${country}.txt"
-    if ! curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$url"; then
+    if ! curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$url" 2>/dev/null; then
       log "WARN: Failed to fetch cf-bestip candidates for $country: $url" >/dev/null
       continue
     fi
