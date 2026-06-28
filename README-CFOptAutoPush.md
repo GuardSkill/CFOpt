@@ -1,6 +1,6 @@
 # CFOpt Auto Push
 
-This repository automation generates CloudflareSpeedTest CSV files from `ip.zip`, filters bad rows, adds `鍩庡競` and `绔彛` columns, and uploads the result to `GuardSkill/CFOpt`.
+This repository automation generates CloudflareSpeedTest CSV files from `ip.zip`, filters bad rows, adds `閸╁骸绔禶 and `缁旑垰褰沗 columns, and uploads the result to `GuardSkill/CFOpt`.
 
 ## What It Uploads
 
@@ -22,7 +22,7 @@ Raw URL:
 https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter.ini
 ```
 
-Use this URL as edgetunnel `璁㈤槄杞崲閰嶇疆.SUBCONFIG`.
+Use this URL as edgetunnel `鐠併垽妲勬潪顒佸床闁板秶鐤?SUBCONFIG`.
 
 The config does not hard-code proxy IPs. It selects nodes by the online CSV-generated remarks:
 
@@ -40,19 +40,19 @@ Both scripts:
 5. Run one `cfst` process per port in parallel
 6. Merge all port CSVs and filter unusable or extreme rows
 7. Keep at most 20 best rows per source group across all ports
-8. Output API-compatible columns including `IP鍦板潃`, `绔彛`, `鏁版嵁涓績`, `鍩庡競`, and `TLS`
-9. Put subscription remarks in `鍩庡競`, such as `SG [86ms 76.20Mbps]`
+8. Output API-compatible columns including `IP閸︽澘娼僠, `缁旑垰褰沗, `閺佺増宓佹稉顓炵妇`, `閸╁骸绔禶, and `TLS`
+9. Put subscription remarks in `閸╁骸绔禶, such as `SG [86ms 76.20Mbps]`
 10. Upload the CSV to GitHub
 
-The current zip groups are country/region codes, so the `鍩庡競` value starts with `HK`, `KR`, `SG`, `US`, and similar. It also includes latency and converted Mbps speed so edgetunnel can produce lines such as `198.41.223.63:2096#SG [86ms 76.20Mbps]`.
+The current zip groups are country/region codes, so the `閸╁骸绔禶 value starts with `HK`, `KR`, `SG`, `US`, and similar. It also includes latency and converted Mbps speed so edgetunnel can produce lines such as `198.41.223.63:2096#SG [86ms 76.20Mbps]`.
 
 ## Filtering Rules
 
 Defaults:
 
-- Keep rows with `宸叉帴鏀?>= 1`
-- Keep rows with `涓㈠寘鐜?< 1`
-- Keep rows with `骞冲潎寤惰繜 <= 420`
+- Keep rows with `瀹稿弶甯撮弨?>= 1`
+- Keep rows with `娑撱垹瀵橀悳?< 1`
+- Keep rows with `楠炲啿娼庡鎯扮箿 <= 420`
 - Keep rows with download speed `>= 0.01 Mbps`, so `0.00` speed results do not enter the subscription
 - Keep at most `20` rows per source group across all tested ports, sorted by higher download speed first, then lower latency
 
@@ -80,9 +80,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 
 The scripts fetch `https://vps789.com/openApi/cfIpApi` by default and only use `data.CT`, which is the China Telecom Cloudflare preferred-IP list. These IPs are added to every CFST port input and tested together with candidates from `ip.zip`.
 
-- Enabled by default: Windows enabled; Linux `ENABLE_VPS789_CT=1`
-- Disable: Windows `-DisableVps789Ct`; Linux `ENABLE_VPS789_CT=0`
-- Default limit: `Vps789CtLimit=50` / `VPS789_CT_LIMIT=50`
+- Disabled by default because the CT API currently returns very few IPs
+- Enable manually: Windows `-EnableVps789Ct`; Linux `ENABLE_VPS789_CT=1`
+- Default limit: `Vps789CtLimit=100` / `VPS789_CT_LIMIT=50`
 - Default filter: China Telecom latency `<=260ms`, China Telecom loss `<=5`
 - Helper export: `VPS789_CF_CT_Candidates.csv`
 
@@ -306,7 +306,7 @@ Important files:
 - `ip.zip`: downloaded zip cache
 - `extract`: extracted zip contents
 - `selected-ip.txt`: merged cfst input
-- `selected-ip-city-map.csv`: IP-to-group map used for the `鍩庡競` column
+- `selected-ip-city-map.csv`: IP-to-group map used for the `閸╁骸绔禶 column
 - `CloudflareSpeedTest.csv`: generated and filtered CSV before upload, using edgetunnel-compatible columns
 - `cfst-stdin.txt` on Windows: blank line for cfst final Enter prompt
 - `cfst-stdout.log` and `cfst-stderr.log`: captured cfst output
