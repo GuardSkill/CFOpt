@@ -218,15 +218,16 @@ export GITHUB_TOKEN_CFOPT="your token"
 Windows:
 
 ```powershell
+cd /d H:\Projects\CFOpt
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
 ```
 
-The task runs daily at `04:00` and also checks shortly after startup.
+The task runs daily at `04:00`, checks shortly after startup, executes the script from the cloned repository, and uses `.cfopt-work` under the repository as the working directory.
 
 Linux:
 
 ```bash
-GITHUB_TOKEN_CFOPT="your token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+GITHUB_TOKEN_CFOPT="your token" AUTORUN_BACKEND=cron bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
 ```
 
-The bootstrap script installs a user `systemd` timer when available, otherwise it falls back to `crontab`. The default schedule is daily at `04:00`.
+For containers, use `AUTORUN_BACKEND=cron`. With the default `AUTORUN_BACKEND=auto`, the bootstrap script installs a user `systemd` timer when available, otherwise it falls back to `crontab`. The default schedule is daily at `04:00`.
