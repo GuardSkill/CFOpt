@@ -278,15 +278,16 @@ export GITHUB_TOKEN_CFOPT="你的 token"
 Windows 安装计划任务：
 
 ```powershell
+cd /d H:\Projects\CFOpt
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
 ```
 
-默认每天 `04:00` 运行，也会在开机后延迟 2 分钟检查一次。
+默认每天 `04:00` 运行，也会在开机后延迟 2 分钟检查一次。任务会执行当前仓库里的脚本，并使用仓库下 `.cfopt-work` 作为工作目录。
 
-Linux 一键脚本会自动安装后台任务：
+Linux 一键脚本会自动安装后台任务。容器环境建议强制使用 crontab：
 
 ```bash
-GITHUB_TOKEN_CFOPT="你的 token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+GITHUB_TOKEN_CFOPT="你的 token" AUTORUN_BACKEND=cron bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
 ```
 
-优先安装用户级 `systemd` timer；如果不可用，则写入 `crontab`。默认每天 `04:00` 运行。
+默认 `AUTORUN_BACKEND=auto` 会优先安装用户级 `systemd` timer；如果不可用，则写入 `crontab`。默认每天 `04:00` 运行。
