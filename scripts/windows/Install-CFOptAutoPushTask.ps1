@@ -1,5 +1,7 @@
 param(
     [string]$ScriptPath = (Join-Path $PSScriptRoot "Invoke-CFOptAutoPush.ps1"),
+    [string]$WorkDir = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) ".cfopt-work"),
+    [string]$CfstPath = "H:\PyProjects\cfst_windows_amd64\cfst.exe",
     [string]$TaskName = "CFOpt Auto Push",
     [string]$DailyAt = "04:00",
     [int]$StartupDelayMinutes = 2
@@ -10,11 +12,17 @@ $ErrorActionPreference = "Stop"
 if (-not (Test-Path -LiteralPath $ScriptPath)) {
     throw "Main script not found: $ScriptPath"
 }
+if (-not (Test-Path -LiteralPath $CfstPath)) {
+    throw "cfst executable not found: $CfstPath"
+}
+
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
+$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`""
 
-$action = New-ScheduledTaskAction -Execute $powershell -Argument $argument
+$action = New-ScheduledTaskAction -Execute $powershell -Argument $argument -WorkingDirectory $repoRoot
 $dailyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Parse($DailyAt))
 $startupTrigger = New-ScheduledTaskTrigger -AtStartup
 $startupTrigger.Delay = "PT${StartupDelayMinutes}M"
@@ -40,3 +48,5 @@ Register-ScheduledTask `
 
 Write-Host "Scheduled task installed: $TaskName"
 Write-Host "It will run daily at $DailyAt and at startup after $StartupDelayMinutes minute(s). The main script enforces the 1-day interval."
+Write-Host "Script path: $ScriptPath"
+Write-Host "Work dir: $WorkDir"
