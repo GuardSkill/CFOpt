@@ -23,6 +23,7 @@ CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-6}"
 CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-60}"
 CFST_DOWNLOAD_TEST_TIME="${CFST_DOWNLOAD_TEST_TIME:-15}"
 CFST_LOSS_RATE_LIMIT="${CFST_LOSS_RATE_LIMIT:-0}"
+MAX_PARALLEL_CFST="${MAX_PARALLEL_CFST:-3}"
 FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-HK,JP}"
 TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
 ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
@@ -685,6 +686,9 @@ main() {
   fi
 
   while IFS=',' read -r port_value scope selected_ip_path _map_path; do
+    while (( $(jobs -rp | wc -l) >= MAX_PARALLEL_CFST )); do
+      sleep 2
+    done
     start_cfst_for_port "$port_value" "$scope" "$selected_ip_path"
   done < "$WORK_DIR/port-work-items.csv"
 
