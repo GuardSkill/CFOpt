@@ -1,33 +1,31 @@
-# CFOpt 鑷姩娴嬮€熶笌鎺ㄩ€?
-杩欏鑴氭湰浼氳嚜鍔ㄤ笅杞?`ip.zip`锛屾寜澶氫釜绔彛骞惰娴嬮€燂紝鍚堝苟缁撴灉锛岃繃婊や笉鍙敤鎴栭珮寤惰繜鑺傜偣锛岀劧鍚庢妸鏈€缁?CSV 涓婁紶鍒?`GuardSkill/CFOpt`銆?
-## 涓婁紶鏂囦欢
+# CFOpt 閼奉亜濮╁ù瀣偓鐔剁瑢閹恒劑鈧?
+鏉╂瑥顨滈懘姘拱娴兼俺鍤滈崝銊ょ瑓鏉?`ip.zip`閿涘本瀵滄径姘嚋缁旑垰褰涢獮鎯邦攽濞村鈧噦绱濋崥鍫濊嫙缂佹挻鐏夐敍宀冪箖濠娿倓绗夐崣顖滄暏閹存牠鐝鎯扮箿閼哄倻鍋ｉ敍宀€鍔ч崥搴㈠Ω閺堚偓缂?CSV 娑撳﹣绱堕崚?`GuardSkill/CFOpt`閵?
+## 娑撳﹣绱堕弬鍥︽
 
-- Windows/CD 榛樿涓婁紶锛歚CloudflareSpeedTest_CD.csv`
-- Linux/BJ 榛樿涓婁紶锛歚CloudflareSpeedTest_BJ.csv`
-- 璁㈤槄杞崲閰嶇疆锛歚CFOpt_Subconverter.ini`
+- Windows/CD 姒涙顓绘稉濠佺炊閿涙瓪CloudflareSpeedTest_CD.csv`
+- Linux/BJ 姒涙顓绘稉濠佺炊閿涙瓪CloudflareSpeedTest_BJ.csv`
+- 鐠併垽妲勬潪顒佸床闁板秶鐤嗛敍姝欳FOpt_Subconverter.ini`
 
-## 鏁版嵁娴佺▼
+## 閺佺増宓佸ù浣衡柤
 
-1. 涓嬭浇 `https://zip.cm.edu.kg/ip.zip`
-2. 瑙ｅ帇骞惰鍙栧涓鍙ｇ洰褰曪紝榛樿 `443`銆乣2053`銆乣2083`銆乣2087`銆乣2096`銆乣8443`
-3. 姣忎釜绔彛鍒嗗埆鍚堝苟鎸囧畾鍥藉/鍦板尯鏂囦欢锛屼緥濡?`HK.txt`銆乣KR.txt`銆乣SG.txt`
-4. 姣忎釜绔彛鐢熸垚鐙珛鐨?IP 鍒板浗瀹?鍦板尯鏄犲皠锛屼緥濡?`selected-ip-city-map-443.csv`
-5. 姣忎釜绔彛鍚姩涓€涓?`cfst` 杩涚▼锛屽苟琛屾祴閫?6. 鍚堝苟鎵€鏈夌鍙ｇ殑 CSV 缁撴灉
-7. 杩囨护涓嶅彲鐢ㄦ垨楂樺欢杩熺粨鏋?8. 姣忎釜鍥藉/鍦板尯鏈€澶氫繚鐣?Top 20锛屼紭鍏堜笅杞介€熷害鏇撮珮锛屽叾娆″钩鍧囧欢杩熸洿浣?9. 杈撳嚭 edgetunnel 鍏煎鍒楋細`IP鍦板潃`銆乣绔彛`銆乣鏁版嵁涓績`銆乣鍩庡競`銆乣TLS`
-10. 涓婁紶鍒?GitHub
+1. 娑撳娴?`https://zip.cm.edu.kg/ip.zip`
+2. 鐟欙絽甯囬獮鎯邦嚢閸欐牕顦挎稉顏嗩伂閸欙絿娲拌ぐ鏇礉姒涙顓?`443`閵嗕梗2053`閵嗕梗2083`閵嗕梗2087`閵嗕梗2096`閵嗕梗8443`
+3. 濮ｅ繋閲滅粩顖氬經閸掑棗鍩嗛崥鍫濊嫙閹稿洤鐣鹃崶钘夘啀/閸︽澘灏弬鍥︽閿涘奔绶ユ俊?`HK.txt`閵嗕梗KR.txt`閵嗕梗SG.txt`
+4. 濮ｅ繋閲滅粩顖氬經閻㈢喐鍨氶悪顒傜彌閻?IP 閸掓澘娴楃€?閸︽澘灏弰鐘茬殸閿涘奔绶ユ俊?`selected-ip-city-map-443.csv`
+5. 濮ｅ繋閲滅粩顖氬經閸氼垰濮╂稉鈧稉?`cfst` 鏉╂稓鈻奸敍灞借嫙鐞涘本绁撮柅?6. 閸氬牆鑻熼幍鈧張澶岊伂閸欙絿娈?CSV 缂佹挻鐏?7. 鏉╁洦鎶ゆ稉宥呭讲閻劍鍨ㄦ妯烘鏉╃喓绮ㄩ弸?8. 濮ｅ繋閲滈崶钘夘啀/閸︽澘灏張鈧径姘箽閻?Top 20閿涘奔绱崗鍫滅瑓鏉炰粙鈧喎瀹抽弴鎾彯閿涘苯鍙惧▎鈥抽挬閸у洤娆㈡潻鐔告纯娴?9. 鏉堟挸鍤?edgetunnel 閸忕厧顔愰崚妤嬬窗`IP閸︽澘娼僠閵嗕梗缁旑垰褰沗閵嗕梗閺佺増宓佹稉顓炵妇`閵嗕梗閸╁骸绔禶閵嗕梗TLS`
+10. 娑撳﹣绱堕崚?GitHub
 
-鏈€缁堣妭鐐瑰娉ㄤ細绫讳技锛?
+閺堚偓缂佸牐濡悙鐟邦槵濞夈劋绱扮猾璁虫妧閿?
 ```text
 198.41.223.63:2096#SG [86ms 76.20Mbps]
 ```
 
-## 榛樿杩囨护瑙勫垯
-
-- 淇濈暀 `宸叉帴鏀?>= 1`
-- 淇濈暀 `涓㈠寘鐜?< 1`
-- 淇濈暀 `骞冲潎寤惰繜 <= 420`
-- 淇濈暀 `涓嬭浇閫熷害 >= 0.01 Mbps`锛岄伩鍏?0.00 閫熺粨鏋滆繘鍏ヨ闃?- 姣忎釜鍥藉/鍦板尯鏈€澶氫繚鐣?`20` 鏉★紝璺ㄦ墍鏈夋祴璇曠鍙ｄ竴璧锋帓鍚?
-涓存椂璋冩暣寤惰繜闃堝€硷細
+## 姒涙顓绘潻鍥ㄦ姢鐟欏嫬鍨?
+- 娣囨繄鏆€ `瀹稿弶甯撮弨?>= 1`
+- 娣囨繄鏆€ `娑撱垹瀵橀悳?< 1`
+- 娣囨繄鏆€ `楠炲啿娼庡鎯扮箿 <= 420`
+- 娣囨繄鏆€ `娑撳娴囬柅鐔峰 >= 0.01 Mbps`閿涘矂浼╅崗?0.00 闁喓绮ㄩ弸婊嗙箻閸忋儴顓归梼?- 濮ｅ繋閲滈崶钘夘啀/閸︽澘灏張鈧径姘箽閻?`20` 閺夆槄绱濈捄銊﹀閺堝绁寸拠鏇狀伂閸欙絼绔寸挧閿嬪笓閸?
+娑撳瓨妞傜拫鍐╂殻瀵ゆ儼绻滈梼鍫濃偓纭风窗
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -MaxLatencyMs 300
@@ -37,8 +35,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 FORCE=1 MAX_LATENCY_MS=300 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-濡傛灉缁撴灉鍏ㄦ槸 `0.00 MB/s`锛岀敤 cfst 璋冭瘯妯″紡鎺掓煡涓嬭浇娴嬮€熷湴鍧€銆両P 鎴栫綉缁滈棶棰橈細
-
+婵″倹鐏夌紒鎾寸亯閸忋劍妲?`0.00 MB/s`閿涘瞼鏁?cfst 鐠嬪啳鐦Ο鈥崇础閹烘帗鐓℃稉瀣祰濞村鈧喎婀撮崸鈧妴涓 閹存牜缍夌紒婊堟６妫版﹫绱?
 ```bash
 FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
@@ -47,85 +44,82 @@ FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
 ```
 
-## Windows 浣跨敤
-
-榛樿璺緞锛?
+## Windows 娴ｈ法鏁?
+姒涙顓荤捄顖氱窞閿?
 ```text
 H:\PyProjects\cfst_windows_amd64\cfst.exe
 H:\PyProjects\CFOptAutoPush
 ```
 
-鍙笅杞姐€佽В鍘嬨€佸噯澶囪緭鍏ワ紝涓嶆祴閫熴€佷笉涓婁紶锛?
+閸欘亙绗呮潪濮愨偓浣叫掗崢瀣ㄢ偓浣稿櫙婢跺洩绶崗銉礉娑撳秵绁撮柅鐔粹偓浣风瑝娑撳﹣绱堕敍?
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -DryRun
 ```
 
-鐢熸垚 CSV 浣嗕笉涓婁紶锛?
+閻㈢喐鍨?CSV 娴ｅ棔绗夋稉濠佺炊閿?
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -SkipUpload
 ```
 
-榛樿澶氱鍙ｅ苟琛屾祴閫熷苟涓婁紶锛?
+姒涙顓绘径姘鳖伂閸欙絽鑻熺悰灞剧ゴ闁喎鑻熸稉濠佺炊閿?
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
 ```
 
-鎸囧畾涓€缁勭鍙ｏ細
-
+閹稿洤鐣炬稉鈧紒鍕伂閸欙綇绱?
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -Ports "443,2053,2083,2087,2096,8443"
 ```
 
-涓存椂鍙祴鍗曠鍙ｏ細
+娑撳瓨妞傞崣顏呯ゴ閸楁洜顏崣锝忕窗
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -Port 8443
 ```
 
-## Linux 浣跨敤
-
-涓€琛屽畨瑁呭苟绔嬪嵆杩愯锛?
+## Linux 娴ｈ法鏁?
+娑撯偓鐞涘苯鐣ㄧ憗鍛嫙缁斿宓嗘潻鎰攽閿?
 ```bash
-GITHUB_TOKEN_CFOPT="浣犵殑 token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+GITHUB_TOKEN_CFOPT="娴ｇ姷娈?token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
 ```
 
-濡傛灉宸茬粡鍦ㄤ粨搴撶洰褰曢噷锛屽彧鏄兂鎵嬪姩绔嬪嵆鏇存柊涓€娆★紝鐢細
+婵″倹鐏夊鑼病閸︺劋绮ㄦ惔鎾舵窗瑜版洟鍣烽敍灞藉涧閺勵垱鍏傞幍瀣З缁斿宓嗛弴瀛樻煀娑撯偓濞嗏槄绱濋悽顭掔窗
 
 ```bash
 FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-鍑嗗 `cfst`锛?
+閸戝棗顦?`cfst`閿?
 ```bash
 mkdir -p "$HOME/cfopt-auto-push"
 cp ./cfst "$HOME/cfopt-auto-push/cfst"
 chmod +x "$HOME/cfopt-auto-push/cfst"
 chmod +x ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-export GITHUB_TOKEN_CFOPT="浣犵殑 token"
+export GITHUB_TOKEN_CFOPT="娴ｇ姷娈?token"
 ```
 
-榛樿澶氱鍙ｅ苟琛屾祴閫熷苟涓婁紶锛?
+姒涙顓绘径姘鳖伂閸欙絽鑻熺悰灞剧ゴ闁喎鑻熸稉濠佺炊閿?
 ```bash
 FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-鐢熸垚 CSV 浣嗕笉涓婁紶锛?
+閻㈢喐鍨?CSV 娴ｅ棔绗夋稉濠佺炊閿?
 ```bash
 FORCE=1 SKIP_UPLOAD=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-鎸囧畾绔彛鍒楄〃锛?
+閹稿洤鐣剧粩顖氬經閸掓銆冮敍?
 ```bash
 FORCE=1 PORTS="443,2053,2083,2087,2096,8443" ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-涓存椂鍙祴鍗曠鍙ｏ細
+娑撳瓨妞傞崣顏呯ゴ閸楁洜顏崣锝忕窗
 
 ```bash
 FORCE=1 PORT=8443 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-甯哥敤鐜鍙橀噺锛?
+鐢摜鏁ら悳顖氼暔閸欐﹢鍣洪敍?
 ```bash
 WORK_DIR="$HOME/cfopt-auto-push"
 CFST_PATH="$HOME/cfopt-auto-push/cfst"
@@ -138,16 +132,16 @@ MAX_PER_CITY=20
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
 ```
 
-## 绔彛璇存槑
+## 缁旑垰褰涚拠瀛樻
 
-`ip.zip` 閲岄潰宸茬粡鎸夌鍙ｅ垎鐩綍銆傝剼鏈幇鍦ㄩ粯璁よ鍙栧涓鍙ｇ洰褰曞苟骞惰娴嬮€燂紝鏈€鍚庡悎骞舵垚涓€涓?CSV銆?
-- Windows 榛樿锛歚-Ports "443,2053,2083,2087,2096,8443"`
-- Linux 榛樿锛歚PORTS="443,2053,2083,2087,2096,8443"`
-- 鍗曠鍙ｈ鐩栵細Windows 鐢?`-Port 8443`锛孡inux 鐢?`PORT=8443`
-- `443` 涓嶇粰 `cfst` 浼?`-tp`锛屼娇鐢?cfst 榛樿 443
-- 闈?443 绔彛浼氱粰 `cfst` 浼?`-tp <绔彛>`
+`ip.zip` 闁插矂娼板鑼病閹稿顏崣锝呭瀻閻╊喖缍嶉妴鍌濆壖閺堫剛骞囬崷銊╃帛鐠併倛顕伴崣鏍ь樋娑擃亞顏崣锝囨窗瑜版洖鑻熼獮鎯邦攽濞村鈧噦绱濋張鈧崥搴℃値楠炶埖鍨氭稉鈧稉?CSV閵?
+- Windows 姒涙顓婚敍姝?Ports "443,2053,2083,2087,2096,8443"`
+- Linux 姒涙顓婚敍姝歅ORTS="443,2053,2083,2087,2096,8443"`
+- 閸楁洜顏崣锝堫洬閻╂牭绱癢indows 閻?`-Port 8443`閿涘inux 閻?`PORT=8443`
+- `443` 娑撳秶绮?`cfst` 娴?`-tp`閿涘奔濞囬悽?cfst 姒涙顓?443
+- 闂?443 缁旑垰褰涙导姘辩舶 `cfst` 娴?`-tp <缁旑垰褰?`
 
-濡傛灉娴嬮€?`80` 绔彛锛宍cfst` 杩橀渶瑕?HTTP 涓嬭浇娴嬮€熷湴鍧€锛?
+婵″倹鐏夊ù瀣偓?`80` 缁旑垰褰涢敍瀹峜fst` 鏉╂﹢娓剁憰?HTTP 娑撳娴囧ù瀣偓鐔锋勾閸р偓閿?
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -Port 80 -DownloadTestUrl "http://speed.cloudflare.com/__down?bytes=99999999"
 ```
@@ -156,32 +150,32 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 FORCE=1 PORT=80 DOWNLOAD_TEST_URL="http://speed.cloudflare.com/__down?bytes=99999999" ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-鍓嶆彁鏄笅杞界殑 `ip.zip` 閲屽瓨鍦?`80` 鐩綍銆?
+閸撳秵褰侀弰顖欑瑓鏉炵晫娈?`ip.zip` 闁插苯鐡ㄩ崷?`80` 閻╊喖缍嶉妴?
 ## GitHub Token
 
-Windows锛?
+Windows閿?
 ```powershell
-[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "浣犵殑 token", "User")
+[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "娴ｇ姷娈?token", "User")
 ```
 
-Linux锛?
+Linux閿?
 ```bash
-export GITHUB_TOKEN_CFOPT="浣犵殑 token"
+export GITHUB_TOKEN_CFOPT="娴ｇ姷娈?token"
 ```
 
-## 涓棿鏂囦欢
+## 娑擃參妫块弬鍥︽
 
-- `CloudflareSpeedTest.csv`锛氭渶缁堝悎骞惰繃婊ゅ悗鍑嗗涓婁紶鐨?CSV
-- `CloudflareSpeedTest-443.csv`锛氬崟涓鍙ｇ殑鍘熷娴嬮€?CSV
-- `selected-ip-443.txt`锛氱粰 `cfst` 浣跨敤鐨勫崟绔彛杈撳叆
-- `selected-ip-city-map-443.csv`锛氬崟绔彛 IP 鍒板浗瀹?鍦板尯鐨勬槧灏?- `cfst-443-stdout.log` / `cfst-443-stderr.log`锛氬崟绔彛娴嬮€熸棩蹇?- `auto-push.log`锛氭€绘棩蹇?- `last-success.txt`锛氫笂娆℃垚鍔熶笂浼犳椂闂?
+- `CloudflareSpeedTest.csv`閿涙碍娓剁紒鍫濇値楠炴儼绻冨銈呮倵閸戝棗顦稉濠佺炊閻?CSV
+- `CloudflareSpeedTest-443.csv`閿涙艾宕熸稉顏嗩伂閸欙絿娈戦崢鐔奉潗濞村鈧?CSV
+- `selected-ip-443.txt`閿涙氨绮?`cfst` 娴ｈ法鏁ら惃鍕礋缁旑垰褰涙潏鎾冲弳
+- `selected-ip-city-map-443.csv`閿涙艾宕熺粩顖氬經 IP 閸掓澘娴楃€?閸︽澘灏惃鍕Ё鐏?- `cfst-443-stdout.log` / `cfst-443-stderr.log`閿涙艾宕熺粩顖氬經濞村鈧喐妫╄箛?- `auto-push.log`閿涙碍鈧粯妫╄箛?- `last-success.txt`閿涙矮绗傚▎鈩冨灇閸旂喍绗傛导鐘虫闂?
 ## vps789 CT candidates
 
 The scripts fetch `https://vps789.com/openApi/cfIpApi` by default and only use `data.CT`, which is the China Telecom Cloudflare preferred-IP list. These IPs are added to every CFST port input and tested together with candidates from `ip.zip`.
 
-- Enabled by default: Windows enabled; Linux `ENABLE_VPS789_CT=1`
-- Disable: Windows `-DisableVps789Ct`; Linux `ENABLE_VPS789_CT=0`
-- Default limit: `Vps789CtLimit=50` / `VPS789_CT_LIMIT=50`
+- Disabled by default because the CT API currently returns very few IPs
+- Enable manually: Windows `-EnableVps789Ct`; Linux `ENABLE_VPS789_CT=1`
+- Default limit: `Vps789CtLimit=100` / `VPS789_CT_LIMIT=50`
 - Default filter: China Telecom latency `<=260ms`, China Telecom loss `<=5`
 - Helper export: `VPS789_CF_CT_Candidates.csv`
 
