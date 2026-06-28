@@ -17,6 +17,12 @@ MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.01}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
+CFST_THREADS="${CFST_THREADS:-160}"
+CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-6}"
+CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-60}"
+CFST_DOWNLOAD_TEST_TIME="${CFST_DOWNLOAD_TEST_TIME:-15}"
+CFST_LOSS_RATE_LIMIT="${CFST_LOSS_RATE_LIMIT:-0}"
+FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-HK}"
 ENABLE_VPS789_CT="${ENABLE_VPS789_CT:-0}"
 VPS789_CT_LIMIT="${VPS789_CT_LIMIT:-50}"
 VPS789_MAX_DX_LATENCY_MS="${VPS789_MAX_DX_LATENCY_MS:-260}"
@@ -182,9 +188,13 @@ PY
 
 merge_country_files_for_port() {
   local port="$1"
+  local scope="${2:-all}"
+  local countries_csv="${3:-$COUNTRIES_CSV}"
+  local include_vps789="${4:-1}"
+  local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
   local port_dir="$EXTRACT_DIR/$port"
-  local selected_ip_path="$WORK_DIR/selected-ip-$port.txt"
-  local map_path="$WORK_DIR/selected-ip-city-map-$port.csv"
+  local selected_ip_path="$WORK_DIR/selected-ip-$port-$safe_scope.txt"
+  local map_path="$WORK_DIR/selected-ip-city-map-$port-$safe_scope.csv"
 
   if [[ ! -d "$port_dir" ]]; then
     log "WARN: Port folder not found in extracted zip: $port_dir. Skipping port $port."
@@ -195,7 +205,7 @@ merge_country_files_for_port() {
   : > "$selected_ip_path"
   : > "$map_path"
 
-  IFS=',' read -r -a countries <<< "$COUNTRIES_CSV"
+  IFS=',' read -r -a countries <<< "$countries_csv"
   local found=0
   for country in "${countries[@]}"; do
     local file="$port_dir/${country}.txt"
@@ -209,7 +219,7 @@ merge_country_files_for_port() {
   done
 
   local vps789_added=0
-  if [[ -s "$VPS789_CT_IP_PATH" ]]; then
+  if [[ "$include_vps789" == "1" && -s "$VPS789_CT_IP_PATH" ]]; then
     while IFS= read -r ip; do
       [[ -n "$ip" ]] || continue
       if ! grep -Fxq "$ip" "$selected_ip_path"; then
@@ -227,17 +237,19 @@ merge_country_files_for_port() {
     return 1
   fi
 
-  log "Merged $line_count IP lines for port $port into $selected_ip_path. vps789 CT added: $vps789_added."
-  printf '%s,%s,%s\n' "$port" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
+  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. vps789 CT added: $vps789_added."
+  printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
 start_cfst_for_port() {
   local port="$1"
-  local selected_ip_path="$2"
-  local csv_path="$WORK_DIR/CloudflareSpeedTest-$port.csv"
-  local stdout_path="$WORK_DIR/cfst-$port-stdout.log"
-  local stderr_path="$WORK_DIR/cfst-$port-stderr.log"
-  local args=(-f "$selected_ip_path" -o "$csv_path")
+  local scope="$2"
+  local selected_ip_path="$3"
+  local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
+  local csv_path="$WORK_DIR/CloudflareSpeedTest-$port-$safe_scope.csv"
+  local stdout_path="$WORK_DIR/cfst-$port-$safe_scope-stdout.log"
+  local stderr_path="$WORK_DIR/cfst-$port-$safe_scope-stderr.log"
+  local args=(-f "$selected_ip_path" -o "$csv_path" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$CFST_DOWNLOAD_TEST_COUNT" -dt "$CFST_DOWNLOAD_TEST_TIME" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
 
   if [[ "$port" != "443" ]]; then
     args+=(-tp "$port")
@@ -253,20 +265,21 @@ start_cfst_for_port() {
   fi
 
   rm -f "$csv_path" "$stdout_path" "$stderr_path"
-  log "Starting cfst on port $port: $CFST_PATH ${args[*]}"
+  log "Starting cfst on port $port scope $scope: $CFST_PATH ${args[*]}"
   (printf '\n' | "$CFST_PATH" "${args[@]}" > "$stdout_path" 2> "$stderr_path") &
-  printf '%s,%s,%s,%s\n' "$port" "$!" "$csv_path" "$selected_ip_path" >> "$WORK_DIR/cfst-processes.csv"
+  printf '%s,%s,%s,%s,%s\n' "$port" "$scope" "$!" "$csv_path" "$selected_ip_path" >> "$WORK_DIR/cfst-processes.csv"
 }
 
 wait_cfst_processes() {
   local failed=0
-  while IFS=',' read -r port pid csv_path _selected_ip_path; do
+  while IFS=',' read -r port scope pid csv_path _selected_ip_path; do
     if ! wait "$pid"; then
-      log "ERROR: cfst failed on port $port."
+      log "ERROR: cfst failed on port $port scope $scope."
       failed=1
     fi
-    [[ -f "$WORK_DIR/cfst-$port-stdout.log" ]] && sed "s/^/cfst[$port]: /" "$WORK_DIR/cfst-$port-stdout.log" | tee -a "$LOG_FILE" >/dev/null || true
-    [[ -f "$WORK_DIR/cfst-$port-stderr.log" ]] && sed "s/^/cfst[$port] stderr: /" "$WORK_DIR/cfst-$port-stderr.log" | tee -a "$LOG_FILE" >/dev/null || true
+    local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
+    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" ]] && sed "s/^/cfst[$port/$scope]: /" "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" | tee -a "$LOG_FILE" >/dev/null || true
+    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" ]] && sed "s/^/cfst[$port/$scope] stderr: /" "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" | tee -a "$LOG_FILE" >/dev/null || true
     if [[ ! -f "$csv_path" ]]; then
       log "ERROR: cfst completed but CSV was not created for port $port: $csv_path"
       failed=1
@@ -278,8 +291,9 @@ wait_cfst_processes() {
 
 build_combined_candidates() {
   : > "$COMBINED_CANDIDATES_PATH"
-  while IFS=',' read -r port _selected_ip_path map_path; do
-    local csv_path="$WORK_DIR/CloudflareSpeedTest-$port.csv"
+  while IFS=',' read -r port scope _selected_ip_path map_path; do
+    local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
+    local csv_path="$WORK_DIR/CloudflareSpeedTest-$port-$safe_scope.csv"
     [[ -f "$csv_path" ]] || continue
     awk -F',' -v port="$port" '
       FNR == NR {
@@ -466,7 +480,13 @@ main() {
   mapfile -t ports < <(effective_ports)
   log "Configured ports: ${ports[*]}"
   for port_value in "${ports[@]}"; do
-    merge_country_files_for_port "$port_value" || true
+    merge_country_files_for_port "$port_value" "all" "$COUNTRIES_CSV" "1" || true
+    IFS=',' read -r -a focus_countries <<< "$FOCUS_COUNTRIES_CSV"
+    for focus_country in "${focus_countries[@]}"; do
+      focus_country="$(printf '%s' "$focus_country" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
+      [[ -n "$focus_country" ]] || continue
+      merge_country_files_for_port "$port_value" "focus-$focus_country" "$focus_country" "0" || true
+    done
   done
 
   if [[ ! -s "$WORK_DIR/port-work-items.csv" ]]; then
@@ -476,8 +496,9 @@ main() {
 
   if [[ "$DRY_RUN" == "1" ]]; then
     log "Dry run enabled. Skipping cfst execution and GitHub upload."
-    while IFS=',' read -r port_value selected_ip_path _map_path; do
-      args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value.csv")
+    while IFS=',' read -r port_value scope selected_ip_path _map_path; do
+      safe_scope="${scope//[^A-Za-z0-9_-]/_}"
+      args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value-$safe_scope.csv" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$CFST_DOWNLOAD_TEST_COUNT" -dt "$CFST_DOWNLOAD_TEST_TIME" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
       [[ "$port_value" != "443" ]] && args+=(-tp "$port_value")
       [[ -n "$DOWNLOAD_TEST_URL" ]] && args+=(-url "$DOWNLOAD_TEST_URL")
       if awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
@@ -489,8 +510,8 @@ main() {
     exit 0
   fi
 
-  while IFS=',' read -r port_value selected_ip_path _map_path; do
-    start_cfst_for_port "$port_value" "$selected_ip_path"
+  while IFS=',' read -r port_value scope selected_ip_path _map_path; do
+    start_cfst_for_port "$port_value" "$scope" "$selected_ip_path"
   done < "$WORK_DIR/port-work-items.csv"
 
   wait_cfst_processes
