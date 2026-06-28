@@ -85,6 +85,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\Invoke-CFOptAutoPush.ps1"
 
 ## Linux 使用
 
+一行安装并立即运行：
+
+```bash
+GITHUB_TOKEN_CFOPT="你的 token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+```
+
+如果已经在仓库目录里，只是想手动立即更新一次，用：
+
+```bash
+FORCE=1 ./invoke-cfopt-auto-push-linux.sh
+```
+
 准备 `cfst`：
 
 ```bash
@@ -126,7 +138,7 @@ WORK_DIR="$HOME/cfopt-auto-push"
 CFST_PATH="$HOME/cfopt-auto-push/cfst"
 PORTS="443,2053,2083,2087,2096,8443"
 TARGET_PATH="CloudflareSpeedTest_BJ.csv"
-INTERVAL_DAYS=6
+INTERVAL_DAYS=3
 MAX_LATENCY_MS=420
 MAX_PER_CITY=20
 COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
