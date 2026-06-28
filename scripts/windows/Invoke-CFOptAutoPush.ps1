@@ -10,7 +10,7 @@ param(
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
     [string]$TargetPath = "CloudflareSpeedTest_CD.csv",
-    [int]$IntervalDays = 3,
+    [int]$IntervalDays = 1,
     [int]$MaxLatencyMs = 420,
     [int]$MinReceived = 1,
     [double]$MinSpeedMbps = 0.01,
@@ -24,6 +24,7 @@ param(
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
     [int]$CfBestIpPerCountryLimit = 200,
+    [double]$RollingReplaceFraction = 0.33,
     [int]$Vps789CtLimit = 100,
     [int]$Vps789MaxDxLatencyMs = 260,
     [double]$Vps789MaxDxLossRate = 5,
@@ -158,6 +159,56 @@ function Convert-ToNumber {
     return $null
 }
 
+function Get-CityKeyFromRemark {
+    param([string]$Remark)
+
+    if ([string]::IsNullOrWhiteSpace($Remark)) {
+        return ""
+    }
+
+    $trimmed = $Remark.Trim()
+    if ($trimmed -match '^([A-Za-z0-9_-]+)') {
+        return $Matches[1].ToUpperInvariant()
+    }
+
+    return ""
+}
+
+function Get-PreviousCsvEntries {
+    $rawUrl = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/$TargetPath"
+    $entries = New-Object System.Collections.Generic.List[object]
+
+    try {
+        Write-Log "Fetching previous CSV for rolling retest: $rawUrl"
+        $text = (Invoke-WebRequest -Uri $rawUrl -UseBasicParsing -TimeoutSec 30).Content
+        $lines = @($text -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        foreach ($line in ($lines | Select-Object -Skip 1)) {
+            $columns = $line -split ","
+            if ($columns.Count -lt 4) {
+                continue
+            }
+
+            $ip = $columns[0].Trim()
+            $portText = $columns[1].Trim()
+            $cityKey = Get-CityKeyFromRemark -Remark $columns[3]
+            $portValue = 0
+            if ($ip -match '^(?:\d{1,3}\.){3}\d{1,3}$' -and [int]::TryParse($portText, [ref]$portValue) -and -not [string]::IsNullOrWhiteSpace($cityKey)) {
+                $entries.Add([pscustomobject]@{
+                    Ip = $ip
+                    Port = $portValue
+                    City = $cityKey
+                }) | Out-Null
+            }
+        }
+        Write-Log "Loaded $($entries.Count) previous CSV nodes for rolling retest."
+    }
+    catch {
+        Write-Log "WARN: Failed to fetch previous CSV for rolling retest: $($_.Exception.Message)"
+    }
+
+    return $entries.ToArray()
+}
+
 function Update-ZipCache {
     $tempZipPath = Join-Path $WorkDir "ip.download.zip"
 
@@ -289,6 +340,7 @@ function New-PortWorkItem {
         [int]$CurrentPort,
         [object[]]$Vps789CtIps,
         [object[]]$CfBestIpCandidates,
+        [object[]]$PreviousCsvEntries,
         [string[]]$SelectedCountries = $Countries,
         [string]$ScopeName = "all",
         [bool]$IncludeVps789Ct = $true
@@ -349,6 +401,26 @@ function New-PortWorkItem {
         [void]$selectedCountrySet.Add($country.Trim())
     }
 
+    $previousAdded = 0
+    foreach ($entry in @($PreviousCsvEntries)) {
+        if ($entry.Port -ne $CurrentPort) {
+            continue
+        }
+        if (-not $selectedCountrySet.Contains([string]$entry.City)) {
+            continue
+        }
+        $ip = [string]$entry.Ip
+        if ([string]::IsNullOrWhiteSpace($ip)) {
+            continue
+        }
+        $ip = $ip.Trim()
+        if ($seenIps.Add($ip)) {
+            Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
+            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($entry.City)" -Encoding ASCII
+            $previousAdded++
+        }
+    }
+
     $cfBestIpAdded = 0
     foreach ($candidate in @($CfBestIpCandidates)) {
         if ($candidate.Port -ne $CurrentPort) {
@@ -391,7 +463,7 @@ function New-PortWorkItem {
         return $null
     }
 
-    Write-Log "Merged $lineCount IP lines for port $CurrentPort scope $ScopeName into $selectedIpPath. cf-bestip added: $cfBestIpAdded. vps789 CT added: $vps789Added."
+    Write-Log "Merged $lineCount IP lines for port $CurrentPort scope $ScopeName into $selectedIpPath. previous added: $previousAdded. cf-bestip added: $cfBestIpAdded. vps789 CT added: $vps789Added."
     return [pscustomobject]@{
         Port = $CurrentPort
         Scope = $ScopeName
@@ -497,7 +569,10 @@ function Wait-CfstProcesses {
 }
 
 function Write-MergedFilteredCsv {
-    param([object[]]$WorkItems)
+    param(
+        [object[]]$WorkItems,
+        [System.Collections.Generic.HashSet[string]]$PreviousNodeKeys
+    )
 
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     $cityHeaderName = [string]([char]0x57CE) + [string]([char]0x5E02)
@@ -604,15 +679,41 @@ function Write-MergedFilteredCsv {
                 CityKey = $city
                 SpeedNumber = $speed
                 LatencyNumber = $latency
+                IsPrevious = $PreviousNodeKeys.Contains("$ip|$($item.Port)|$city")
             })
         }
     }
 
-    $keptRows = @(
+    $dedupRows = @(
         $candidateRows |
+            Group-Object @{ Expression = { "$($_.Ip)|$($_.Port)|$($_.CityKey)" } } |
+            ForEach-Object {
+                $_.Group | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false } | Select-Object -First 1
+            }
+    )
+
+    $keptRows = @(
+        $dedupRows |
             Group-Object CityKey |
             ForEach-Object {
-                $_.Group | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false } | Select-Object -First $MaxPerCity
+                $sortedGroup = @($_.Group | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false })
+                $maxPreviousKeep = [math]::Max(0, [math]::Floor($MaxPerCity * (1 - $RollingReplaceFraction)))
+                $oldRows = @($sortedGroup | Where-Object { $_.IsPrevious } | Select-Object -First $maxPreviousKeep)
+                $newRows = @($sortedGroup | Where-Object { -not $_.IsPrevious } | Select-Object -First ([math]::Max(0, $MaxPerCity - $oldRows.Count)))
+                $selectedRows = @($oldRows + $newRows)
+                if ($selectedRows.Count -lt $MaxPerCity) {
+                    $selectedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                    foreach ($selected in $selectedRows) {
+                        [void]$selectedKeys.Add("$($selected.Ip)|$($selected.Port)|$($selected.CityKey)")
+                    }
+                    $fillRows = @(
+                        $sortedGroup |
+                            Where-Object { -not $selectedKeys.Contains("$($_.Ip)|$($_.Port)|$($_.CityKey)") } |
+                            Select-Object -First ($MaxPerCity - $selectedRows.Count)
+                    )
+                    $selectedRows = @($selectedRows + $fillRows)
+                }
+                $selectedRows
             } |
             Sort-Object CityKey, @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false }
     )
@@ -715,13 +816,19 @@ try {
     }
     Write-Log "Configured ports: $($effectivePorts -join ', ')"
 
+    $previousCsvEntries = @(Get-PreviousCsvEntries)
+    $previousNodeKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $previousCsvEntries) {
+        [void]$previousNodeKeys.Add("$($entry.Ip)|$($entry.Port)|$($entry.City)")
+    }
+
     $vps789CtIps = @(Get-Vps789CtIps)
     $cfBestIpCandidates = @(Get-CfBestIpCandidates)
     $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
-            New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -SelectedCountries $Countries -ScopeName "all" -IncludeVps789Ct $true
+            New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries $Countries -ScopeName "all" -IncludeVps789Ct $true
             foreach ($focusCountry in @(Get-EffectiveFocusCountries)) {
                 if ($Countries -contains $focusCountry) {
-                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
+                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
                 }
             }
         }
@@ -763,7 +870,7 @@ try {
 
     $running = @(Start-CfstProcesses -WorkItems $workItems)
     Wait-CfstProcesses -Running $running
-    Write-MergedFilteredCsv -WorkItems $workItems
+    Write-MergedFilteredCsv -WorkItems $workItems -PreviousNodeKeys $previousNodeKeys
 
     if ($SkipUpload) {
         Write-Log "SkipUpload enabled. CSV generated but GitHub upload and success-state update were skipped."
