@@ -15,11 +15,15 @@ param(
     [int]$MinReceived = 1,
     [double]$MinSpeedMbps = 0.01,
     [int]$MaxPerCity = 20,
+    [int]$Vps789CtLimit = 50,
+    [int]$Vps789MaxDxLatencyMs = 260,
+    [double]$Vps789MaxDxLossRate = 5,
     [string]$TokenEnvName = "GITHUB_TOKEN_CFOPT",
     [switch]$Force,
     [switch]$DryRun,
     [switch]$SkipUpload,
-    [switch]$CfstDebug
+    [switch]$CfstDebug,
+    [switch]$DisableVps789Ct
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,6 +31,7 @@ $ErrorActionPreference = "Stop"
 $zipPath = Join-Path $WorkDir "ip.zip"
 $extractDir = Join-Path $WorkDir "extract"
 $csvPath = Join-Path $WorkDir "CloudflareSpeedTest.csv"
+$vps789CtCsvPath = Join-Path $WorkDir "VPS789_CF_CT_Candidates.csv"
 $stateFile = Join-Path $WorkDir "last-success.txt"
 $logFile = Join-Path $WorkDir "auto-push.log"
 
@@ -157,8 +162,66 @@ function Update-ZipCache {
     }
 }
 
+function Get-Vps789CtIps {
+    if ($DisableVps789Ct) {
+        Write-Log "vps789 CT candidate source disabled."
+        return @()
+    }
+
+    try {
+        Write-Log "Fetching vps789 Cloudflare CT candidates."
+        $response = Invoke-RestMethod -Uri "https://vps789.com/openApi/cfIpApi" -UseBasicParsing -TimeoutSec 30
+        $items = @($response.data.CT)
+        if ($items.Count -eq 0) {
+            Write-Log "WARN: vps789 CT API returned no candidates."
+            return @()
+        }
+
+        $filtered = @(
+            $items |
+                Where-Object {
+                    $_.ip -match '^(?:\d{1,3}\.){3}\d{1,3}$' -and
+                    [double]$_.dxLatencyAvg -le $Vps789MaxDxLatencyMs -and
+                    [double]$_.dxPkgLostRateAvg -le $Vps789MaxDxLossRate
+                } |
+                Sort-Object @{ Expression = "dxPkgLostRateAvg"; Descending = $false }, @{ Expression = "dxLatencyAvg"; Descending = $false }, @{ Expression = "avgScore"; Descending = $false } |
+                Select-Object -First $Vps789CtLimit
+        )
+
+        $candidateLines = New-Object System.Collections.Generic.List[string]
+        $candidateLines.Add("No,IP,Line,DXLatencyMs,DXLossRate,LTLatencyMs,LTLossRate,YDLatencyMs,YDLossRate,UpdatedAt,Remark")
+        $index = 0
+        foreach ($item in $filtered) {
+            $index++
+            $remark = "CT{0:00}" -f $index
+            $candidateLines.Add(("{0},{1},CT,{2},{3},{4},{5},{6},{7},{8},{9}" -f
+                $remark,
+                $item.ip,
+                $item.dxLatencyAvg,
+                $item.dxPkgLostRateAvg,
+                $item.ltLatencyAvg,
+                $item.ltPkgLostRateAvg,
+                $item.ydLatencyAvg,
+                $item.ydPkgLostRateAvg,
+                $item.createdTime,
+                "vps789-ct"))
+        }
+        [System.IO.File]::WriteAllLines($vps789CtCsvPath, $candidateLines.ToArray(), (New-Object System.Text.UTF8Encoding($false)))
+
+        Write-Log "Fetched $($filtered.Count) vps789 CT candidates. Exported $vps789CtCsvPath."
+        return $filtered
+    }
+    catch {
+        Write-Log "WARN: Failed to fetch vps789 CT candidates: $($_.Exception.Message)"
+        return @()
+    }
+}
+
 function New-PortWorkItem {
-    param([int]$CurrentPort)
+    param(
+        [int]$CurrentPort,
+        [object[]]$Vps789CtIps
+    )
 
     $portDir = Join-Path $extractDir ([string]$CurrentPort)
     if (-not (Test-Path -LiteralPath $portDir)) {
@@ -196,15 +259,30 @@ function New-PortWorkItem {
         }
     }
 
+    $seenIps = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($file in $selectedFiles) {
         $city = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
         $ipLines = @(Get-Content -LiteralPath $file.FullName | Where-Object {
             -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith("#")
-        } | ForEach-Object { $_.Trim() })
+        } | ForEach-Object { $_.Trim() } | Where-Object { $seenIps.Add($_) })
 
         $ipLines | Add-Content -LiteralPath $selectedIpPath -Encoding ASCII
         foreach ($ipLine in $ipLines) {
             Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ipLine,$city" -Encoding ASCII
+        }
+    }
+
+    $vps789Added = 0
+    foreach ($candidate in @($Vps789CtIps)) {
+        $ip = [string]$candidate.ip
+        if ([string]::IsNullOrWhiteSpace($ip)) {
+            continue
+        }
+        $ip = $ip.Trim()
+        if ($seenIps.Add($ip)) {
+            Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
+            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,VPS789CT" -Encoding ASCII
+            $vps789Added++
         }
     }
 
@@ -216,7 +294,7 @@ function New-PortWorkItem {
         return $null
     }
 
-    Write-Log "Merged $lineCount IP lines for port $CurrentPort into $selectedIpPath."
+    Write-Log "Merged $lineCount IP lines for port $CurrentPort into $selectedIpPath. vps789 CT added: $vps789Added."
     return [pscustomobject]@{
         Port = $CurrentPort
         SelectedIpPath = $selectedIpPath
@@ -391,6 +469,15 @@ function Write-MergedFilteredCsv {
             if ($cityByIp.ContainsKey($ip)) {
                 $city = $cityByIp[$ip]
             }
+            $dataCenter = if ($columns.Count -gt 6) { $columns[6].Trim() } else { "" }
+            if ($city -eq "VPS789CT") {
+                if (-not [string]::IsNullOrWhiteSpace($dataCenter) -and $dataCenter -ne "N/A") {
+                    $city = $dataCenter
+                }
+                else {
+                    $city = "CT"
+                }
+            }
 
             $speedMbps = $speedMbps.ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture)
             $latencyText = [math]::Round($latency, 0).ToString("0", [System.Globalization.CultureInfo]::InvariantCulture)
@@ -398,7 +485,7 @@ function Write-MergedFilteredCsv {
             $candidateRows.Add([pscustomobject]@{
                 Ip = $ip
                 Port = [string]$item.Port
-                DataCenter = if ($columns.Count -gt 6) { $columns[6].Trim() } else { "" }
+                DataCenter = $dataCenter
                 City = $remark
                 Tls = "true"
                 Sent = $columns[1].Trim()
@@ -428,8 +515,16 @@ function Write-MergedFilteredCsv {
 
     $kept = New-Object System.Collections.Generic.List[string]
     $kept.Add("$ipHeaderName,$portHeaderName,$coloHeaderName,$cityHeaderName,$tlsHeaderName,$sentHeaderName,$receivedHeaderName,$lossHeaderName,$latencyHeaderName,$speedHeaderName")
+    $regionCounters = @{}
     foreach ($row in $keptRows) {
-        $kept.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$($row.City),$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)")
+        $regionKey = if ([string]::IsNullOrWhiteSpace($row.CityKey)) { "UNK" } else { $row.CityKey }
+        if (-not $regionCounters.ContainsKey($regionKey)) {
+            $regionCounters[$regionKey] = 0
+        }
+        $regionCounters[$regionKey]++
+        $regionNumber = $regionCounters[$regionKey].ToString("00", [System.Globalization.CultureInfo]::InvariantCulture)
+        $numberedCity = $row.City -replace ("^" + [regex]::Escape($regionKey)), "$regionKey$regionNumber"
+        $kept.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$numberedCity,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)")
     }
 
     if ($kept.Count -le 1) {
@@ -512,7 +607,8 @@ try {
     }
     Write-Log "Configured ports: $($effectivePorts -join ', ')"
 
-    $workItems = @($effectivePorts | ForEach-Object { New-PortWorkItem -CurrentPort $_ } | Where-Object { $null -ne $_ })
+    $vps789CtIps = @(Get-Vps789CtIps)
+    $workItems = @($effectivePorts | ForEach-Object { New-PortWorkItem -CurrentPort $_ -Vps789CtIps $vps789CtIps } | Where-Object { $null -ne $_ })
     if ($workItems.Count -eq 0) {
         throw "No usable port/country inputs were prepared."
     }
