@@ -22,12 +22,16 @@ param(
     [double]$CfstLossRateLimit = 0,
     [int]$MaxParallelCfst = 1,
     [switch]$UseProxyForCfst,
-    [string]$FocusCountries = "HK,KR,JP,SG,DE,GB,NL,IT",
+    [string]$FocusCountries = "",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
     [int]$CfBestIpPerCountryLimit = 200,
+    [bool]$IpZipSampleEnabled = $true,
+    [int]$IpZipSamplePercent = 20,
+    [int]$IpZipCountryMinCandidates = 20,
+    [int]$IpZipCountryMaxCandidates = 160,
     [double]$RollingReplaceFraction = 0.33,
-    [int]$Vps789CtLimit = 100,
+    [int]$Vps789CtLimit = 50,
     [int]$Vps789MaxDxLatencyMs = 260,
     [double]$Vps789MaxDxLossRate = 5,
     [string]$TokenEnvName = "GITHUB_TOKEN_CFOPT",
@@ -95,6 +99,76 @@ function Get-EffectiveFocusCountries {
             ForEach-Object { $_.Trim().ToUpperInvariant() } |
             Select-Object -Unique
     )
+}
+
+function Get-FocusExcludedCountries {
+    $focusSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($country in @(Get-EffectiveFocusCountries)) {
+        [void]$focusSet.Add($country)
+    }
+
+    return @(
+        foreach ($country in $Countries) {
+            $countryCode = $country.Trim().ToUpperInvariant()
+            if (-not [string]::IsNullOrWhiteSpace($countryCode) -and -not $focusSet.Contains($countryCode)) {
+                $countryCode
+            }
+        }
+    )
+}
+
+function Get-SampledIpZipLines {
+    param([string[]]$Lines)
+
+    $rows = @(
+        foreach ($line in $Lines) {
+            $trimmed = $line.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmed) -and -not $trimmed.StartsWith("#")) {
+                $trimmed
+            }
+        }
+    )
+
+    $count = $rows.Count
+    if ($count -eq 0 -or -not $IpZipSampleEnabled) {
+        return $rows
+    }
+
+    $percent = $IpZipSamplePercent
+    if ($percent -le 0 -or $percent -gt 100) {
+        $percent = 100
+    }
+
+    $minCount = [Math]::Max(0, $IpZipCountryMinCandidates)
+    $maxCount = $IpZipCountryMaxCandidates
+    $target = [int][Math]::Ceiling($count * $percent / 100.0)
+    if ($target -lt $minCount) {
+        $target = $minCount
+    }
+    if ($maxCount -gt 0 -and $target -gt $maxCount) {
+        $target = $maxCount
+    }
+    if ($target -gt $count) {
+        $target = $count
+    }
+    if ($target -ge $count) {
+        return $rows
+    }
+
+    $sampled = New-Object System.Collections.Generic.List[string]
+    $picked = [System.Collections.Generic.HashSet[int]]::new()
+    $step = $count / [double]$target
+    for ($i = 1; $i -le $target; $i++) {
+        $index = [int][Math]::Floor(($i - 1) * $step)
+        if ($index -ge $count) {
+            $index = $count - 1
+        }
+        if ($picked.Add($index)) {
+            $sampled.Add($rows[$index]) | Out-Null
+        }
+    }
+
+    return $sampled.ToArray()
 }
 
 function Test-IntervalGate {
@@ -339,6 +413,10 @@ function Get-CfBestIpCandidates {
         return @()
     }
 
+    $effectivePortSet = [System.Collections.Generic.HashSet[int]]::new()
+    foreach ($portValue in @(Get-EffectivePorts)) {
+        [void]$effectivePortSet.Add([int]$portValue)
+    }
     $candidates = New-Object System.Collections.Generic.List[object]
     foreach ($country in $Countries) {
         $countryCode = $country.Trim().ToUpperInvariant()
@@ -350,22 +428,33 @@ function Get-CfBestIpCandidates {
         try {
             Write-Log "Fetching cf-bestip candidates: $url"
             $text = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30).Content
-            $countForCountry = 0
+            $countsByPort = @{}
             foreach ($line in ($text -split "`r?`n")) {
-                if ($countForCountry -ge $CfBestIpPerCountryLimit) {
-                    break
-                }
                 $trimmed = $line.Trim()
                 if ($trimmed -match '^(?<ip>(?:\d{1,3}\.){3}\d{1,3}):(?<port>\d+)#(?<region>[A-Za-z0-9_-]+)') {
+                    $candidatePort = [int]$Matches.port
+                    if (-not $effectivePortSet.Contains($candidatePort)) {
+                        continue
+                    }
+                    if (-not $countsByPort.ContainsKey($candidatePort)) {
+                        $countsByPort[$candidatePort] = 0
+                    }
+                    if ($countsByPort[$candidatePort] -ge $CfBestIpPerCountryLimit) {
+                        continue
+                    }
                     $candidates.Add([pscustomobject]@{
                         Ip = $Matches.ip
-                        Port = [int]$Matches.port
+                        Port = $candidatePort
                         City = $countryCode
                     }) | Out-Null
-                    $countForCountry++
+                    $countsByPort[$candidatePort]++
                 }
             }
-            Write-Log "Fetched $countForCountry cf-bestip candidates for $countryCode."
+            $countForCountry = 0
+            foreach ($value in $countsByPort.Values) {
+                $countForCountry += [int]$value
+            }
+            Write-Log "Fetched $countForCountry cf-bestip candidates for $countryCode across configured ports."
         }
         catch {
             Write-Log "WARN: Failed to fetch cf-bestip candidates for $countryCode`: $($_.Exception.Message)"
@@ -427,9 +516,8 @@ function New-PortWorkItem {
     $seenIps = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($file in $selectedFiles) {
         $city = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
-        $ipLines = @(Get-Content -LiteralPath $file.FullName | Where-Object {
-            -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith("#")
-        } | ForEach-Object { $_.Trim() } | Where-Object { $seenIps.Add($_) })
+        $sampledLines = @(Get-SampledIpZipLines -Lines @(Get-Content -LiteralPath $file.FullName))
+        $ipLines = @($sampledLines | Where-Object { $seenIps.Add($_) })
 
         $ipLines | Add-Content -LiteralPath $selectedIpPath -Encoding ASCII
         foreach ($ipLine in $ipLines) {
@@ -855,7 +943,7 @@ function Publish-FileToGitHub {
         "User-Agent" = "CFOptAutoPush"
     }
 
-    Write-Log "Reading current GitHub file metadata: $Owner/$Repo/$TargetPath"
+    Write-Log "Reading current GitHub file metadata: $Owner/$Repo/$UploadTargetPath"
     $existingSha = $null
     try {
         $existing = Invoke-RestMethod -Method Get -Uri "$uri`?ref=$Branch" -Headers $headers
@@ -946,8 +1034,11 @@ try {
 
     $vps789CtIps = @(Get-Vps789CtIps)
     $cfBestIpCandidates = @(Get-CfBestIpCandidates)
+    $allCountries = @(Get-FocusExcludedCountries)
     $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
-            New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries $Countries -ScopeName "all" -IncludeVps789Ct $true
+            if ($allCountries.Count -gt 0) {
+                New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries $allCountries -ScopeName "all" -IncludeVps789Ct $true
+            }
             foreach ($focusCountry in @(Get-EffectiveFocusCountries)) {
                 if ($Countries -contains $focusCountry) {
                     New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
