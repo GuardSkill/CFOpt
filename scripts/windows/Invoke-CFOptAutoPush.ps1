@@ -23,6 +23,7 @@ param(
     [switch]$DryRun,
     [switch]$SkipUpload,
     [switch]$CfstDebug,
+    [switch]$EnableVps789Ct,
     [switch]$DisableVps789Ct
 )
 
@@ -163,7 +164,7 @@ function Update-ZipCache {
 }
 
 function Get-Vps789CtIps {
-    if ($DisableVps789Ct) {
+    if ((-not $EnableVps789Ct) -or $DisableVps789Ct) {
         Write-Log "vps789 CT candidate source disabled."
         return @()
     }
