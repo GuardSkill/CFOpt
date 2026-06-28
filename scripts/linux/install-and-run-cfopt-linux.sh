@@ -48,4 +48,5 @@ echo "Running CFOpt now. Set GITHUB_TOKEN_CFOPT before running if upload is need
 FORCE="${FORCE:-1}" \
 WORK_DIR="$WORK_DIR" \
 CFST_PATH="$WORK_DIR/cfst" \
+DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://speed.cloudflare.com/__down?bytes=100000000}" \
 "$WORK_DIR/invoke-cfopt-auto-push-linux.sh"
