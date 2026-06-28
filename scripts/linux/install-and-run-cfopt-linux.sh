@@ -11,6 +11,7 @@ CFST_URL="${CFST_URL:-$BASE_URL/scripts/linux/cfst}"
 CFST_TAR_URL="${CFST_TAR_URL:-$BASE_URL/scripts/linux/cfst_linux_amd64.tar.gz}"
 INSTALL_DAILY_AUTORUN="${INSTALL_DAILY_AUTORUN:-1}"
 DAILY_AT="${DAILY_AT:-04:00}"
+AUTORUN_BACKEND="${AUTORUN_BACKEND:-auto}"
 
 mkdir -p "$WORK_DIR"
 
@@ -55,7 +56,7 @@ install_daily_autorun() {
     token_line="Environment=GITHUB_TOKEN_CFOPT=${GITHUB_TOKEN_CFOPT}"
   fi
 
-  if command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
+  if [[ "$AUTORUN_BACKEND" != "cron" ]] && command -v systemctl >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
     local systemd_dir="$HOME/.config/systemd/user"
     mkdir -p "$systemd_dir"
     cat > "$systemd_dir/cfopt-auto-push.service" <<EOF
@@ -90,7 +91,7 @@ EOF
     return 0
   fi
 
-  if command -v crontab >/dev/null 2>&1; then
+  if [[ "$AUTORUN_BACKEND" != "systemd" ]] && command -v crontab >/dev/null 2>&1; then
     local hour minute cron_line
     hour="${DAILY_AT%%:*}"
     minute="${DAILY_AT##*:}"
