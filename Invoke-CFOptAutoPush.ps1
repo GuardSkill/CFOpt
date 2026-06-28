@@ -5,7 +5,7 @@ param(
     [string[]]$Countries = @("HK", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US"),
     [int]$Port = 0,
     [string]$Ports = "443,2053,2083,2087,2096,8443",
-    [string]$DownloadTestUrl = "",
+    [string]$DownloadTestUrl = "https://speed.cloudflare.com/__down?bytes=100000000",
     [string]$Owner = "GuardSkill",
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
@@ -13,11 +13,13 @@ param(
     [int]$IntervalDays = 3,
     [int]$MaxLatencyMs = 420,
     [int]$MinReceived = 1,
+    [double]$MinSpeedMbps = 0.01,
     [int]$MaxPerCity = 20,
     [string]$TokenEnvName = "GITHUB_TOKEN_CFOPT",
     [switch]$Force,
     [switch]$DryRun,
-    [switch]$SkipUpload
+    [switch]$SkipUpload,
+    [switch]$CfstDebug
 )
 
 $ErrorActionPreference = "Stop"
@@ -249,6 +251,12 @@ function Start-CfstProcesses {
         if (-not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
             $cfstArgs += @("-url", $DownloadTestUrl)
         }
+        if ($MinSpeedMbps -gt 0) {
+            $cfstArgs += @("-sl", $MinSpeedMbps.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture))
+        }
+        if ($CfstDebug) {
+            $cfstArgs += "-debug"
+        }
 
         $argumentText = Join-ProcessArguments -Arguments $cfstArgs
         Write-Log "Starting cfst on port $($item.Port): $CfstPath $argumentText"
@@ -373,13 +381,18 @@ function Write-MergedFilteredCsv {
                 $removed++
                 continue
             }
+            $speedMbps = [math]::Round($speed * 8, 2)
+            if ($speedMbps -lt $MinSpeedMbps) {
+                $removed++
+                continue
+            }
 
             $city = ""
             if ($cityByIp.ContainsKey($ip)) {
                 $city = $cityByIp[$ip]
             }
 
-            $speedMbps = [math]::Round($speed * 8, 2).ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture)
+            $speedMbps = $speedMbps.ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture)
             $latencyText = [math]::Round($latency, 0).ToString("0", [System.Globalization.CultureInfo]::InvariantCulture)
             $remark = "$city [$($latencyText)ms $($speedMbps)Mbps]"
             $candidateRows.Add([pscustomobject]@{
@@ -420,11 +433,11 @@ function Write-MergedFilteredCsv {
     }
 
     if ($kept.Count -le 1) {
-        throw "Filtering removed all CSV rows. Check MaxLatencyMs=$MaxLatencyMs and MinReceived=$MinReceived."
+        throw "Filtering removed all CSV rows. Check MaxLatencyMs=$MaxLatencyMs, MinReceived=$MinReceived, and MinSpeedMbps=$MinSpeedMbps. If cfst reports 0.00 MB/s, rerun with -CfstDebug."
     }
 
     [System.IO.File]::WriteAllLines($csvPath, $kept.ToArray(), $utf8NoBom)
-    Write-Log "Merged and filtered CSV rows across ports. Kept $($kept.Count - 1), removed $removed. Top $MaxPerCity per country/group. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms."
+    Write-Log "Merged and filtered CSV rows across ports. Kept $($kept.Count - 1), removed $removed. Top $MaxPerCity per country/group. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms, speed >= $MinSpeedMbps Mbps."
 }
 
 function Publish-ToGitHub {
@@ -513,6 +526,12 @@ try {
             }
             if (-not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
                 $dryRunArgs += @("-url", $DownloadTestUrl)
+            }
+            if ($MinSpeedMbps -gt 0) {
+                $dryRunArgs += @("-sl", $MinSpeedMbps.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture))
+            }
+            if ($CfstDebug) {
+                $dryRunArgs += "-debug"
             }
             Write-Log "Would run: `"$CfstPath`" $(Join-ProcessArguments -Arguments $dryRunArgs)"
         }
