@@ -15,6 +15,12 @@ param(
     [int]$MinReceived = 1,
     [double]$MinSpeedMbps = 0.01,
     [int]$MaxPerCity = 20,
+    [int]$CfstThreads = 160,
+    [int]$CfstLatencyTestCount = 6,
+    [int]$CfstDownloadTestCount = 60,
+    [int]$CfstDownloadTestTime = 15,
+    [double]$CfstLossRateLimit = 0,
+    [string]$FocusCountries = "HK",
     [int]$Vps789CtLimit = 100,
     [int]$Vps789MaxDxLatencyMs = 260,
     [double]$Vps789MaxDxLossRate = 5,
@@ -54,6 +60,15 @@ function Get-EffectivePorts {
             Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
             ForEach-Object { [int]$_ } |
             Where-Object { $_ -gt 0 } |
+            Select-Object -Unique
+    )
+}
+
+function Get-EffectiveFocusCountries {
+    return @(
+        $FocusCountries -split '[,\s]+' |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            ForEach-Object { $_.Trim().ToUpperInvariant() } |
             Select-Object -Unique
     )
 }
@@ -221,7 +236,10 @@ function Get-Vps789CtIps {
 function New-PortWorkItem {
     param(
         [int]$CurrentPort,
-        [object[]]$Vps789CtIps
+        [object[]]$Vps789CtIps,
+        [string[]]$SelectedCountries = $Countries,
+        [string]$ScopeName = "all",
+        [bool]$IncludeVps789Ct = $true
     )
 
     $portDir = Join-Path $extractDir ([string]$CurrentPort)
@@ -237,7 +255,7 @@ function New-PortWorkItem {
         return $null
     }
 
-    $selectedFiles = foreach ($country in $Countries) {
+    $selectedFiles = foreach ($country in $SelectedCountries) {
         try {
             Resolve-CountryFile -Country $country -Files $allTxtFiles
         }
@@ -251,9 +269,10 @@ function New-PortWorkItem {
         return $null
     }
 
-    $selectedIpPath = Join-Path $WorkDir "selected-ip-$CurrentPort.txt"
-    $selectedIpCityMapPath = Join-Path $WorkDir "selected-ip-city-map-$CurrentPort.csv"
-    $portCsvPath = Join-Path $WorkDir "CloudflareSpeedTest-$CurrentPort.csv"
+    $safeScopeName = $ScopeName -replace '[^A-Za-z0-9_-]', '_'
+    $selectedIpPath = Join-Path $WorkDir "selected-ip-$CurrentPort-$safeScopeName.txt"
+    $selectedIpCityMapPath = Join-Path $WorkDir "selected-ip-city-map-$CurrentPort-$safeScopeName.csv"
+    $portCsvPath = Join-Path $WorkDir "CloudflareSpeedTest-$CurrentPort-$safeScopeName.csv"
     foreach ($path in @($selectedIpPath, $selectedIpCityMapPath, $portCsvPath)) {
         if (Test-Path -LiteralPath $path) {
             Remove-Item -LiteralPath $path -Force
@@ -274,7 +293,7 @@ function New-PortWorkItem {
     }
 
     $vps789Added = 0
-    foreach ($candidate in @($Vps789CtIps)) {
+    foreach ($candidate in $(if ($IncludeVps789Ct) { @($Vps789CtIps) } else { @() })) {
         $ip = [string]$candidate.ip
         if ([string]::IsNullOrWhiteSpace($ip)) {
             continue
@@ -295,9 +314,10 @@ function New-PortWorkItem {
         return $null
     }
 
-    Write-Log "Merged $lineCount IP lines for port $CurrentPort into $selectedIpPath. vps789 CT added: $vps789Added."
+    Write-Log "Merged $lineCount IP lines for port $CurrentPort scope $ScopeName into $selectedIpPath. vps789 CT added: $vps789Added."
     return [pscustomobject]@{
         Port = $CurrentPort
+        Scope = $ScopeName
         SelectedIpPath = $selectedIpPath
         MapPath = $selectedIpCityMapPath
         CsvPath = $portCsvPath
@@ -323,7 +343,17 @@ function Start-CfstProcesses {
         }
         Set-Content -LiteralPath $item.StdinPath -Value "" -Encoding ASCII
 
-        $cfstArgs = @("-f", $item.SelectedIpPath, "-o", $item.CsvPath)
+        $cfstArgs = @(
+            "-f", $item.SelectedIpPath,
+            "-o", $item.CsvPath,
+            "-n", ([string]$CfstThreads),
+            "-t", ([string]$CfstLatencyTestCount),
+            "-dn", ([string]$CfstDownloadTestCount),
+            "-dt", ([string]$CfstDownloadTestTime),
+            "-tl", ([string]$MaxLatencyMs),
+            "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
+            "-p", "0"
+        )
         if ($item.Port -ne 443) {
             $cfstArgs += @("-tp", ([string]$item.Port))
         }
@@ -338,7 +368,7 @@ function Start-CfstProcesses {
         }
 
         $argumentText = Join-ProcessArguments -Arguments $cfstArgs
-        Write-Log "Starting cfst on port $($item.Port): $CfstPath $argumentText"
+        Write-Log "Starting cfst on port $($item.Port) scope $($item.Scope): $CfstPath $argumentText"
         $process = Start-Process `
             -FilePath $CfstPath `
             -ArgumentList $argumentText `
@@ -609,7 +639,15 @@ try {
     Write-Log "Configured ports: $($effectivePorts -join ', ')"
 
     $vps789CtIps = @(Get-Vps789CtIps)
-    $workItems = @($effectivePorts | ForEach-Object { New-PortWorkItem -CurrentPort $_ -Vps789CtIps $vps789CtIps } | Where-Object { $null -ne $_ })
+    $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
+            New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -SelectedCountries $Countries -ScopeName "all" -IncludeVps789Ct $true
+            foreach ($focusCountry in @(Get-EffectiveFocusCountries)) {
+                if ($Countries -contains $focusCountry) {
+                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
+                }
+            }
+        }
+    $workItems = @($generatedWorkItems | Where-Object { $null -ne $_ })
     if ($workItems.Count -eq 0) {
         throw "No usable port/country inputs were prepared."
     }
@@ -617,7 +655,17 @@ try {
     if ($DryRun) {
         Write-Log "Dry run enabled. Skipping cfst execution and GitHub upload."
         foreach ($item in $workItems) {
-            $dryRunArgs = @("-f", $item.SelectedIpPath, "-o", $item.CsvPath)
+            $dryRunArgs = @(
+                "-f", $item.SelectedIpPath,
+                "-o", $item.CsvPath,
+                "-n", ([string]$CfstThreads),
+                "-t", ([string]$CfstLatencyTestCount),
+                "-dn", ([string]$CfstDownloadTestCount),
+                "-dt", ([string]$CfstDownloadTestTime),
+                "-tl", ([string]$MaxLatencyMs),
+                "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
+                "-p", "0"
+            )
             if ($item.Port -ne 443) {
                 $dryRunArgs += @("-tp", ([string]$item.Port))
             }
