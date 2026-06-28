@@ -1,26 +1,59 @@
 # CFOpt
 
-Cloudflare 优选 IP 自动测速与发布工具。脚本会下载候选 IP，按多个 Cloudflare 端口运行 `CloudflareSpeedTest`，过滤掉不可用、丢包、低速结果，并把 Edge Tunnel 可导入的 CSV 上传到 GitHub。
+## 中文说明
 
-## 输出文件
+CFOpt 是一个 Cloudflare 优选 IP 自动测速与发布工具。它会下载候选 IP，按多个 Cloudflare 端口运行 `CloudflareSpeedTest`，过滤不可用、丢包和低速结果，然后生成 Edge Tunnel 可导入的 CSV 并上传到 GitHub。
 
-- `CloudflareSpeedTest_CD.csv`：Windows/CD 默认输出
-- `CloudflareSpeedTest_BJ.csv`：Linux/BJ 默认输出
-- `CFOpt_Subconverter.ini`：Subconverter 配置
-- `rules/`：分流规则
+### 一键运行
 
-## 目录结构
+Windows 首次运行并安装每日任务：
 
-- `scripts/windows/Invoke-CFOptAutoPush.ps1`：Windows 自动测速脚本
-- `scripts/windows/Install-CFOptAutoPushTask.ps1`：Windows 计划任务安装脚本
-- `scripts/linux/invoke-cfopt-auto-push-linux.sh`：Linux 自动测速脚本
-- `scripts/linux/install-and-run-cfopt-linux.sh`：Linux 一键下载并运行脚本
+```powershell
+git clone https://github.com/GuardSkill/CFOpt.git H:\Projects\CFOpt
+cd H:\Projects\CFOpt
+[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "你的 GitHub token", "User")
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
+```
 
-根目录不再放重复脚本，只保留配置、README、CSV 和规则。
+Linux / 容器一键下载、授权、运行，并用 crontab 每天自动检查：
 
-## 当前测速策略
+```bash
+GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron INSTALL_DAILY_AUTORUN=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+```
 
-默认候选来源仍然是：
+只手动跑一次：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
+```
+
+```bash
+FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+### 输出文件
+
+- `CloudflareSpeedTest_CD.csv`：Windows / 成都测速默认输出。
+- `CloudflareSpeedTest_BJ.csv`：Linux / 北京测速默认输出。
+- `CFOpt_Subconverter.ini`：Subconverter 配置。
+- `CFOpt_Subconverter_lite.ini`：精简版 Subconverter 配置。
+- `rules/`：分流规则。
+
+`CFOpt_Subconverter.ini` 和 `CFOpt_Subconverter_lite.ini` 不参与 IP 候选来源、测速、筛选和 CSV 合并逻辑；一般不需要随着测速脚本一起修改。
+
+### 目录结构
+
+- `scripts/windows/Invoke-CFOptAutoPush.ps1`：Windows 自动测速上传脚本。
+- `scripts/windows/Install-CFOptAutoPushTask.ps1`：Windows 每日计划任务安装脚本。
+- `scripts/linux/invoke-cfopt-auto-push-linux.sh`：Linux 自动测速上传脚本。
+- `scripts/linux/install-and-run-cfopt-linux.sh`：Linux 一键下载、授权、运行和安装自动任务脚本。
+
+根目录只保留 README、配置、CSV 和规则文件；脚本统一放在 `scripts/` 下。
+
+### 测速来源
+
+默认候选来源：
 
 ```text
 https://zip.cm.edu.kg/ip.zip
@@ -32,26 +65,41 @@ https://zip.cm.edu.kg/ip.zip
 https://zoroaaa.github.io/cf-bestip/ip_*.txt
 ```
 
-`cf-bestip` 会按地区提供候选，例如 `ip_HK.txt`、`ip_JP.txt`、`ip_SG.txt`、`ip_US.txt`。脚本会按当前端口筛选 `IP:端口#地区-score`，再交给 CFST 做本机/本服务器实测。
+`cf-bestip` 会按地区提供候选，例如 `ip_HK.txt`、`ip_JP.txt`、`ip_SG.txt`、`ip_US.txt`。脚本会按当前端口筛选 `IP:端口#地区-score`，再交给本地 CFST 实测。
 
-脚本默认测试端口：
+`vps789` 的 `cfIpApi.data.CT` 当前返回的电信候选很少，所以默认关闭。需要时手动开启：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -EnableVps789Ct
+```
+
+```bash
+FORCE=1 ENABLE_VPS789_CT=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+脚本只取 `CT`，不会混入 `CU`、`CM` 或综合组。
+
+### 端口和筛选
+
+默认测速端口：
 
 ```text
 443,2053,2083,2087,2096,8443
 ```
 
-为了减少“香港节点测速不充分、实际使用卡顿”的问题，脚本现在做了两层测速：
-
-1. 全地区合并测速：按配置国家/地区一起测。
-2. 重点地区单独测速：默认额外对 `HK` 和 `JP` 单独跑一轮，避免重点地区候选被其它地区挤掉。
-
-默认地区包含：
+默认地区：
 
 ```text
 HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US
 ```
 
-默认 CFST 参数也比原始默认值更严格：
+默认额外重点测速地区：
+
+```text
+HK,JP
+```
+
+默认 CFST 参数：
 
 ```text
 -n 160
@@ -64,17 +112,50 @@ HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US
 -p 0
 ```
 
-含义：
+最终 CSV 会按地区 / 分组保留 Top 20。
 
-- `-dn 60`：每个端口/范围下载测速 60 个，不再只测默认 10 个。
-- `-dt 15`：单个 IP 下载测速最长 15 秒，减少偶发抖动。
-- `-t 6`：延迟测试 6 次，比默认 4 次更稳。
-- `-tlr 0`：延迟测速阶段过滤任何丢包。
-- `-sl 0.01`：过滤下载速度为 0 的结果。
+### 无代理测速
 
-最终 CSV 仍然会按地区/分组保留 Top 20。
+CFST 子进程默认不会继承 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 等代理环境变量，测速结果代表本机到候选 IP 的裸连质量。
 
-## 每日滚动复测
+如果确实要让 CFST 走代理：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -UseProxyForCfst
+```
+
+```bash
+FORCE=1 USE_PROXY_FOR_CFST=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+### 城市列格式
+
+城市列会包含地区、测速位置编号和候选来源。
+
+Windows / 成都测速：
+
+```text
+HK [成都测速#01 ip.zip]
+HK [成都测速#02 cf-bestip]
+HK [成都测速#03 vps789]
+```
+
+Linux / 北京测速：
+
+```text
+HK[北京测速01 ip.zip]
+JP[北京测速01 cf-bestip]
+```
+
+来源可能是：
+
+- `ip.zip`
+- `cf-bestip`
+- `vps789`
+- `previous`：从上一轮已发布 CSV 带回并复测的旧节点。
+- `unknown`：历史数据或异常情况下无法识别来源。
+
+### 每日滚动复测
 
 脚本默认每天最多运行一次：
 
@@ -82,12 +163,12 @@ HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US
 IntervalDays=1
 ```
 
-每次运行会先下载 GitHub 上当前目标 CSV，把旧节点重新加入 CFST 输入做复测。最终每个地区执行滚动保鲜：
+每次运行会先下载 GitHub 上当前目标 CSV，把旧节点重新加入 CFST 输入进行复测。最终每个地区执行滚动保鲜：
 
-- 旧节点本轮测速不过线：直接淘汰
-- 每个地区最多保留约 2/3 旧节点
-- 至少约 1/3 位置优先由本轮新测出的最佳候选补上
-- 如果新候选不足，才继续用达标旧节点补满
+- 本轮不达标的旧节点会被淘汰。
+- 每个地区最多保留约 2/3 旧节点。
+- 至少约 1/3 位置优先由本轮新测出的最佳候选补入。
+- 如果新候选不足，才继续用达标旧节点补满。
 
 默认替换比例：
 
@@ -95,147 +176,19 @@ IntervalDays=1
 0.33
 ```
 
-Windows 可调整：
+### 调参
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -RollingReplaceFraction 0.5
-```
-
-Linux 可调整：
-
-```bash
-FORCE=1 ROLLING_REPLACE_FRACTION=0.5 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-## 手动运行
-
-Windows：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
-```
-
-Linux：
-
-```bash
-FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-Linux 一键下载、授权、运行：
-
-```bash
-GITHUB_TOKEN_CFOPT="你的 token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
-```
-
-只生成 CSV，不上传：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -SkipUpload
-```
-
-```bash
-FORCE=1 SKIP_UPLOAD=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-查看将要运行的命令：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -DryRun
-```
-
-```bash
-DRY_RUN=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-## 重点地区
-
-默认额外重点测速香港和日本：
-
-```text
-HK,JP
-```
-
-Windows 修改重点地区：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -FocusCountries "HK,SG,JP"
-```
-
-Linux 修改重点地区：
-
-```bash
-FORCE=1 FOCUS_COUNTRIES_CSV="HK,SG,JP" ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-## 城市列显示
-
-Windows/CD 默认显示测速来源为“成都测速”，城市列格式：
-
-```text
-HK [成都测速#01]
-JP [成都测速#01]
-```
-
-Linux/BJ 默认显示测速来源为“北京测速”，城市列格式：
-
-```text
-HK[北京测速01]
-JP[北京测速01]
-```
-
-Windows 可改显示名：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -TestLocationName "上海测速"
-```
-
-Linux 可改显示名：
-
-```bash
-FORCE=1 TEST_LOCATION_NAME="上海测速" ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-## cf-bestip
-
-`cf-bestip` 已默认接入为额外候选源，但最终结果仍以本项目 CFST 实测为准。
-
-Windows 关闭 cf-bestip：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -DisableCfBestIp
-```
-
-Linux 关闭 cf-bestip：
-
-```bash
-FORCE=1 ENABLE_CFBESTIP=0 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-默认每个地区最多读取 200 条 cf-bestip 候选：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfBestIpPerCountryLimit 500
-```
-
-```bash
-FORCE=1 CFBESTIP_PER_COUNTRY_LIMIT=500 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-## CFST 参数调优
-
-Windows 示例：
+提高下载测速数量和时间：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDownloadTestCount 100 -CfstDownloadTestTime 20 -CfstLossRateLimit 0
 ```
 
-Linux 示例：
-
 ```bash
 FORCE=1 CFST_DOWNLOAD_TEST_COUNT=100 CFST_DOWNLOAD_TEST_TIME=20 CFST_LOSS_RATE_LIMIT=0 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-如果所有下载速度都是 `0.00 MB/s`，开启调试：
+如果下载速度全是 `0.00 MB/s`，开启调试：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
@@ -245,49 +198,127 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-## vps789
-
-`vps789` 的 `cfIpApi.data.CT` 当前只返回很少的电信候选 IP，所以默认关闭。需要时可以手动开启：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -EnableVps789Ct
-```
-
-```bash
-FORCE=1 ENABLE_VPS789_CT=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-脚本只取 `CT`，不会混入 `CU`、`CM` 或综合组。
-
-## GitHub Token
+### 自动任务
 
 Windows：
 
 ```powershell
-[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "你的 token", "User")
-```
-
-Linux：
-
-```bash
-export GITHUB_TOKEN_CFOPT="你的 token"
-```
-
-## 后台自动运行
-
-Windows 安装计划任务：
-
-```powershell
-cd /d H:\Projects\CFOpt
+cd H:\Projects\CFOpt
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
 ```
 
-默认每天 `04:00` 运行，也会在开机后延迟 2 分钟检查一次。任务会执行当前仓库里的脚本，并使用仓库下 `.cfopt-work` 作为工作目录。
-
-Linux 一键脚本会自动安装后台任务。容器环境建议强制使用 crontab：
+Linux 容器：
 
 ```bash
-GITHUB_TOKEN_CFOPT="你的 token" AUTORUN_BACKEND=cron bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
 ```
 
-默认 `AUTORUN_BACKEND=auto` 会优先安装用户级 `systemd` timer；如果不可用，则写入 `crontab`。默认每天 `04:00` 运行。
+默认每天 `04:00` 检查并运行。
+
+---
+
+## English
+
+CFOpt automatically benchmarks Cloudflare candidate IPs, filters unstable results, generates Edge Tunnel compatible CSV files, and uploads them to GitHub.
+
+### Quick Start
+
+Windows first run and daily task:
+
+```powershell
+git clone https://github.com/GuardSkill/CFOpt.git H:\Projects\CFOpt
+cd H:\Projects\CFOpt
+[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "your GitHub token", "User")
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
+```
+
+Linux / container bootstrap with cron:
+
+```bash
+GITHUB_TOKEN_CFOPT="your GitHub token" AUTORUN_BACKEND=cron INSTALL_DAILY_AUTORUN=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
+```
+
+### Outputs
+
+- `CloudflareSpeedTest_CD.csv`: default Windows / Chengdu output.
+- `CloudflareSpeedTest_BJ.csv`: default Linux / Beijing output.
+- `CFOpt_Subconverter.ini`: Subconverter config.
+- `CFOpt_Subconverter_lite.ini`: lite Subconverter config.
+- `rules/`: routing rules.
+
+The Subconverter configs are not part of candidate collection, benchmarking, filtering, or CSV merging, so they usually do not need changes when the benchmark scripts change.
+
+### Candidate Sources
+
+Default source:
+
+```text
+https://zip.cm.edu.kg/ip.zip
+```
+
+Extra source enabled by default:
+
+```text
+https://zoroaaa.github.io/cf-bestip/ip_*.txt
+```
+
+`vps789` CT candidates are disabled by default because the API currently returns very few usable entries. Enable it manually with `-EnableVps789Ct` on Windows or `ENABLE_VPS789_CT=1` on Linux.
+
+### Ports and Filters
+
+Default ports:
+
+```text
+443,2053,2083,2087,2096,8443
+```
+
+Default CFST parameters:
+
+```text
+-n 160
+-t 6
+-dn 60
+-dt 15
+-tl 420
+-tlr 0
+-sl 0.01
+-p 0
+```
+
+The final CSV keeps the Top 20 rows per region/group.
+
+### Direct, Non-Proxy Benchmarking
+
+CFST child processes do not inherit proxy environment variables by default. This keeps benchmark results representative of direct connectivity from the host to candidate IPs.
+
+To intentionally benchmark through a proxy, use `-UseProxyForCfst` on Windows or `USE_PROXY_FOR_CFST=1` on Linux.
+
+### City Column
+
+The city column includes region, location index, and source:
+
+```text
+HK [成都测速#01 ip.zip]
+HK [成都测速#02 cf-bestip]
+HK [成都测速#03 vps789]
+HK [成都测速#04 previous]
+```
+
+Possible sources are `ip.zip`, `cf-bestip`, `vps789`, `previous`, and `unknown`.
+
+### Rolling Retest
+
+Each run fetches the current published CSV, retests old nodes, removes failing nodes, keeps at most about two thirds old nodes per group, and fills the rest with the best newly tested candidates. The default replacement fraction is `0.33`.
+
+### Debugging
+
+If every download speed is `0.00 MB/s`, enable CFST debug output:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
+```
+
+```bash
+FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```

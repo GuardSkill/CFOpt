@@ -279,10 +279,10 @@ append_cfbestip_for_port() {
       [[ -n "$ip" ]] || continue
       if ! grep -Fxq "$ip" "$selected_ip_path"; then
         printf '%s\n' "$ip" >> "$selected_ip_path"
-        printf '%s,%s\n' "$ip" "$country" >> "$map_path"
         added=$((added + 1))
         count_for_country=$((count_for_country + 1))
       fi
+      printf '%s,%s,cf-bestip\n' "$ip" "$country" >> "$map_path"
     done < <(awk -F'[:#]' -v port="$port" -v limit="$CFBESTIP_PER_COUNTRY_LIMIT" 'NF >= 3 && $2 == port && count < limit { print $1; count++ }' "$tmp_path")
     log "Fetched $count_for_country cf-bestip candidates for $country on port $port." >/dev/null
   done
@@ -314,7 +314,7 @@ append_previous_for_port() {
     [[ "$city" =~ ^($countries_pattern)$ ]] || continue
     if ! grep -Fxq "$ip" "$selected_ip_path"; then
       printf '%s\n' "$ip" >> "$selected_ip_path"
-      printf '%s,%s\n' "$ip" "$city" >> "$map_path"
+      printf '%s,%s,previous\n' "$ip" "$city" >> "$map_path"
       added=$((added + 1))
     fi
   done < "$PREVIOUS_NODES_PATH"
@@ -350,7 +350,7 @@ merge_country_files_for_port() {
       continue
     fi
     grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' >> "$selected_ip_path" || true
-    grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | awk -v city="$country" 'NF { print $0 "," city }' >> "$map_path" || true
+    grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | awk -v city="$country" 'NF { print $0 "," city ",ip.zip" }' >> "$map_path" || true
     found=$((found + 1))
   done
 
@@ -366,9 +366,9 @@ merge_country_files_for_port() {
       [[ -n "$ip" ]] || continue
       if ! grep -Fxq "$ip" "$selected_ip_path"; then
         printf '%s\n' "$ip" >> "$selected_ip_path"
-        printf '%s,VPS789CT\n' "$ip" >> "$map_path"
         vps789_added=$((vps789_added + 1))
       fi
+      printf '%s,VPS789CT,vps789\n' "$ip" >> "$map_path"
     done < "$VPS789_CT_IP_PATH"
   fi
 
@@ -445,7 +445,13 @@ build_combined_candidates() {
     [[ -f "$csv_path" ]] || continue
     awk -F',' -v port="$port" '
       FNR == NR {
-        if (NF >= 2 && !($1 in city_by_ip)) city_by_ip[$1] = $2
+        if (NF >= 2) {
+          mapped_source = (NF >= 3 && $3 != "") ? $3 : "unknown"
+          if (!($1 in city_by_ip) || ((source_by_ip[$1] == "previous" || source_by_ip[$1] == "unknown") && mapped_source != "previous" && mapped_source != "unknown")) {
+            city_by_ip[$1] = $2
+            source_by_ip[$1] = mapped_source
+          }
+        }
         next
       }
       FNR == 1 { next }
@@ -460,7 +466,9 @@ build_combined_candidates() {
             city = "CT"
           }
         }
-        print port "," city "," $0
+        source = source_by_ip[ip]
+        if (source == "") source = "unknown"
+        print port "," city "," source "," $0
       }
     ' "$map_path" "$csv_path" >> "$COMBINED_CANDIDATES_PATH"
   done < "$WORK_DIR/port-work-items.csv"
@@ -477,17 +485,18 @@ filter_csv() {
     {
       port = $1
       city = $2
-      ip = $3
-      sent = $4
-      received = $5 + 0
-      loss = $6 + 0
-      latency = $7 + 0
-      speed = $8 + 0
-      datacenter = $9
+      source = $3
+      ip = $4
+      sent = $5
+      received = $6 + 0
+      loss = $7 + 0
+      latency = $8 + 0
+      speed = $9 + 0
+      datacenter = $10
       speed_mbps = speed * 8
       if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
-        row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s", ip, port, datacenter, remark, sent, received, loss, latency, speed)
+        row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s,%s", ip, port, datacenter, remark, sent, received, loss, latency, speed, source)
         key = ip "|" port "|" city
         is_previous = (key in previous) ? 1 : 0
         dedupe_key = ip "|" port "|" city
@@ -545,10 +554,12 @@ filter_csv() {
           sub(/ .*/, "", city)
           sub(/\[.*/, "", city)
           output_city_count[city]++
-          numbered_city = city "[" test_location_name sprintf("%02d", output_city_count[city]) "]"
+          source = cols[col_count]
+          if (source == "") source = "unknown"
+          numbered_city = city "[" test_location_name sprintf("%02d", output_city_count[city]) " " source "]"
           cols[4] = numbered_city
           out = cols[1]
-          for (k = 2; k <= col_count; k++) {
+          for (k = 2; k < col_count; k++) {
             out = out "," cols[k]
           }
           print out

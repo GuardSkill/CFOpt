@@ -394,7 +394,7 @@ function New-PortWorkItem {
 
         $ipLines | Add-Content -LiteralPath $selectedIpPath -Encoding ASCII
         foreach ($ipLine in $ipLines) {
-            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ipLine,$city" -Encoding ASCII
+            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ipLine,$city,ip.zip" -Encoding ASCII
         }
     }
 
@@ -418,7 +418,7 @@ function New-PortWorkItem {
         $ip = $ip.Trim()
         if ($seenIps.Add($ip)) {
             Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
-            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($entry.City)" -Encoding ASCII
+            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($entry.City),previous" -Encoding ASCII
             $previousAdded++
         }
     }
@@ -438,9 +438,9 @@ function New-PortWorkItem {
         $ip = $ip.Trim()
         if ($seenIps.Add($ip)) {
             Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
-            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($candidate.City)" -Encoding ASCII
             $cfBestIpAdded++
         }
+        Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($candidate.City),cf-bestip" -Encoding ASCII
     }
 
     $vps789Added = 0
@@ -452,9 +452,9 @@ function New-PortWorkItem {
         $ip = $ip.Trim()
         if ($seenIps.Add($ip)) {
             Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
-            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,VPS789CT" -Encoding ASCII
             $vps789Added++
         }
+        Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,VPS789CT,vps789" -Encoding ASCII
     }
 
     $lineCount = (Get-Content -LiteralPath $selectedIpPath | Where-Object {
@@ -638,15 +638,25 @@ function Write-MergedFilteredCsv {
         }
 
         $cityByIp = @{}
+        $sourceByIp = @{}
         if (Test-Path -LiteralPath $item.MapPath) {
             $mapLines = [System.IO.File]::ReadAllLines($item.MapPath, $utf8NoBom)
             foreach ($mapLine in $mapLines) {
                 if ([string]::IsNullOrWhiteSpace($mapLine)) {
                     continue
                 }
-                $parts = $mapLine -split ",", 2
-                if ($parts.Count -eq 2 -and -not $cityByIp.ContainsKey($parts[0])) {
-                    $cityByIp[$parts[0]] = $parts[1]
+                $parts = $mapLine -split ",", 3
+                if ($parts.Count -ge 2) {
+                    $mappedIp = $parts[0]
+                    $mappedSource = if ($parts.Count -ge 3 -and -not [string]::IsNullOrWhiteSpace($parts[2])) { $parts[2] } else { "unknown" }
+                    $shouldSet = -not $cityByIp.ContainsKey($mappedIp)
+                    if (-not $shouldSet -and @("previous", "unknown") -contains $sourceByIp[$mappedIp] -and @("previous", "unknown") -notcontains $mappedSource) {
+                        $shouldSet = $true
+                    }
+                    if ($shouldSet) {
+                        $cityByIp[$mappedIp] = $parts[1]
+                        $sourceByIp[$mappedIp] = $mappedSource
+                    }
                 }
             }
         }
@@ -703,6 +713,7 @@ function Write-MergedFilteredCsv {
                     $city = "CT"
                 }
             }
+            $source = if ($sourceByIp.ContainsKey($ip)) { $sourceByIp[$ip] } else { "unknown" }
 
             $speedMbps = $speedMbps.ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture)
             $latencyText = [math]::Round($latency, 0).ToString("0", [System.Globalization.CultureInfo]::InvariantCulture)
@@ -722,6 +733,7 @@ function Write-MergedFilteredCsv {
                 SpeedNumber = $speed
                 LatencyNumber = $latency
                 IsPrevious = $PreviousNodeKeys.Contains("$ip|$($item.Port)|$city")
+                Source = $source
             })
         }
     }
@@ -774,7 +786,8 @@ function Write-MergedFilteredCsv {
         }
         $regionCounters[$regionKey]++
         $regionNumber = $regionCounters[$regionKey].ToString("00", [System.Globalization.CultureInfo]::InvariantCulture)
-        $numberedCity = "$regionKey [$TestLocationName#$regionNumber]"
+        $sourceText = if ([string]::IsNullOrWhiteSpace($row.Source)) { "unknown" } else { $row.Source }
+        $numberedCity = "$regionKey [$TestLocationName#$regionNumber $sourceText]"
         $kept.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$numberedCity,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)")
     }
 
