@@ -2,7 +2,7 @@ param(
     [string]$DownloadUrl = "https://zip.cm.edu.kg/ip.zip",
     [string]$WorkDir = "H:\PyProjects\CFOptAutoPush",
     [string]$CfstPath = "H:\PyProjects\cfst_windows_amd64\cfst.exe",
-    [string[]]$Countries = @("HK", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US"),
+    [string[]]$Countries = @("HK", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US"),
     [int]$Port = 0,
     [string]$Ports = "443,2053,2083,2087,2096,8443",
     [string]$DownloadTestUrl = "https://speed.cloudflare.com/__down?bytes=100000000",
@@ -20,7 +20,10 @@ param(
     [int]$CfstDownloadTestCount = 60,
     [int]$CfstDownloadTestTime = 15,
     [double]$CfstLossRateLimit = 0,
-    [string]$FocusCountries = "HK",
+    [string]$FocusCountries = "HK,JP",
+    [string]$TestLocationName = "",
+    [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
+    [int]$CfBestIpPerCountryLimit = 200,
     [int]$Vps789CtLimit = 100,
     [int]$Vps789MaxDxLatencyMs = 260,
     [double]$Vps789MaxDxLossRate = 5,
@@ -29,11 +32,16 @@ param(
     [switch]$DryRun,
     [switch]$SkipUpload,
     [switch]$CfstDebug,
+    [switch]$DisableCfBestIp,
     [switch]$EnableVps789Ct,
     [switch]$DisableVps789Ct
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($TestLocationName)) {
+    $TestLocationName = [string]([char]0x6210) + [string]([char]0x90FD) + [string]([char]0x6D4B) + [string]([char]0x901F)
+}
 
 $zipPath = Join-Path $WorkDir "ip.zip"
 $extractDir = Join-Path $WorkDir "extract"
@@ -233,10 +241,54 @@ function Get-Vps789CtIps {
     }
 }
 
+function Get-CfBestIpCandidates {
+    if ($DisableCfBestIp) {
+        Write-Log "cf-bestip candidate source disabled."
+        return @()
+    }
+
+    $candidates = New-Object System.Collections.Generic.List[object]
+    foreach ($country in $Countries) {
+        $countryCode = $country.Trim().ToUpperInvariant()
+        if ([string]::IsNullOrWhiteSpace($countryCode)) {
+            continue
+        }
+
+        $url = "{0}/ip_{1}.txt" -f $CfBestIpBaseUrl.TrimEnd("/"), $countryCode
+        try {
+            Write-Log "Fetching cf-bestip candidates: $url"
+            $text = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30).Content
+            $countForCountry = 0
+            foreach ($line in ($text -split "`r?`n")) {
+                if ($countForCountry -ge $CfBestIpPerCountryLimit) {
+                    break
+                }
+                $trimmed = $line.Trim()
+                if ($trimmed -match '^(?<ip>(?:\d{1,3}\.){3}\d{1,3}):(?<port>\d+)#(?<region>[A-Za-z0-9_-]+)') {
+                    $candidates.Add([pscustomobject]@{
+                        Ip = $Matches.ip
+                        Port = [int]$Matches.port
+                        City = $countryCode
+                    }) | Out-Null
+                    $countForCountry++
+                }
+            }
+            Write-Log "Fetched $countForCountry cf-bestip candidates for $countryCode."
+        }
+        catch {
+            Write-Log "WARN: Failed to fetch cf-bestip candidates for $countryCode`: $($_.Exception.Message)"
+        }
+    }
+
+    Write-Log "Fetched $($candidates.Count) cf-bestip candidates in total."
+    return $candidates.ToArray()
+}
+
 function New-PortWorkItem {
     param(
         [int]$CurrentPort,
         [object[]]$Vps789CtIps,
+        [object[]]$CfBestIpCandidates,
         [string[]]$SelectedCountries = $Countries,
         [string]$ScopeName = "all",
         [bool]$IncludeVps789Ct = $true
@@ -292,6 +344,31 @@ function New-PortWorkItem {
         }
     }
 
+    $selectedCountrySet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($country in $SelectedCountries) {
+        [void]$selectedCountrySet.Add($country.Trim())
+    }
+
+    $cfBestIpAdded = 0
+    foreach ($candidate in @($CfBestIpCandidates)) {
+        if ($candidate.Port -ne $CurrentPort) {
+            continue
+        }
+        if (-not $selectedCountrySet.Contains([string]$candidate.City)) {
+            continue
+        }
+        $ip = [string]$candidate.Ip
+        if ([string]::IsNullOrWhiteSpace($ip)) {
+            continue
+        }
+        $ip = $ip.Trim()
+        if ($seenIps.Add($ip)) {
+            Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
+            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($candidate.City)" -Encoding ASCII
+            $cfBestIpAdded++
+        }
+    }
+
     $vps789Added = 0
     foreach ($candidate in $(if ($IncludeVps789Ct) { @($Vps789CtIps) } else { @() })) {
         $ip = [string]$candidate.ip
@@ -314,7 +391,7 @@ function New-PortWorkItem {
         return $null
     }
 
-    Write-Log "Merged $lineCount IP lines for port $CurrentPort scope $ScopeName into $selectedIpPath. vps789 CT added: $vps789Added."
+    Write-Log "Merged $lineCount IP lines for port $CurrentPort scope $ScopeName into $selectedIpPath. cf-bestip added: $cfBestIpAdded. vps789 CT added: $vps789Added."
     return [pscustomobject]@{
         Port = $CurrentPort
         Scope = $ScopeName
@@ -554,7 +631,7 @@ function Write-MergedFilteredCsv {
         }
         $regionCounters[$regionKey]++
         $regionNumber = $regionCounters[$regionKey].ToString("00", [System.Globalization.CultureInfo]::InvariantCulture)
-        $numberedCity = $row.City -replace ("^" + [regex]::Escape($regionKey)), "$regionKey$regionNumber"
+        $numberedCity = "$regionKey [$TestLocationName#$regionNumber]"
         $kept.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$numberedCity,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)")
     }
 
@@ -639,11 +716,12 @@ try {
     Write-Log "Configured ports: $($effectivePorts -join ', ')"
 
     $vps789CtIps = @(Get-Vps789CtIps)
+    $cfBestIpCandidates = @(Get-CfBestIpCandidates)
     $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
-            New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -SelectedCountries $Countries -ScopeName "all" -IncludeVps789Ct $true
+            New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -SelectedCountries $Countries -ScopeName "all" -IncludeVps789Ct $true
             foreach ($focusCountry in @(Get-EffectiveFocusCountries)) {
                 if ($Countries -contains $focusCountry) {
-                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
+                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
                 }
             }
         }
