@@ -201,3 +201,15 @@ export GITHUB_TOKEN_CFOPT="你的 token"
 - `cfst-443-stdout.log` / `cfst-443-stderr.log`：单端口测速日志
 - `auto-push.log`：总日志
 - `last-success.txt`：上次成功上传时间
+
+## vps789 CT candidates
+
+The scripts fetch `https://vps789.com/openApi/cfIpApi` by default and only use `data.CT`, which is the China Telecom Cloudflare preferred-IP list. These IPs are added to every CFST port input and tested together with candidates from `ip.zip`.
+
+- Enabled by default: Windows enabled; Linux `ENABLE_VPS789_CT=1`
+- Disable: Windows `-DisableVps789Ct`; Linux `ENABLE_VPS789_CT=0`
+- Default limit: `Vps789CtLimit=50` / `VPS789_CT_LIMIT=50`
+- Default filter: China Telecom latency `<=260ms`, China Telecom loss `<=5`
+- Helper export: `VPS789_CF_CT_Candidates.csv`
+
+`hostMonitorList` looks more like a VPS/domain/IP monitor list and is not guaranteed to contain only Cloudflare Anycast IPs, so it is not merged directly into the Edge Tunnel CSV. The main merged speed-test CSV only adds `cfIpApi.data.CT`, then lets CFST test and filter it.
