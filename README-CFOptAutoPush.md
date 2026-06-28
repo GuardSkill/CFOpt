@@ -1,322 +1,145 @@
 # CFOpt Auto Push
 
-This repository automation generates CloudflareSpeedTest CSV files from `ip.zip`, filters bad rows, adds `閸╁骸绔禶 and `缁旑垰褰沗 columns, and uploads the result to `GuardSkill/CFOpt`.
+CFOpt generates Edge Tunnel compatible CloudflareSpeedTest CSV files. It downloads candidate IP lists, tests multiple Cloudflare ports with `CloudflareSpeedTest`, filters unstable rows, keeps the best rows per region, and uploads the result to GitHub.
 
-## What It Uploads
+## Files
 
-- Windows/CD script default: `CloudflareSpeedTest_CD.csv`
-- Linux/BJ script default: `CloudflareSpeedTest_BJ.csv`
-- Subconverter config: `CFOpt_Subconverter.ini`
+- `CloudflareSpeedTest_CD.csv`: default Windows/CD output
+- `CloudflareSpeedTest_BJ.csv`: default Linux/BJ output
+- `CFOpt_Subconverter.ini`: Subconverter config
+- `rules/`: routing rules
 
-## Subconverter Config
-
-Root file:
-
-```text
-CFOpt_Subconverter.ini
-```
-
-Raw URL:
-
-```text
-https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter.ini
-```
-
-Use this URL as edgetunnel `鐠併垽妲勬潪顒佸床闁板秶鐤?SUBCONFIG`.
-
-The config does not hard-code proxy IPs. It selects nodes by the online CSV-generated remarks:
-
-- `Polymarket`: only `KR`, `HK`, `MY`, `IE`
-- `ClaudeCode`: countries/regions suitable for both Claude/Claude Code and OpenAI/Codex: `KR`, `SG`, `VN`, `MY`, `KZ`, `IE`, `US`, with `PH` and `MN` reserved for future upstream availability
-
-Because generated nodes look like `198.41.223.63:2096#SG [86ms 76.20Mbps]`, the config filters by country/region prefix rather than fixed IPs.
-
-Both scripts:
-
-1. Download `https://zip.cm.edu.kg/ip.zip`
-2. Extract the folders matching the configured ports, by default `443`, `2053`, `2083`, `2087`, `2096`, and `8443`
-3. Merge selected group files such as `HK.txt`, `KR.txt`, `SG.txt` for each port
-4. Save per-port IP-to-group maps such as `selected-ip-city-map-443.csv`
-5. Run one `cfst` process per port in parallel
-6. Merge all port CSVs and filter unusable or extreme rows
-7. Keep at most 20 best rows per source group across all ports
-8. Output API-compatible columns including `IP閸︽澘娼僠, `缁旑垰褰沗, `閺佺増宓佹稉顓炵妇`, `閸╁骸绔禶, and `TLS`
-9. Put subscription remarks in `閸╁骸绔禶, such as `SG [86ms 76.20Mbps]`
-10. Upload the CSV to GitHub
-
-The current zip groups are country/region codes, so the `閸╁骸绔禶 value starts with `HK`, `KR`, `SG`, `US`, and similar. It also includes latency and converted Mbps speed so edgetunnel can produce lines such as `198.41.223.63:2096#SG [86ms 76.20Mbps]`.
-
-## Filtering Rules
-
-Defaults:
-
-- Keep rows with `瀹稿弶甯撮弨?>= 1`
-- Keep rows with `娑撱垹瀵橀悳?< 1`
-- Keep rows with `楠炲啿娼庡鎯扮箿 <= 420`
-- Keep rows with download speed `>= 0.01 Mbps`, so `0.00` speed results do not enter the subscription
-- Keep at most `20` rows per source group across all tested ports, sorted by higher download speed first, then lower latency
-
-Change the latency threshold when running manually:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -MaxLatencyMs 300
-```
-
-```bash
-FORCE=1 MAX_LATENCY_MS=300 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-If every result is `0.00 MB/s`, enable cfst debug output to inspect download URL, IP, or network failures:
-
-```bash
-FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
-```
-
-## vps789 CT candidates
-
-The scripts fetch `https://vps789.com/openApi/cfIpApi` by default and only use `data.CT`, which is the China Telecom Cloudflare preferred-IP list. These IPs are added to every CFST port input and tested together with candidates from `ip.zip`.
-
-- Disabled by default because the CT API currently returns very few IPs
-- Enable manually: Windows `-EnableVps789Ct`; Linux `ENABLE_VPS789_CT=1`
-- Default limit: `Vps789CtLimit=100` / `VPS789_CT_LIMIT=50`
-- Default filter: China Telecom latency `<=260ms`, China Telecom loss `<=5`
-- Helper export: `VPS789_CF_CT_Candidates.csv`
-
-`hostMonitorList` looks more like a VPS/domain/IP monitor list and is not guaranteed to contain only Cloudflare Anycast IPs, so it is not merged directly into the Edge Tunnel CSV. The main merged speed-test CSV only adds `cfIpApi.data.CT`, then lets CFST test and filter it.
-
-## GitHub Token
-
-Create a GitHub fine-grained personal access token with repository contents write access to `GuardSkill/CFOpt`.
-
-Windows:
-
-```powershell
-[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "paste_your_token_here", "User")
-```
-
-Close and reopen PowerShell after setting it.
-
-Linux:
-
-```bash
-export GITHUB_TOKEN_CFOPT="paste_your_token_here"
-```
-
-For cron or systemd, put the token in the script environment, a root-owned env file, or the service unit.
-
-## Windows Usage
-
-Files:
+## Scripts
 
 - `scripts/windows/Invoke-CFOptAutoPush.ps1`
 - `scripts/windows/Install-CFOptAutoPushTask.ps1`
+- `scripts/linux/invoke-cfopt-auto-push-linux.sh`
+- `scripts/linux/install-and-run-cfopt-linux.sh`
 
-Expected local `cfst` path:
+Root-level duplicate scripts were removed. The root now keeps only docs, configs, CSVs, and rules.
+
+## Testing Strategy
+
+The default candidate source is:
 
 ```text
-H:\PyProjects\cfst_windows_amd64\cfst.exe
+https://zip.cm.edu.kg/ip.zip
 ```
 
-Default working directory:
+Default ports:
 
 ```text
-H:\PyProjects\CFOptAutoPush
+443,2053,2083,2087,2096,8443
 ```
 
-Dry run without running `cfst` or uploading:
+To avoid Hong Kong candidates being crowded out by other regions, the scripts now run:
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -DryRun
+1. one general test for all configured regions
+2. extra focused tests for `HK` by default
+
+Default CFST parameters:
+
+```text
+-n 160
+-t 6
+-dn 60
+-dt 15
+-tl 420
+-tlr 0
+-sl 0.01
+-p 0
 ```
 
-Generate CSV without upload:
+The final CSV still keeps the Top 20 rows per region/group.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -SkipUpload
-```
+## Run
 
-Generate and upload `CloudflareSpeedTest_CD.csv`:
+Windows:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
 ```
 
-Install startup automation:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
-```
-
-The scheduled task is named `CFOpt Auto Push`. It runs at startup after a short delay. The main script records the last successful upload and only runs again after `IntervalDays`, default `3`.
-
-## Linux Usage
-
-File:
-
-- `scripts/linux/invoke-cfopt-auto-push-linux.sh`
-
-One-line install and immediate run:
-
-```bash
-GITHUB_TOKEN_CFOPT="your_token_here" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
-```
-
-If you are already in the repo and only want to force a manual update:
+Linux:
 
 ```bash
 FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-You provide the Linux `cfst` binary yourself.
-
-Example setup:
+One-line Linux bootstrap:
 
 ```bash
-mkdir -p "$HOME/cfopt-auto-push"
-cp ./cfst "$HOME/cfopt-auto-push/cfst"
-chmod +x "$HOME/cfopt-auto-push/cfst"
-chmod +x ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-export GITHUB_TOKEN_CFOPT="paste_your_token_here"
+GITHUB_TOKEN_CFOPT="your token" bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
 ```
 
-Dry run:
+## Focus Regions
 
-```bash
-DRY_RUN=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-Generate CSV without upload:
-
-```bash
-FORCE=1 SKIP_UPLOAD=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-Generate and upload `CloudflareSpeedTest_BJ.csv`:
-
-```bash
-FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
-```
-
-Useful environment variables:
-
-```bash
-WORK_DIR="$HOME/cfopt-auto-push"
-CFST_PATH="$HOME/cfopt-auto-push/cfst"
-PORTS="443,2053,2083,2087,2096,8443"
-# Set PORT=443 to force a single-port run.
-TARGET_PATH="CloudflareSpeedTest_BJ.csv"
-INTERVAL_DAYS=3
-MAX_LATENCY_MS=420
-MIN_SPEED_MBPS=0.01
-MAX_PER_CITY=20
-COUNTRIES_CSV="HK,KR,SG,PH,VN,MY,KZ,MN,IE,US"
-```
-
-## Linux Automation
-
-Cron example, run at reboot:
-
-```cron
-@reboot GITHUB_TOKEN_CFOPT=your_token_here CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst /home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh >> /home/ubuntu/cfopt-auto-push/cron.log 2>&1
-```
-
-Cron example, run daily and let the script enforce the 3-day interval:
-
-```cron
-20 4 * * * GITHUB_TOKEN_CFOPT=your_token_here CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst /home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh >> /home/ubuntu/cfopt-auto-push/cron.log 2>&1
-```
-
-Systemd service example:
-
-```ini
-[Unit]
-Description=CFOpt Auto Push
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-Environment=GITHUB_TOKEN_CFOPT=your_token_here
-Environment=WORK_DIR=/home/ubuntu/cfopt-auto-push
-Environment=CFST_PATH=/home/ubuntu/cfopt-auto-push/cfst
-ExecStart=/home/ubuntu/cfopt-auto-push/invoke-cfopt-auto-push-linux.sh
-```
-
-Systemd timer example:
-
-```ini
-[Unit]
-Description=Run CFOpt Auto Push daily
-
-[Timer]
-OnBootSec=5min
-OnUnitActiveSec=1d
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-The script still enforces the 3-day interval internally.
-
-## Port Behavior
-
-`ip.zip` contains folders named by port. By default the scripts run all configured ports in parallel and merge the results into one CSV.
-
-- Windows default: `-Ports "443,2053,2083,2087,2096,8443"`
-- Linux default: `PORTS="443,2053,2083,2087,2096,8443"`
-- Single-port override: Windows `-Port 8443`, Linux `PORT=8443`
-- `443`: does not pass `-tp`, so cfst uses its default 443 behavior
-- Non-443 ports: pass `-tp <port>`
-
-For port 80, cfst also needs an HTTP download URL:
+Windows:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -Port 80 -DownloadTestUrl "http://speed.cloudflare.com/__down?bytes=99999999"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -FocusCountries "HK,SG,JP"
+```
+
+Linux:
+
+```bash
+FORCE=1 FOCUS_COUNTRIES_CSV="HK,SG,JP" ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+## Tuning
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDownloadTestCount 100 -CfstDownloadTestTime 20 -CfstLossRateLimit 0
+```
+
+Linux:
+
+```bash
+FORCE=1 CFST_DOWNLOAD_TEST_COUNT=100 CFST_DOWNLOAD_TEST_TIME=20 CFST_LOSS_RATE_LIMIT=0 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+If every download speed is `0.00 MB/s`, enable debug output:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
 ```
 
 ```bash
-FORCE=1 PORT=80 DOWNLOAD_TEST_URL="http://speed.cloudflare.com/__down?bytes=99999999" ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-This only works if the downloaded zip contains an `80` folder.
+## vps789
 
-## Logs And Generated Files
+`vps789` currently returns very few CT candidates, so it is disabled by default.
 
-Windows default work dir:
+Enable manually:
 
-```text
-H:\PyProjects\CFOptAutoPush
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -EnableVps789Ct
 ```
 
-Linux default work dir:
-
-```text
-$HOME/cfopt-auto-push
+```bash
+FORCE=1 ENABLE_VPS789_CT=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-Important files:
+Only `cfIpApi.data.CT` is used.
 
-- `auto-push.log`: run log
-- `last-success.txt`: last successful upload time
-- `ip.zip`: downloaded zip cache
-- `extract`: extracted zip contents
-- `selected-ip.txt`: merged cfst input
-- `selected-ip-city-map.csv`: IP-to-group map used for the `閸╁骸绔禶 column
-- `CloudflareSpeedTest.csv`: generated and filtered CSV before upload, using edgetunnel-compatible columns
-- `cfst-stdin.txt` on Windows: blank line for cfst final Enter prompt
-- `cfst-stdout.log` and `cfst-stderr.log`: captured cfst output
+## cf-bestip
 
-## Common Issues
+`Zoroaaa/cf-bestip` is a better regional candidate source than vps789 because it publishes region-specific Cloudflare Anycast IPv4 lists. It should still be treated as a candidate source rather than a final result source. The final CSV should continue to come from local CFST download tests.
 
-- Missing token: set `GITHUB_TOKEN_CFOPT`.
-- Missing `cfst`: set `CfstPath` on Windows or `CFST_PATH` on Linux.
-- Download blocked: the source sometimes returns a Cloudflare challenge. If `ip.zip` already exists, the scripts reuse the cached zip.
-- Missing group file: the scripts log a warning and continue with available groups.
-- Missing port folder: the scripts stop instead of mixing IPs from another port.
-- GitHub 404 during metadata lookup: treated as "file does not exist yet"; the upload creates it.
-- GitHub upload still returns 404: check repository name, branch, token permissions, and private repository access.
+## GitHub Token
+
+Windows:
+
+```powershell
+[Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "your token", "User")
+```
+
+Linux:
+
+```bash
+export GITHUB_TOKEN_CFOPT="your token"
+```
