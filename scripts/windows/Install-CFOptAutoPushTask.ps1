@@ -1,6 +1,7 @@
 param(
-    [string]$ScriptPath = "C:\Users\GuardSkill\Documents\Codex\2026-06-27\ni\outputs\Invoke-CFOptAutoPush.ps1",
+    [string]$ScriptPath = (Join-Path $PSScriptRoot "Invoke-CFOptAutoPush.ps1"),
     [string]$TaskName = "CFOpt Auto Push",
+    [string]$DailyAt = "04:00",
     [int]$StartupDelayMinutes = 2
 )
 
@@ -14,8 +15,9 @@ $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`""
 
 $action = New-ScheduledTaskAction -Execute $powershell -Argument $argument
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$trigger.Delay = "PT${StartupDelayMinutes}M"
+$dailyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Parse($DailyAt))
+$startupTrigger = New-ScheduledTaskTrigger -AtStartup
+$startupTrigger.Delay = "PT${StartupDelayMinutes}M"
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -31,10 +33,10 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $action `
-    -Trigger $trigger `
+    -Trigger @($dailyTrigger, $startupTrigger) `
     -Principal $principal `
     -Settings $settings `
-    -Description "Download IP lists, run cfst, and push CloudflareSpeedTest.csv to GitHub every 3 days after startup." | Out-Null
+    -Description "Daily CFOpt rolling retest: retest previous CSV nodes, replace weak rows, and upload CloudflareSpeedTest CSV." | Out-Null
 
 Write-Host "Scheduled task installed: $TaskName"
-Write-Host "It will run at startup after $StartupDelayMinutes minute(s). The main script enforces the 3-day interval."
+Write-Host "It will run daily at $DailyAt and at startup after $StartupDelayMinutes minute(s). The main script enforces the 1-day interval."
