@@ -13,7 +13,7 @@ param(
     [int]$IntervalDays = 1,
     [int]$MaxLatencyMs = 420,
     [int]$MinReceived = 1,
-    [double]$MinSpeedMbps = 0.01,
+    [double]$MinSpeedMbps = 0.03,
     [int]$MaxPerCity = 20,
     [int]$CfstThreads = 80,
     [int]$CfstLatencyTestCount = 6,
