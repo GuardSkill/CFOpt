@@ -500,7 +500,7 @@ filter_csv() {
         key = ip "|" port "|" city
         is_previous = (key in previous) ? 1 : 0
         dedupe_key = ip "|" port "|" city
-        dedupe_row = sprintf("%s\t%012.6f\t%012.6f\t%d\t%s", city, 999999-speed, latency, is_previous, row)
+        dedupe_row = sprintf("%s\t%012.6f\t%012.6f\t%d\t%s", city, latency, 999999-speed, is_previous, row)
         if (!(dedupe_key in best_row) || dedupe_row < best_row[dedupe_key]) {
           best_row[dedupe_key] = dedupe_row
         }

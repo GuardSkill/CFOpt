@@ -742,7 +742,7 @@ function Write-MergedFilteredCsv {
         $candidateRows |
             Group-Object @{ Expression = { "$($_.Ip)|$($_.Port)|$($_.CityKey)" } } |
             ForEach-Object {
-                $_.Group | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false } | Select-Object -First 1
+                $_.Group | Sort-Object @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "SpeedNumber"; Descending = $true } | Select-Object -First 1
             }
     )
 
@@ -750,7 +750,7 @@ function Write-MergedFilteredCsv {
         $dedupRows |
             Group-Object CityKey |
             ForEach-Object {
-                $sortedGroup = @($_.Group | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false })
+                $sortedGroup = @($_.Group | Sort-Object @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "SpeedNumber"; Descending = $true })
                 $maxPreviousKeep = [math]::Max(0, [math]::Floor($MaxPerCity * (1 - $RollingReplaceFraction)))
                 $oldRows = @($sortedGroup | Where-Object { $_.IsPrevious } | Select-Object -First $maxPreviousKeep)
                 $newRows = @($sortedGroup | Where-Object { -not $_.IsPrevious } | Select-Object -First ([math]::Max(0, $MaxPerCity - $oldRows.Count)))
@@ -769,7 +769,7 @@ function Write-MergedFilteredCsv {
                 }
                 $selectedRows
             } |
-            Sort-Object CityKey, @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false }
+            Sort-Object CityKey, @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "SpeedNumber"; Descending = $true }
     )
 
     if ($keptRows.Count -lt $candidateRows.Count) {
