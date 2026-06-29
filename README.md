@@ -137,7 +137,7 @@ FORCE=1 USE_PROXY_FOR_CFST=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### 城市列格式
 
-城市列会包含地区、测速位置编号和候选来源。
+城市列会包含地区、测速位置编号和候选来源，Windows/成都和 Linux/北京两边格式保持一致：`地区 [位置名称#编号 来源]`。
 
 Windows / 成都测速：
 
@@ -150,8 +150,8 @@ HK [成都测速#03 vps789]
 Linux / 北京测速：
 
 ```text
-HK[北京测速01 ip.zip]
-JP[北京测速01 cf-bestip]
+HK [北京测速#01 ip.zip]
+JP [北京测速#01 cf-bestip]
 ```
 
 来源可能是：
