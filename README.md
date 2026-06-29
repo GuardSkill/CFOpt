@@ -104,7 +104,7 @@ HK,KR,JP,SG
 ```text
 -n 80
 -t 6
--dn 60
+-dn 30
 -dt 15
 -tl 420
 -tlr 0
@@ -285,7 +285,7 @@ Default CFST parameters:
 ```text
 -n 80
 -t 6
--dn 60
+-dn 30
 -dt 15
 -tl 420
 -tlr 0

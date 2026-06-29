@@ -17,7 +17,7 @@ param(
     [int]$MaxPerCity = 20,
     [int]$CfstThreads = 80,
     [int]$CfstLatencyTestCount = 6,
-    [int]$CfstDownloadTestCount = 60,
+    [int]$CfstDownloadTestCount = 30,
     [int]$CfstDownloadTestTime = 15,
     [double]$CfstLossRateLimit = 0,
     [int]$MaxParallelCfst = 1,
