@@ -597,7 +597,7 @@ PY
   local uri="https://api.github.com/repos/$OWNER/$REPO/contents/$encoded_path"
   local meta_file="$WORK_DIR/github-meta.json"
   local status
-  status="$(curl -sS -o "$meta_file" -w '%{http_code}' \
+  status="$(curl -sS --retry 3 --retry-connrefused -o "$meta_file" -w '%{http_code}' \
     -H "Authorization: Bearer $token" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
@@ -633,7 +633,7 @@ if sha:
 print(json.dumps(body))
 PY
 
-  put_status="$(curl -sS -o "$response_file" -w '%{http_code}' -X PUT \
+  put_status="$(curl -sS --retry 3 --retry-connrefused -o "$response_file" -w '%{http_code}' -X PUT \
     -H "Authorization: Bearer $token" \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
