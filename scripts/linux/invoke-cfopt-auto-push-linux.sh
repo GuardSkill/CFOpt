@@ -556,7 +556,7 @@ filter_csv() {
           output_city_count[city]++
           source = cols[col_count]
           if (source == "") source = "unknown"
-          numbered_city = city "[" test_location_name sprintf("%02d", output_city_count[city]) " " source "]"
+          numbered_city = city " [" test_location_name "#" sprintf("%02d", output_city_count[city]) " " source "]"
           cols[4] = numbered_city
           out = cols[1]
           for (k = 2; k < col_count; k++) {
