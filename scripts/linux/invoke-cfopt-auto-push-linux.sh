@@ -30,6 +30,10 @@ TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
 ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
 CFBESTIP_BASE_URL="${CFBESTIP_BASE_URL:-https://zoroaaa.github.io/cf-bestip}"
 CFBESTIP_PER_COUNTRY_LIMIT="${CFBESTIP_PER_COUNTRY_LIMIT:-200}"
+IPZIP_SAMPLE_ENABLED="${IPZIP_SAMPLE_ENABLED:-1}"
+IPZIP_SAMPLE_PERCENT="${IPZIP_SAMPLE_PERCENT:-20}"
+IPZIP_COUNTRY_MIN_CANDIDATES="${IPZIP_COUNTRY_MIN_CANDIDATES:-20}"
+IPZIP_COUNTRY_MAX_CANDIDATES="${IPZIP_COUNTRY_MAX_CANDIDATES:-160}"
 ENABLE_VPS789_CT="${ENABLE_VPS789_CT:-0}"
 VPS789_CT_LIMIT="${VPS789_CT_LIMIT:-50}"
 VPS789_MAX_DX_LATENCY_MS="${VPS789_MAX_DX_LATENCY_MS:-260}"
@@ -322,6 +326,91 @@ append_previous_for_port() {
   printf '%s\n' "$added"
 }
 
+focus_excluded_countries_csv() {
+  local countries_csv="$1"
+  local focus_countries_csv="$2"
+
+  awk -v countries="$countries_csv" -v focus="$focus_countries_csv" '
+    BEGIN {
+      split(focus, focus_items, ",")
+      for (i in focus_items) {
+        country = toupper(focus_items[i])
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", country)
+        if (country != "") focus_set[country] = 1
+      }
+
+      split(countries, country_items, ",")
+      for (i = 1; i <= length(country_items); i++) {
+        country = toupper(country_items[i])
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", country)
+        if (country != "" && !(country in focus_set)) {
+          printf "%s%s", sep, country
+          sep = ","
+        }
+      }
+    }
+  '
+}
+
+append_ipzip_country_file() {
+  local country="$1"
+  local file="$2"
+  local selected_ip_path="$3"
+  local map_path="$4"
+  local sampled_path
+  sampled_path="$(mktemp)"
+
+  awk \
+    -v enabled="$IPZIP_SAMPLE_ENABLED" \
+    -v percent="$IPZIP_SAMPLE_PERCENT" \
+    -v min_keep="$IPZIP_COUNTRY_MIN_CANDIDATES" \
+    -v max_keep="$IPZIP_COUNTRY_MAX_CANDIDATES" '
+      /^[[:space:]]*(#|$)/ { next }
+      {
+        line = $0
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+        if (line != "") rows[++n] = line
+      }
+      END {
+        if (n == 0) exit
+        if (enabled != "1") {
+          for (i = 1; i <= n; i++) print rows[i]
+          exit
+        }
+
+        pct = percent + 0
+        min_count = min_keep + 0
+        max_count = max_keep + 0
+        if (pct <= 0 || pct > 100) pct = 100
+        if (min_count < 0) min_count = 0
+
+        target = int((n * pct + 99) / 100)
+        if (target < min_count) target = min_count
+        if (max_count > 0 && target > max_count) target = max_count
+        if (target > n) target = n
+
+        if (target >= n) {
+          for (i = 1; i <= n; i++) print rows[i]
+          exit
+        }
+
+        step = n / target
+        for (i = 1; i <= target; i++) {
+          idx = int((i - 1) * step) + 1
+          if (idx > n) idx = n
+          if (!(idx in picked)) {
+            print rows[idx]
+            picked[idx] = 1
+          }
+        }
+      }
+    ' "$file" > "$sampled_path"
+
+  cat "$sampled_path" >> "$selected_ip_path"
+  awk -v city="$country" 'NF { print $0 "," city ",ip.zip" }' "$sampled_path" >> "$map_path"
+  rm -f "$sampled_path"
+}
+
 merge_country_files_for_port() {
   local port="$1"
   local scope="${2:-all}"
@@ -349,8 +438,7 @@ merge_country_files_for_port() {
       log "WARN: Country file not found in extracted zip: ${country}.txt. Skipping $country on port $port."
       continue
     fi
-    grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' >> "$selected_ip_path" || true
-    grep -vE '^[[:space:]]*(#|$)' "$file" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | awk -v city="$country" 'NF { print $0 "," city ",ip.zip" }' >> "$map_path" || true
+    append_ipzip_country_file "$country" "$file" "$selected_ip_path" "$map_path"
     found=$((found + 1))
   done
 
@@ -672,8 +760,11 @@ main() {
 
   mapfile -t ports < <(effective_ports)
   log "Configured ports: ${ports[*]}"
+  all_countries_csv="$(focus_excluded_countries_csv "$COUNTRIES_CSV" "$FOCUS_COUNTRIES_CSV")"
   for port_value in "${ports[@]}"; do
-    merge_country_files_for_port "$port_value" "all" "$COUNTRIES_CSV" "1" || true
+    if [[ -n "$all_countries_csv" ]]; then
+      merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" || true
+    fi
     IFS=',' read -r -a focus_countries <<< "$FOCUS_COUNTRIES_CSV"
     for focus_country in "${focus_countries[@]}"; do
       focus_country="$(printf '%s' "$focus_country" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
