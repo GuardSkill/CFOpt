@@ -140,17 +140,21 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
   fi
 }
 
-test_windows_defaults_include_europe_focus_countries() {
-  grep -q '\[string\[\]\]\$Countries = @("HK", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US", "DE", "GB", "NL", "IT")' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows runner default Countries should include DE/GB/NL/IT"
-  grep -q '\[string\]\$FocusCountries = "HK,KR,JP,SG,DE,GB,NL,IT"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows runner default FocusCountries should include DE/GB/NL/IT"
+test_runner_defaults_exclude_europe_focus_countries() {
+  grep -q 'COUNTRIES_CSV="${COUNTRIES_CSV:-HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner default Countries should exclude DE/GB/NL/IT"
+  grep -q 'FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-HK,KR,JP,SG}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner default FocusCountries should exclude DE/GB/NL/IT"
+  grep -q '\[string\[\]\]\$Countries = @("HK", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US")' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner default Countries should exclude DE/GB/NL/IT"
+  grep -q '\[string\]\$FocusCountries = "HK,KR,JP,SG"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner default FocusCountries should exclude DE/GB/NL/IT"
 }
 
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
 test_linux_runner_excludes_focus_countries_from_all_scope
-test_windows_defaults_include_europe_focus_countries
+test_runner_defaults_exclude_europe_focus_countries
 
 printf 'Linux script tests passed.\n'
