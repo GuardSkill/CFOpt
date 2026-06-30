@@ -151,10 +151,68 @@ test_runner_defaults_include_europe_focus_countries() {
     || fail "Windows runner default FocusCountries should include DE/GB/NL/IT"
 }
 
+test_proxyip_best_generator_ranks_candidates_by_tcp_latency() {
+  local tmp_dir source_txt output_txt ready_file
+  tmp_dir="$(mktemp -d)"
+  source_txt="$tmp_dir/all.txt"
+  output_txt="$tmp_dir/proxyip-best.txt"
+  ready_file="$tmp_dir/ready"
+
+  python3 - "$ready_file" <<'PY' &
+import socket
+import sys
+import threading
+import time
+
+ready = sys.argv[1]
+
+def server(port, delay):
+    sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", port))
+    sock.listen()
+    while True:
+        conn, _ = sock.accept()
+        time.sleep(delay)
+        conn.close()
+
+threading.Thread(target=server, args=(19081, 0.001), daemon=True).start()
+threading.Thread(target=server, args=(19082, 0.05), daemon=True).start()
+open(ready, "w").close()
+while True:
+    time.sleep(1)
+PY
+  local server_pid=$!
+  for _ in $(seq 1 50); do
+    [[ -f "$ready_file" ]] && break
+    sleep 0.1
+  done
+
+  cat > "$source_txt" <<'TXT'
+127.0.0.1:19082#SG
+127.0.0.1:19081#SG
+TXT
+
+  python3 "$ROOT_DIR/scripts/generate_proxyip_best.py" \
+    --source "file://$source_txt" \
+    --output "$output_txt" \
+    --countries SG \
+    --limit 1 \
+    --timeout 0.5 \
+    --workers 2
+  kill "$server_pid" 2>/dev/null || true
+
+  grep -q '^127\.0\.0\.1:19081#SG$' "$output_txt" || fail "proxyip best generator should keep the fastest SG proxyip"
+  if grep -q '^127\.0\.0\.1:19082#SG$' "$output_txt"; then
+    fail "proxyip best generator kept the slower SG proxyip"
+  fi
+}
+
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
 test_linux_runner_excludes_focus_countries_from_all_scope
 test_runner_defaults_include_europe_focus_countries
+test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 
 printf 'Linux script tests passed.\n'

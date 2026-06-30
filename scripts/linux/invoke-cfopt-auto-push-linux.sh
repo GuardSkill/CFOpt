@@ -2,6 +2,8 @@
 set -euo pipefail
 
 DOWNLOAD_URL="${DOWNLOAD_URL:-https://zip.cm.edu.kg/ip.zip}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 WORK_DIR="${WORK_DIR:-$HOME/cfopt-auto-push}"
 CFST_PATH="${CFST_PATH:-$WORK_DIR/cfst}"
 PORT="${PORT:-}"
@@ -43,6 +45,15 @@ FORCE="${FORCE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_UPLOAD="${SKIP_UPLOAD:-0}"
 CFST_DEBUG="${CFST_DEBUG:-0}"
+PROXYIP_BEST_SOURCE="${PROXYIP_BEST_SOURCE:-https://zip.cm.edu.kg/all.txt}"
+PROXYIP_BEST_PATH="${PROXYIP_BEST_PATH:-$WORK_DIR/proxyip-best.txt}"
+PROXYIP_BEST_TARGET_PATH="${PROXYIP_BEST_TARGET_PATH:-proxyip-best.txt}"
+PROXYIP_BEST_COUNTRIES="${PROXYIP_BEST_COUNTRIES:-AU,KR,IE,HK,SG,JP,DE,GB}"
+PROXYIP_BEST_LIMIT="${PROXYIP_BEST_LIMIT:-10}"
+PROXYIP_BEST_TIMEOUT="${PROXYIP_BEST_TIMEOUT:-0.75}"
+PROXYIP_BEST_WORKERS="${PROXYIP_BEST_WORKERS:-64}"
+PROXYIP_BEST_SCRIPT="${PROXYIP_BEST_SCRIPT:-$ROOT_DIR/scripts/generate_proxyip_best.py}"
+DISABLE_PROXYIP_BEST="${DISABLE_PROXYIP_BEST:-0}"
 
 ZIP_PATH="$WORK_DIR/ip.zip"
 TMP_ZIP_PATH="$WORK_DIR/ip.download.zip"
@@ -669,7 +680,10 @@ filter_csv() {
   log "Merged and filtered CSV rows across ports. Kept $kept. Top $MAX_PER_CITY per city/group. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms, speed >= $MIN_SPEED_MBPS Mbps."
 }
 
-publish_to_github() {
+publish_file_to_github() {
+  local local_path="$1"
+  local target_path="$2"
+  local message="$3"
   local token="${!TOKEN_ENV_NAME:-}"
   if [[ -z "$token" ]]; then
     log "ERROR: Missing GitHub token. Set $TOKEN_ENV_NAME."
@@ -677,7 +691,7 @@ publish_to_github() {
   fi
 
   local encoded_path
-  encoded_path="$(python3 - "$TARGET_PATH" <<'PY'
+  encoded_path="$(python3 - "$target_path" <<'PY'
 import sys, urllib.parse
 print("/".join(urllib.parse.quote(part, safe="") for part in sys.argv[1].split("/")))
 PY
@@ -707,9 +721,8 @@ PY
     return 1
   fi
 
-  local content message body_file response_file put_status
-  content="$(base64 -w 0 "$CSV_PATH")"
-  message="Update $TARGET_PATH"
+  local content body_file response_file put_status
+  content="$(base64 -w 0 "$local_path")"
   body_file="$WORK_DIR/github-upload.json"
   response_file="$WORK_DIR/github-upload-response.json"
   python3 - "$message" "$content" "$BRANCH" "$sha" > "$body_file" <<'PY'
@@ -735,7 +748,34 @@ PY
     return 1
   fi
 
-  log "Uploaded $CSV_PATH to $OWNER/$REPO/$TARGET_PATH."
+  log "Uploaded $local_path to $OWNER/$REPO/$target_path."
+}
+
+publish_to_github() {
+  publish_file_to_github "$CSV_PATH" "$TARGET_PATH" "Update $TARGET_PATH"
+}
+
+generate_proxyip_best() {
+  if [[ "$DISABLE_PROXYIP_BEST" == "1" ]]; then
+    log "proxyip-best generation disabled."
+    return 0
+  fi
+  if [[ ! -f "$PROXYIP_BEST_SCRIPT" ]]; then
+    log "WARN: proxyip-best script not found: $PROXYIP_BEST_SCRIPT"
+    return 0
+  fi
+  log "Generating proxyip best list from $PROXYIP_BEST_SOURCE"
+  if ! python3 "$PROXYIP_BEST_SCRIPT" \
+    --source "$PROXYIP_BEST_SOURCE" \
+    --output "$PROXYIP_BEST_PATH" \
+    --countries "$PROXYIP_BEST_COUNTRIES" \
+    --limit "$PROXYIP_BEST_LIMIT" \
+    --timeout "$PROXYIP_BEST_TIMEOUT" \
+    --workers "$PROXYIP_BEST_WORKERS"; then
+    log "WARN: proxyip-best generation failed."
+    return 0
+  fi
+  log "Generated proxyip best list: $PROXYIP_BEST_PATH"
 }
 
 main() {
@@ -811,6 +851,10 @@ main() {
   fi
 
   publish_to_github
+  generate_proxyip_best
+  if [[ -s "$PROXYIP_BEST_PATH" ]]; then
+    publish_file_to_github "$PROXYIP_BEST_PATH" "$PROXYIP_BEST_TARGET_PATH" "Update $PROXYIP_BEST_TARGET_PATH"
+  fi
   date --iso-8601=seconds > "$STATE_FILE"
   log "Completed successfully."
 }

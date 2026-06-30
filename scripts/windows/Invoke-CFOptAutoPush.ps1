@@ -37,7 +37,15 @@ param(
     [switch]$CfstDebug,
     [switch]$DisableCfBestIp,
     [switch]$EnableVps789Ct,
-    [switch]$DisableVps789Ct
+    [switch]$DisableVps789Ct,
+    [switch]$DisableProxyipBest,
+    [string]$ProxyipBestSource = "https://zip.cm.edu.kg/all.txt",
+    [string]$ProxyipBestTargetPath = "proxyip-best.txt",
+    [string]$ProxyipBestCountries = "AU,KR,IE,HK,SG,JP,DE,GB",
+    [int]$ProxyipBestLimit = 10,
+    [double]$ProxyipBestTimeout = 0.75,
+    [int]$ProxyipBestWorkers = 64,
+    [string]$ProxyipBestScript = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -45,11 +53,16 @@ $ErrorActionPreference = "Stop"
 if ([string]::IsNullOrWhiteSpace($TestLocationName)) {
     $TestLocationName = [string]([char]0x6210) + [string]([char]0x90FD) + [string]([char]0x6D4B) + [string]([char]0x901F)
 }
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+if ([string]::IsNullOrWhiteSpace($ProxyipBestScript)) {
+    $ProxyipBestScript = Join-Path $repoRoot "scripts\generate_proxyip_best.py"
+}
 
 $zipPath = Join-Path $WorkDir "ip.zip"
 $extractDir = Join-Path $WorkDir "extract"
 $csvPath = Join-Path $WorkDir "CloudflareSpeedTest.csv"
 $vps789CtCsvPath = Join-Path $WorkDir "VPS789_CF_CT_Candidates.csv"
+$proxyipBestPath = Join-Path $WorkDir "proxyip-best.txt"
 $stateFile = Join-Path $WorkDir "last-success.txt"
 $logFile = Join-Path $WorkDir "auto-push.log"
 
@@ -799,9 +812,13 @@ function Write-MergedFilteredCsv {
     Write-Log "Merged and filtered CSV rows across ports. Kept $($kept.Count - 1), removed $removed. Top $MaxPerCity per country/group. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms, speed >= $MinSpeedMbps Mbps."
 }
 
-function Publish-ToGitHub {
+function Publish-FileToGitHub {
+    param(
+        [string]$LocalPath,
+        [string]$UploadTargetPath
+    )
     $token = Get-GitHubToken
-    $encodedPath = ($TargetPath -split "/" | ForEach-Object { [uri]::EscapeDataString($_) }) -join "/"
+    $encodedPath = ($UploadTargetPath -split "/" | ForEach-Object { [uri]::EscapeDataString($_) }) -join "/"
     $uri = "https://api.github.com/repos/$Owner/$Repo/contents/$encodedPath"
     $headers = @{
         Authorization = "Bearer $token"
@@ -831,10 +848,10 @@ function Publish-ToGitHub {
         }
     }
 
-    $bytes = [System.IO.File]::ReadAllBytes($csvPath)
+    $bytes = [System.IO.File]::ReadAllBytes($LocalPath)
     $content = [Convert]::ToBase64String($bytes)
     $bodyMap = @{
-        message = "Update $TargetPath"
+        message = "Update $UploadTargetPath"
         content = $content
         branch = $Branch
     }
@@ -843,8 +860,30 @@ function Publish-ToGitHub {
     }
     $body = $bodyMap | ConvertTo-Json -Depth 5
 
-    Write-Log "Uploading CSV to GitHub branch $Branch."
+    Write-Log "Uploading $LocalPath to GitHub branch $Branch as $UploadTargetPath."
     Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -Body $body -ContentType "application/json" | Out-Null
+}
+
+function Publish-ToGitHub {
+    Publish-FileToGitHub -LocalPath $csvPath -UploadTargetPath $TargetPath
+}
+
+function New-ProxyipBestFile {
+    if ($DisableProxyipBest) {
+        Write-Log "proxyip-best generation disabled."
+        return
+    }
+    if (-not (Test-Path -LiteralPath $ProxyipBestScript)) {
+        Write-Log "WARN: proxyip-best script not found: $ProxyipBestScript"
+        return
+    }
+    Write-Log "Generating proxyip best list from $ProxyipBestSource"
+    & python $ProxyipBestScript --source $ProxyipBestSource --output $proxyipBestPath --countries $ProxyipBestCountries --limit $ProxyipBestLimit --timeout $ProxyipBestTimeout --workers $ProxyipBestWorkers
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "WARN: proxyip-best generation failed with exit code $LASTEXITCODE."
+        return
+    }
+    Write-Log "Generated proxyip best list: $proxyipBestPath"
 }
 
 try {
@@ -933,6 +972,10 @@ try {
     }
 
     Publish-ToGitHub
+    New-ProxyipBestFile
+    if (Test-Path -LiteralPath $proxyipBestPath) {
+        Publish-FileToGitHub -LocalPath $proxyipBestPath -UploadTargetPath $ProxyipBestTargetPath
+    }
 
     (Get-Date).ToString("o") | Set-Content -LiteralPath $stateFile -Encoding ASCII
     Write-Log "Completed successfully. Uploaded $csvPath to $Owner/$Repo/$TargetPath."

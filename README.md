@@ -36,6 +36,7 @@ FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 - `CloudflareSpeedTest_CD.csv`：Windows / 成都测速默认输出。
 - `CloudflareSpeedTest_BJ.csv`：Linux / 北京测速默认输出。
+- `proxyip-best.txt`：每日从 `https://zip.cm.edu.kg/all.txt` 拉取并按 TCP 连接延迟筛选出的每国 Top 10 ProxyIP，供 Edge Tunnel 订阅生成阶段使用。
 - `CFOpt_Subconverter.ini`：Subconverter 配置。
 - `CFOpt_Subconverter_lite.ini`：精简版 Subconverter 配置。
 - `rules/`：分流规则。
@@ -250,6 +251,7 @@ GITHUB_TOKEN_CFOPT="your GitHub token" AUTORUN_BACKEND=cron INSTALL_DAILY_AUTORU
 
 - `CloudflareSpeedTest_CD.csv`: default Windows / Chengdu output.
 - `CloudflareSpeedTest_BJ.csv`: default Linux / Beijing output.
+- `proxyip-best.txt`: daily per-country Top 10 ProxyIP list selected from `https://zip.cm.edu.kg/all.txt` by TCP connect latency for Edge Tunnel subscription generation.
 - `CFOpt_Subconverter.ini`: Subconverter config.
 - `CFOpt_Subconverter_lite.ini`: lite Subconverter config.
 - `rules/`: routing rules.
