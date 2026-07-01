@@ -66,6 +66,7 @@ SH
   fi
   grep -q 'cfst\[443/focus-HK\]: stub stdout' "$tmp_dir/work/auto-push.log" || fail "prefixed stdout log was not captured"
   grep -q 'cfst\[443/focus-HK\] stderr: stub stderr' "$tmp_dir/work/auto-push.log" || fail "prefixed stderr log was not captured"
+  grep -q '🇭🇰 HK \[北京测速#01 ip.zip\]' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "generated CSV city should include HK flag"
 }
 
 test_linux_defaults_are_not_overly_strict_for_local_runs() {
@@ -265,6 +266,30 @@ for legacy in [
 ]:
     if legacy in groups:
         raise SystemExit(f"{path}: legacy group name still present: {legacy}")
+
+with open(path, encoding="utf-8") as fh:
+    text = fh.read()
+
+for required in [
+    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^🇭🇰 HK ↪ \\[",
+    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^🇯🇵 JP ↪ \\[",
+    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^🇰🇷 KR ↪ \\[",
+    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^🇸🇬 SG ↪ \\[",
+    "custom_proxy_group=🇩🇪 Germany Pool`url-test`^🇩🇪 DE → 🇦🇺 AU \\[",
+    "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
+]:
+    if required not in text:
+        raise SystemExit(f"{path}: missing proxyip-only pool matcher: {required}")
+
+for forbidden in [
+    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^HK",
+    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^JP",
+    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^KR",
+    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^SG",
+    "custom_proxy_group=Asia Pool`url-test`[]🇭🇰 Hong Kong Pool`[]🇯🇵 Japan Pool`[]🇰🇷 Korea Pool`[]🇸🇬 Singapore Pool`^(PH|VN|MY|KZ|MN)",
+]:
+    if forbidden in text:
+        raise SystemExit(f"{path}: ordinary nodes still match a proxyip pool: {forbidden}")
 PY
   done
 }

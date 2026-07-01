@@ -138,21 +138,21 @@ FORCE=1 USE_PROXY_FOR_CFST=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### 城市列格式
 
-城市列会包含地区、测速位置编号和候选来源，Windows/成都和 Linux/北京两边格式保持一致：`地区 [位置名称#编号 来源]`。
+城市列会包含国旗、地区、测速位置编号和候选来源，Windows/成都和 Linux/北京两边格式保持一致：`国旗 地区 [位置名称#编号 来源]`。
 
 Windows / 成都测速：
 
 ```text
-HK [成都测速#01 ip.zip]
-HK [成都测速#02 cf-bestip]
-HK [成都测速#03 vps789]
+🇭🇰 HK [成都测速#01 ip.zip]
+🇭🇰 HK [成都测速#02 cf-bestip]
+🇭🇰 HK [成都测速#03 vps789]
 ```
 
 Linux / 北京测速：
 
 ```text
-HK [北京测速#01 ip.zip]
-JP [北京测速#01 cf-bestip]
+🇭🇰 HK [北京测速#01 ip.zip]
+🇯🇵 JP [北京测速#01 cf-bestip]
 ```
 
 来源可能是：
@@ -305,13 +305,13 @@ To intentionally benchmark through a proxy, use `-UseProxyForCfst` on Windows or
 
 ### City Column
 
-The city column includes region, location index, and source:
+The city column includes the country flag, region, location index, and source:
 
 ```text
-HK [成都测速#01 ip.zip]
-HK [成都测速#02 cf-bestip]
-HK [成都测速#03 vps789]
-HK [成都测速#04 previous]
+🇭🇰 HK [成都测速#01 ip.zip]
+🇭🇰 HK [成都测速#02 cf-bestip]
+🇭🇰 HK [成都测速#03 vps789]
+🇭🇰 HK [成都测速#04 previous]
 ```
 
 Possible sources are `ip.zip`, `cf-bestip`, `vps789`, `previous`, and `unknown`.

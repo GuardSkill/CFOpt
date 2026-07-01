@@ -182,11 +182,36 @@ function Get-CityKeyFromRemark {
     }
 
     $trimmed = $Remark.Trim()
-    if ($trimmed -match '^([A-Za-z0-9_-]+)') {
+    if ($trimmed -match '\b([A-Za-z]{2})\b') {
         return $Matches[1].ToUpperInvariant()
     }
 
     return ""
+}
+
+function Get-CountryFlag {
+    param([string]$Code)
+
+    switch ($Code.ToUpperInvariant()) {
+        "AU" { return "🇦🇺" }
+        "CT" { return "🇨🇳" }
+        "DE" { return "🇩🇪" }
+        "GB" { return "🇬🇧" }
+        "HK" { return "🇭🇰" }
+        "IE" { return "🇮🇪" }
+        "IT" { return "🇮🇹" }
+        "JP" { return "🇯🇵" }
+        "KR" { return "🇰🇷" }
+        "KZ" { return "🇰🇿" }
+        "MN" { return "🇲🇳" }
+        "MY" { return "🇲🇾" }
+        "NL" { return "🇳🇱" }
+        "PH" { return "🇵🇭" }
+        "SG" { return "🇸🇬" }
+        "US" { return "🇺🇸" }
+        "VN" { return "🇻🇳" }
+        default { return "" }
+    }
 }
 
 function Get-PreviousCsvEntries {
@@ -800,7 +825,9 @@ function Write-MergedFilteredCsv {
         $regionCounters[$regionKey]++
         $regionNumber = $regionCounters[$regionKey].ToString("00", [System.Globalization.CultureInfo]::InvariantCulture)
         $sourceText = if ([string]::IsNullOrWhiteSpace($row.Source)) { "unknown" } else { $row.Source }
-        $numberedCity = "$regionKey [$TestLocationName#$regionNumber $sourceText]"
+        $flag = Get-CountryFlag -Code $regionKey
+        $regionLabel = if ([string]::IsNullOrWhiteSpace($flag)) { $regionKey } else { "$flag $regionKey" }
+        $numberedCity = "$regionLabel [$TestLocationName#$regionNumber $sourceText]"
         $kept.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$numberedCity,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)")
     }
 

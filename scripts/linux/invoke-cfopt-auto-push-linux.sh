@@ -143,7 +143,7 @@ import re
 import sys
 
 csv_path, nodes_path, keys_path = sys.argv[1:4]
-city_re = re.compile(r"^([A-Za-z0-9_-]+)")
+city_re = re.compile(r"\b([A-Za-z]{2})\b")
 rows = []
 
 with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
@@ -155,7 +155,7 @@ with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
         ip = row[0].strip()
         port = row[1].strip()
         city_text = row[3].strip()
-        match = city_re.match(city_text)
+        match = city_re.search(city_text)
         if not match:
             continue
         city = match.group(1).upper()
@@ -655,7 +655,7 @@ filter_csv() {
           output_city_count[city]++
           source = cols[col_count]
           if (source == "") source = "unknown"
-          numbered_city = city " [" test_location_name "#" sprintf("%02d", output_city_count[city]) " " source "]"
+          numbered_city = country_flag(city) " " city " [" test_location_name "#" sprintf("%02d", output_city_count[city]) " " source "]"
           cols[4] = numbered_city
           out = cols[1]
           for (k = 2; k < col_count; k++) {
@@ -663,6 +663,28 @@ filter_csv() {
           }
           print out
       }
+    }
+
+    function country_flag(code) {
+      code = toupper(code)
+      if (code == "AU") return "🇦🇺"
+      if (code == "CT") return "🇨🇳"
+      if (code == "DE") return "🇩🇪"
+      if (code == "GB") return "🇬🇧"
+      if (code == "HK") return "🇭🇰"
+      if (code == "IE") return "🇮🇪"
+      if (code == "IT") return "🇮🇹"
+      if (code == "JP") return "🇯🇵"
+      if (code == "KR") return "🇰🇷"
+      if (code == "KZ") return "🇰🇿"
+      if (code == "MN") return "🇲🇳"
+      if (code == "MY") return "🇲🇾"
+      if (code == "NL") return "🇳🇱"
+      if (code == "PH") return "🇵🇭"
+      if (code == "SG") return "🇸🇬"
+      if (code == "US") return "🇺🇸"
+      if (code == "VN") return "🇻🇳"
+      return ""
     }
   ' "$PREVIOUS_NODE_KEYS_PATH" "$COMBINED_CANDIDATES_PATH" > "$tmp_csv"; then
     log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
