@@ -231,6 +231,7 @@ expected = [
     "OKX",
     "Asia Pool",
     "🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
+    "🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
     "🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
     "🇭🇰 Hong Kong Pool",
     "🇯🇵 Japan Pool",
@@ -268,6 +269,8 @@ with open(path, encoding="utf-8") as fh:
     text = fh.read()
 
 for required in [
+    "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
+    "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
     "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^🇭🇰 HK ↪ \\[",
     "custom_proxy_group=🇯🇵 Japan Pool`url-test`^🇯🇵 JP ↪ \\[",
     "custom_proxy_group=🇰🇷 Korea Pool`url-test`^🇰🇷 KR ↪ \\[",

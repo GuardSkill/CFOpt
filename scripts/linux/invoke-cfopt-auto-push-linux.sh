@@ -48,7 +48,7 @@ CFST_DEBUG="${CFST_DEBUG:-0}"
 PROXYIP_BEST_SOURCE="${PROXYIP_BEST_SOURCE:-https://zip.cm.edu.kg/all.txt}"
 PROXYIP_BEST_PATH="${PROXYIP_BEST_PATH:-$WORK_DIR/proxyip-best.txt}"
 PROXYIP_BEST_TARGET_PATH="${PROXYIP_BEST_TARGET_PATH:-proxyip-best.txt}"
-PROXYIP_BEST_COUNTRIES="${PROXYIP_BEST_COUNTRIES:-IE,KR,HK,SG,JP,DE,GB}"
+PROXYIP_BEST_COUNTRIES="${PROXYIP_BEST_COUNTRIES:-IE,AT,AU,KR,HK,SG,JP,DE,GB}"
 PROXYIP_BEST_LIMIT="${PROXYIP_BEST_LIMIT:-10}"
 PROXYIP_BEST_TIMEOUT="${PROXYIP_BEST_TIMEOUT:-0.75}"
 PROXYIP_BEST_WORKERS="${PROXYIP_BEST_WORKERS:-64}"
@@ -667,6 +667,7 @@ filter_csv() {
 
     function country_flag(code) {
       code = toupper(code)
+      if (code == "AT") return "🇦🇹"
       if (code == "AU") return "🇦🇺"
       if (code == "CT") return "🇨🇳"
       if (code == "DE") return "🇩🇪"

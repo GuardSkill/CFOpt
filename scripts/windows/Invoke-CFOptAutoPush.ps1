@@ -41,7 +41,7 @@ param(
     [switch]$DisableProxyipBest,
     [string]$ProxyipBestSource = "https://zip.cm.edu.kg/all.txt",
     [string]$ProxyipBestTargetPath = "proxyip-best.txt",
-    [string]$ProxyipBestCountries = "IE,KR,HK,SG,JP,DE,GB",
+    [string]$ProxyipBestCountries = "IE,AT,AU,KR,HK,SG,JP,DE,GB",
     [int]$ProxyipBestLimit = 10,
     [double]$ProxyipBestTimeout = 0.75,
     [int]$ProxyipBestWorkers = 64,
@@ -193,6 +193,7 @@ function Get-CountryFlag {
     param([string]$Code)
 
     switch ($Code.ToUpperInvariant()) {
+        "AT" { return "🇦🇹" }
         "AU" { return "🇦🇺" }
         "CT" { return "🇨🇳" }
         "DE" { return "🇩🇪" }
