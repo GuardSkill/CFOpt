@@ -230,7 +230,7 @@ expected = [
     "Polymarket",
     "OKX",
     "Asia Pool",
-    "🇩🇪 Germany Entry + 🇦🇺 AU Proxy",
+    "🇩🇪 Germany Entry + 🇱🇺 LU Proxy",
     "🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
     "🇭🇰 Hong Kong Pool",
     "🇯🇵 Japan Pool",
