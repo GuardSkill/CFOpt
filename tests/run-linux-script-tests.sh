@@ -208,11 +208,73 @@ TXT
   fi
 }
 
+test_subconverter_group_order_and_pool_names() {
+  local config
+  for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini"; do
+    python3 - "$config" <<'PY'
+import sys
+
+path = sys.argv[1]
+groups = []
+with open(path, encoding="utf-8") as fh:
+    for line in fh:
+        line = line.strip()
+        if line.startswith("custom_proxy_group="):
+            name = line[len("custom_proxy_group="):].split("`", 1)[0]
+            groups.append(name)
+
+expected = [
+    "Proxy",
+    "CodeAgent",
+    "Polymarket",
+    "OKX",
+    "Asia Pool",
+    "🇩🇪 Germany Entry + 🇦🇺 AU Proxy",
+    "🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
+    "🇭🇰 Hong Kong Pool",
+    "🇯🇵 Japan Pool",
+    "🇰🇷 Korea Pool",
+    "🇸🇬 Singapore Pool",
+    "🇩🇪 Germany Pool",
+    "🇬🇧 United Kingdom Pool",
+    "🇳🇱 Netherlands Pool",
+    "🇮🇹 Italy Pool",
+    "CT Pool",
+    "Domain Pool",
+]
+
+position = -1
+for name in expected:
+    try:
+        position = groups.index(name, position + 1)
+    except ValueError:
+        raise SystemExit(f"{path}: missing or misordered group {name!r}")
+
+for legacy in [
+    "HKPool",
+    "JPPool",
+    "KRPool",
+    "SGPool",
+    "DEPool",
+    "GBPool",
+    "NLPool",
+    "ITPool",
+    "AsiaPool",
+    "CFCTPool",
+    "DomainPreferredPool",
+]:
+    if legacy in groups:
+        raise SystemExit(f"{path}: legacy group name still present: {legacy}")
+PY
+  done
+}
+
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
 test_linux_runner_excludes_focus_countries_from_all_scope
 test_runner_defaults_include_europe_focus_countries
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
+test_subconverter_group_order_and_pool_names
 
 printf 'Linux script tests passed.\n'
