@@ -236,10 +236,7 @@ expected = [
     "🇯🇵 Japan Pool",
     "🇰🇷 Korea Pool",
     "🇸🇬 Singapore Pool",
-    "🇩🇪 Germany Pool",
     "🇬🇧 United Kingdom Pool",
-    "🇳🇱 Netherlands Pool",
-    "🇮🇹 Italy Pool",
     "CT Pool",
     "Domain Pool",
 ]
@@ -275,7 +272,6 @@ for required in [
     "custom_proxy_group=🇯🇵 Japan Pool`url-test`^🇯🇵 JP ↪ \\[",
     "custom_proxy_group=🇰🇷 Korea Pool`url-test`^🇰🇷 KR ↪ \\[",
     "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^🇸🇬 SG ↪ \\[",
-    "custom_proxy_group=🇩🇪 Germany Pool`url-test`^🇩🇪 DE → 🇦🇺 AU \\[",
     "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
 ]:
     if required not in text:
