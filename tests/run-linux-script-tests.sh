@@ -305,6 +305,8 @@ with open(path, encoding="utf-8") as fh:
 for required in [
     "custom_proxy_group=Proxy`select`[]CodeAgent`[]Region`[]Auto`[]Fallback`[]DIRECT`.*",
     "custom_proxy_group=Region`select`[]Asia Pool`[]Europe Pool`[]🇺🇸 United States Pool",
+    "custom_proxy_group=Auto`url-test`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
+    "custom_proxy_group=Fallback`fallback`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
 ]:
     if required not in text:
         raise SystemExit(f"{path}: missing simplified routing group: {required}")
