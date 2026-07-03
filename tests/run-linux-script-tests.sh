@@ -320,6 +320,17 @@ expected = [
     "CodeAgent",
     "Polymarket",
     "OKX",
+]
+
+if path.endswith("_lite.ini"):
+    expected.extend([
+        "Auto",
+        "Fallback",
+        "Direct",
+        "Final",
+    ])
+else:
+    expected.extend([
     "Asia Pool",
     "🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
     "🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
@@ -331,7 +342,7 @@ expected = [
     "🇬🇧 United Kingdom Pool",
     "CT Pool",
     "Domain Pool",
-]
+    ])
 
 position = -1
 for name in expected:
@@ -359,27 +370,41 @@ for legacy in [
 with open(path, encoding="utf-8") as fh:
     text = fh.read()
 
-for required in [
-    "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Auto`[]LB-20min`[]Fallback`[]DIRECT`.*",
-    "custom_proxy_group=Auto`url-test`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
-    "custom_proxy_group=LB-20min`load-balance`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
-    "custom_proxy_group=Fallback`fallback`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
-]:
+if path.endswith("_lite.ini"):
+    required_lines = [
+        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Auto`[]Fallback`[]DIRECT`.*",
+        "custom_proxy_group=CodeAgent`select`(US|JP|KR|SG|HK|",
+        "custom_proxy_group=Polymarket`select`(DE|GB|IE|AT|KR|",
+        "custom_proxy_group=OKX`select`(HK|KR|SG|",
+        "custom_proxy_group=Auto`url-test`.*`",
+        "custom_proxy_group=Fallback`fallback`.*`",
+        "custom_proxy_group=Final`select`[]Proxy`[]CodeAgent`[]Auto`[]Polymarket`[]OKX`[]Fallback`[]DIRECT`.*",
+    ]
+else:
+    required_lines = [
+        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Auto`[]LB-20min`[]Fallback`[]DIRECT`.*",
+        "custom_proxy_group=Auto`url-test`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
+        "custom_proxy_group=LB-20min`load-balance`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
+        "custom_proxy_group=Fallback`fallback`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
+    ]
+
+for required in required_lines:
     if required not in text:
         raise SystemExit(f"{path}: missing simplified routing group: {required}")
 
-for required in [
-    "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
-    "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
-    "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
-    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 HK ↪|HK) \\[",
-    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^(🇯🇵 JP ↪|JP) \\[",
-    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^(🇰🇷 KR ↪|KR) \\[",
-    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^(🇸🇬 SG ↪|SG) \\[",
-    "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^(🇬🇧 GB → 🇮🇪 IE|GB) \\[",
-]:
-    if required not in text:
-        raise SystemExit(f"{path}: missing proxyip-only pool matcher: {required}")
+if not path.endswith("_lite.ini"):
+    for required in [
+        "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
+        "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
+        "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
+        "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 HK ↪|HK) \\[",
+        "custom_proxy_group=🇯🇵 Japan Pool`url-test`^(🇯🇵 JP ↪|JP) \\[",
+        "custom_proxy_group=🇰🇷 Korea Pool`url-test`^(🇰🇷 KR ↪|KR) \\[",
+        "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^(🇸🇬 SG ↪|SG) \\[",
+        "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^(🇬🇧 GB → 🇮🇪 IE|GB) \\[",
+    ]:
+        if required not in text:
+            raise SystemExit(f"{path}: missing proxyip-only pool matcher: {required}")
 
 for forbidden in [
     "馃",
@@ -394,6 +419,9 @@ for forbidden in [
 ]:
     if forbidden in text:
         raise SystemExit(f"{path}: ordinary nodes still match a proxyip pool: {forbidden}")
+
+if path.endswith("_lite.ini") and "custom_proxy_group=LB-20min" in text:
+    raise SystemExit(f"{path}: lite config should not include LB-20min")
 PY
   done
 }
