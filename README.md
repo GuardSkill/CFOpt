@@ -39,9 +39,20 @@ FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 - `proxyip-best.txt`：每日从 `https://zip.cm.edu.kg/all.txt` 拉取并按 TCP 连接延迟筛选出的每国 Top 10 ProxyIP，供 Edge Tunnel 订阅生成阶段使用。
 - `CFOpt_Subconverter.ini`：Subconverter 配置。
 - `CFOpt_Subconverter_lite.ini`：精简版 Subconverter 配置。
+- `CFOpt_Subconverter_lite_cmliussss.ini`：面向 CMLiussss / `asdlokj1qpi233/subconverter` 后端的精简配置，`ruleset=` 数量控制在默认上限 64 以下。
 - `rules/`：分流规则。
 
-`CFOpt_Subconverter.ini` 和 `CFOpt_Subconverter_lite.ini` 不参与 IP 候选来源、测速、筛选和 CSV 合并逻辑；一般不需要随着测速脚本一起修改。
+订阅转换配置文件使用本仓库的 raw 地址：
+
+```text
+https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter.ini
+https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite.ini
+https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite_cmliussss.ini
+```
+
+CMLiussss 后端推荐填写 `CFOpt_Subconverter_lite_cmliussss.ini`，避免旧 `lite.ini` URL 被后端缓存后继续回落默认模板。
+
+`CFOpt_Subconverter*.ini` 不参与 IP 候选来源、测速、筛选和 CSV 合并逻辑；一般不需要随着测速脚本一起修改。
 
 ### 目录结构
 
@@ -254,7 +265,18 @@ GITHUB_TOKEN_CFOPT="your GitHub token" AUTORUN_BACKEND=cron INSTALL_DAILY_AUTORU
 - `proxyip-best.txt`: daily per-country Top 10 ProxyIP list selected from `https://zip.cm.edu.kg/all.txt` by TCP connect latency for Edge Tunnel subscription generation.
 - `CFOpt_Subconverter.ini`: Subconverter config.
 - `CFOpt_Subconverter_lite.ini`: lite Subconverter config.
+- `CFOpt_Subconverter_lite_cmliussss.ini`: lite config for CMLiussss / `asdlokj1qpi233/subconverter` backends, keeping `ruleset=` entries under the default limit of 64.
 - `rules/`: routing rules.
+
+Use this repository's raw URLs as Subconverter config files:
+
+```text
+https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter.ini
+https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite.ini
+https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite_cmliussss.ini
+```
+
+For CMLiussss backends, prefer `CFOpt_Subconverter_lite_cmliussss.ini` to avoid stale backend cache for the older `lite.ini` URL.
 
 The Subconverter configs are not part of candidate collection, benchmarking, filtering, or CSV merging, so they usually do not need changes when the benchmark scripts change.
 
