@@ -11,6 +11,7 @@ param(
     [string]$CfstPath = "",
     [string]$TaskName = "CFOpt Auto Push",
     [string]$DailyAt = "04:00",
+    [int]$IntervalHours = 4,
     [int]$StartupDelayMinutes = 2,
     [switch]$SkipDownloads
 )
@@ -91,10 +92,12 @@ if (-not (Test-Path -LiteralPath $CfstPath)) {
 }
 
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`""
+$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`" -IntervalHours 4 -FocusCountries `"SG,HK,JP,KR,DE,GB`""
 
 $action = New-ScheduledTaskAction -Execute $powershell -Argument $argument -WorkingDirectory $repoRoot
-$dailyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Parse($DailyAt))
+$dailyTrigger = New-ScheduledTaskTrigger -Once -At ([datetime]::Parse($DailyAt))
+$dailyTrigger.Repetition.Interval = "PT${IntervalHours}H"
+$dailyTrigger.Repetition.Duration = "P1D"
 $startupTrigger = New-ScheduledTaskTrigger -AtStartup
 $startupTrigger.Delay = "PT${StartupDelayMinutes}M"
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
@@ -115,10 +118,10 @@ Register-ScheduledTask `
     -Trigger @($dailyTrigger, $startupTrigger) `
     -Principal $principal `
     -Settings $settings `
-    -Description "Daily CFOpt rolling retest: retest previous CSV nodes, replace weak rows, and upload CloudflareSpeedTest CSV." | Out-Null
+    -Description "CFOpt rolling retest every $IntervalHours hours: retest previous CSV nodes, replace weak rows, and upload CloudflareSpeedTest CSV." | Out-Null
 
 Write-Host "Scheduled task installed: $TaskName"
-Write-Host "It will run daily at $DailyAt and at startup after $StartupDelayMinutes minute(s). The main script enforces the 1-day interval."
+Write-Host "It will run every $IntervalHours hours starting at $DailyAt and at startup after $StartupDelayMinutes minute(s). The main script enforces the $IntervalHours-hour interval."
 Write-Host "Script path: $ScriptPath"
 Write-Host "Work dir: $WorkDir"
 Write-Host "cfst path: $CfstPath"

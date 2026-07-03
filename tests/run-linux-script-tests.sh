@@ -144,12 +144,34 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
 test_runner_defaults_include_europe_focus_countries() {
   grep -q 'COUNTRIES_CSV="${COUNTRIES_CSV:-HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux runner default Countries should include DE/GB/NL/IT"
-  grep -q 'FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-HK,KR,JP,SG,DE,GB,NL,IT}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux runner default FocusCountries should include DE/GB/NL/IT"
+  grep -q 'FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner default FocusCountries should include SG/HK/JP/KR/DE/GB"
   grep -q '\[string\[\]\]\$Countries = @("HK", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US", "DE", "GB", "NL", "IT")' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner default Countries should include DE/GB/NL/IT"
-  grep -q '\[string\]\$FocusCountries = "HK,KR,JP,SG,DE,GB,NL,IT"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows runner default FocusCountries should include DE/GB/NL/IT"
+  grep -q '\[string\]\$FocusCountries = "SG,HK,JP,KR,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner default FocusCountries should include SG/HK/JP/KR/DE/GB"
+}
+
+test_runners_default_to_four_hour_interval() {
+  grep -q 'INTERVAL_HOURS="${INTERVAL_HOURS:-4}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should default to a 4-hour interval"
+  grep -q 'INTERVAL_HOURS=4' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh" \
+    || fail "Linux installer autorun should pass INTERVAL_HOURS=4"
+  grep -q '\[int\]\$IntervalHours = 4' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner should default to a 4-hour interval"
+  grep -q -- '-IntervalHours 4' "$ROOT_DIR/scripts/windows/Install-CFOptAutoPushTask.ps1" \
+    || fail "Windows scheduled task should pass -IntervalHours 4"
+}
+
+test_focus_scopes_use_quick_download_screening() {
+  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-12}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux focus scopes should default to a smaller download-test count"
+  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_TIME="${FOCUS_CFST_DOWNLOAD_TEST_TIME:-8}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux focus scopes should default to a shorter download-test time"
+  grep -q '\[int\]\$FocusCfstDownloadTestCount = 12' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows focus scopes should default to a smaller download-test count"
+  grep -q '\[int\]\$FocusCfstDownloadTestTime = 8' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows focus scopes should default to a shorter download-test time"
 }
 
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency() {
@@ -298,6 +320,8 @@ test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
 test_linux_runner_excludes_focus_countries_from_all_scope
 test_runner_defaults_include_europe_focus_countries
+test_runners_default_to_four_hour_interval
+test_focus_scopes_use_quick_download_screening
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 test_subconverter_group_order_and_pool_names
 

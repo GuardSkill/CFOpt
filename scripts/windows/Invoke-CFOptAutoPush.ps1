@@ -10,7 +10,8 @@ param(
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
     [string]$TargetPath = "CloudflareSpeedTest_CD.csv",
-    [int]$IntervalDays = 1,
+    [int]$IntervalDays = 0,
+    [int]$IntervalHours = 4,
     [int]$MaxLatencyMs = 420,
     [int]$MinReceived = 1,
     [double]$MinSpeedMbps = 0.03,
@@ -19,10 +20,12 @@ param(
     [int]$CfstLatencyTestCount = 6,
     [int]$CfstDownloadTestCount = 30,
     [int]$CfstDownloadTestTime = 15,
+    [int]$FocusCfstDownloadTestCount = 12,
+    [int]$FocusCfstDownloadTestTime = 8,
     [double]$CfstLossRateLimit = 0,
     [int]$MaxParallelCfst = 1,
     [switch]$UseProxyForCfst,
-    [string]$FocusCountries = "",
+    [string]$FocusCountries = "SG,HK,JP,KR,DE,GB",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
     [int]$CfBestIpPerCountryLimit = 200,
@@ -182,7 +185,10 @@ function Test-IntervalGate {
 
     $lastText = Get-Content -LiteralPath $stateFile -Raw
     $lastRun = [datetime]::Parse($lastText.Trim())
-    $nextRun = $lastRun.AddDays($IntervalDays)
+    if ($IntervalDays -gt 0) {
+        $IntervalHours = $IntervalDays * 24
+    }
+    $nextRun = $lastRun.AddHours($IntervalHours)
 
     if ((Get-Date) -lt $nextRun) {
         Write-Log "Skipped. Last successful run was $lastRun. Next run after $nextRun."
@@ -633,13 +639,20 @@ function Start-CfstProcesses {
         }
         Set-Content -LiteralPath $item.StdinPath -Value "" -Encoding ASCII
 
+        $downloadTestCount = $CfstDownloadTestCount
+        $downloadTestTime = $CfstDownloadTestTime
+        if ([string]$item.Scope -like "focus-*") {
+            $downloadTestCount = $FocusCfstDownloadTestCount
+            $downloadTestTime = $FocusCfstDownloadTestTime
+        }
+
         $cfstArgs = @(
             "-f", $item.SelectedIpPath,
             "-o", $item.CsvPath,
             "-n", ([string]$CfstThreads),
             "-t", ([string]$CfstLatencyTestCount),
-            "-dn", ([string]$CfstDownloadTestCount),
-            "-dt", ([string]$CfstDownloadTestTime),
+            "-dn", ([string]$downloadTestCount),
+            "-dt", ([string]$downloadTestTime),
             "-tl", ([string]$MaxLatencyMs),
             "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
             "-p", "0"
@@ -1053,13 +1066,20 @@ try {
     if ($DryRun) {
         Write-Log "Dry run enabled. Skipping cfst execution and GitHub upload."
         foreach ($item in $workItems) {
+            $downloadTestCount = $CfstDownloadTestCount
+            $downloadTestTime = $CfstDownloadTestTime
+            if ([string]$item.Scope -like "focus-*") {
+                $downloadTestCount = $FocusCfstDownloadTestCount
+                $downloadTestTime = $FocusCfstDownloadTestTime
+            }
+
             $dryRunArgs = @(
                 "-f", $item.SelectedIpPath,
                 "-o", $item.CsvPath,
                 "-n", ([string]$CfstThreads),
                 "-t", ([string]$CfstLatencyTestCount),
-                "-dn", ([string]$CfstDownloadTestCount),
-                "-dt", ([string]$CfstDownloadTestTime),
+                "-dn", ([string]$downloadTestCount),
+                "-dt", ([string]$downloadTestTime),
                 "-tl", ([string]$MaxLatencyMs),
                 "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
                 "-p", "0"

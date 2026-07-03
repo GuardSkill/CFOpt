@@ -12,6 +12,8 @@ CFST_TAR_URL="${CFST_TAR_URL:-$BASE_URL/scripts/linux/cfst_linux_amd64.tar.gz}"
 INSTALL_DAILY_AUTORUN="${INSTALL_DAILY_AUTORUN:-1}"
 DAILY_AT="${DAILY_AT:-04:00}"
 AUTORUN_BACKEND="${AUTORUN_BACKEND:-auto}"
+INTERVAL_HOURS="${INTERVAL_HOURS:-4}"
+FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,DE,GB}"
 
 mkdir -p "$WORK_DIR"
 
@@ -51,6 +53,9 @@ install_daily_autorun() {
   [[ "$INSTALL_DAILY_AUTORUN" == "1" ]] || return 0
 
   local runner="$WORK_DIR/invoke-cfopt-auto-push-linux.sh"
+  local hour minute
+  hour="${DAILY_AT%%:*}"
+  minute="${DAILY_AT##*:}"
   local token_line=""
   if [[ -n "${GITHUB_TOKEN_CFOPT:-}" ]]; then
     token_line="Environment=GITHUB_TOKEN_CFOPT=${GITHUB_TOKEN_CFOPT}"
@@ -67,7 +72,8 @@ Description=CFOpt daily rolling retest and upload
 Type=oneshot
 Environment=WORK_DIR=$WORK_DIR
 Environment=CFST_PATH=$WORK_DIR/cfst
-Environment=INTERVAL_DAYS=1
+Environment=INTERVAL_HOURS=$INTERVAL_HOURS
+Environment=FOCUS_COUNTRIES_CSV=$FOCUS_COUNTRIES_CSV
 $token_line
 ExecStart=$runner
 EOF
@@ -77,7 +83,7 @@ EOF
 Description=Run CFOpt daily
 
 [Timer]
-OnCalendar=*-*-* $DAILY_AT:00
+OnCalendar=*-*-* 00/$INTERVAL_HOURS:$minute:00
 Persistent=true
 Unit=cfopt-auto-push.service
 
@@ -87,17 +93,15 @@ EOF
 
     systemctl --user daemon-reload
     systemctl --user enable --now cfopt-auto-push.timer
-    echo "Installed user systemd timer: cfopt-auto-push.timer ($DAILY_AT daily)"
+    echo "Installed user systemd timer: cfopt-auto-push.timer (every $INTERVAL_HOURS hours at minute $minute)"
     return 0
   fi
 
   if [[ "$AUTORUN_BACKEND" != "systemd" ]] && command -v crontab >/dev/null 2>&1; then
-    local hour minute cron_line
-    hour="${DAILY_AT%%:*}"
-    minute="${DAILY_AT##*:}"
-    cron_line="$minute $hour * * * GITHUB_TOKEN_CFOPT=\"${GITHUB_TOKEN_CFOPT:-}\" WORK_DIR=\"$WORK_DIR\" CFST_PATH=\"$WORK_DIR/cfst\" INTERVAL_DAYS=1 \"$runner\" >> \"$WORK_DIR/cron.log\" 2>&1"
+    local cron_line
+    cron_line="$minute */$INTERVAL_HOURS * * * GITHUB_TOKEN_CFOPT=\"${GITHUB_TOKEN_CFOPT:-}\" WORK_DIR=\"$WORK_DIR\" CFST_PATH=\"$WORK_DIR/cfst\" INTERVAL_HOURS=4 FOCUS_COUNTRIES_CSV=\"SG,HK,JP,KR,DE,GB\" \"$runner\" >> \"$WORK_DIR/cron.log\" 2>&1"
     (crontab -l 2>/dev/null | grep -v 'cfopt-auto-push-linux.sh'; echo "$cron_line") | crontab -
-    echo "Installed crontab daily job at $DAILY_AT."
+    echo "Installed crontab job every $INTERVAL_HOURS hours at minute $minute."
     return 0
   fi
 

@@ -14,7 +14,8 @@ OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
 BRANCH="${BRANCH:-main}"
 TARGET_PATH="${TARGET_PATH:-CloudflareSpeedTest_BJ.csv}"
-INTERVAL_DAYS="${INTERVAL_DAYS:-1}"
+INTERVAL_DAYS="${INTERVAL_DAYS:-}"
+INTERVAL_HOURS="${INTERVAL_HOURS:-4}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
@@ -24,10 +25,12 @@ CFST_THREADS="${CFST_THREADS:-80}"
 CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-6}"
 CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-30}"
 CFST_DOWNLOAD_TEST_TIME="${CFST_DOWNLOAD_TEST_TIME:-15}"
+FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-12}"
+FOCUS_CFST_DOWNLOAD_TEST_TIME="${FOCUS_CFST_DOWNLOAD_TEST_TIME:-8}"
 CFST_LOSS_RATE_LIMIT="${CFST_LOSS_RATE_LIMIT:-0}"
 MAX_PARALLEL_CFST="${MAX_PARALLEL_CFST:-1}"
 USE_PROXY_FOR_CFST="${USE_PROXY_FOR_CFST:-0}"
-FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-}"
+FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,DE,GB}"
 TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
 ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
 CFBESTIP_BASE_URL="${CFBESTIP_BASE_URL:-https://zoroaaa.github.io/cf-bestip}"
@@ -94,13 +97,18 @@ should_run() {
     return 0
   fi
 
+  local interval_hours="$INTERVAL_HOURS"
+  if [[ -n "$INTERVAL_DAYS" && "${INTERVAL_HOURS:-}" == "4" ]]; then
+    interval_hours=$((INTERVAL_DAYS * 24))
+  fi
+
   local last_epoch now_epoch next_epoch
   last_epoch="$(date -d "$(cat "$STATE_FILE")" +%s 2>/dev/null || echo 0)"
   now_epoch="$(date +%s)"
-  next_epoch=$((last_epoch + INTERVAL_DAYS * 86400))
+  next_epoch=$((last_epoch + interval_hours * 3600))
 
   if (( now_epoch < next_epoch )); then
-    log "Skipped. Last successful run has not reached ${INTERVAL_DAYS} days."
+    log "Skipped. Last successful run has not reached ${interval_hours} hours."
     return 1
   fi
 
@@ -490,7 +498,13 @@ start_cfst_for_port() {
   local csv_path="$WORK_DIR/CloudflareSpeedTest-$port-$safe_scope.csv"
   local stdout_path="$WORK_DIR/cfst-$port-$safe_scope-stdout.log"
   local stderr_path="$WORK_DIR/cfst-$port-$safe_scope-stderr.log"
-  local args=(-f "$selected_ip_path" -o "$csv_path" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$CFST_DOWNLOAD_TEST_COUNT" -dt "$CFST_DOWNLOAD_TEST_TIME" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
+  local download_test_count="$CFST_DOWNLOAD_TEST_COUNT"
+  local download_test_time="$CFST_DOWNLOAD_TEST_TIME"
+  if [[ "$scope" == focus-* ]]; then
+    download_test_count="$FOCUS_CFST_DOWNLOAD_TEST_COUNT"
+    download_test_time="$FOCUS_CFST_DOWNLOAD_TEST_TIME"
+  fi
+  local args=(-f "$selected_ip_path" -o "$csv_path" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$download_test_count" -dt "$download_test_time" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
 
   if [[ "$port" != "443" ]]; then
     args+=(-tp "$port")
@@ -845,7 +859,13 @@ main() {
     log "Dry run enabled. Skipping cfst execution and GitHub upload."
     while IFS=',' read -r port_value scope selected_ip_path _map_path; do
       safe_scope="${scope//[^A-Za-z0-9_-]/_}"
-      args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value-$safe_scope.csv" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$CFST_DOWNLOAD_TEST_COUNT" -dt "$CFST_DOWNLOAD_TEST_TIME" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
+      download_test_count="$CFST_DOWNLOAD_TEST_COUNT"
+      download_test_time="$CFST_DOWNLOAD_TEST_TIME"
+      if [[ "$scope" == focus-* ]]; then
+        download_test_count="$FOCUS_CFST_DOWNLOAD_TEST_COUNT"
+        download_test_time="$FOCUS_CFST_DOWNLOAD_TEST_TIME"
+      fi
+      args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value-$safe_scope.csv" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$download_test_count" -dt "$download_test_time" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
       [[ "$port_value" != "443" ]] && args+=(-tp "$port_value")
       [[ -n "$DOWNLOAD_TEST_URL" ]] && args+=(-url "$DOWNLOAD_TEST_URL")
       if awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
