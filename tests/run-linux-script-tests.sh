@@ -302,7 +302,7 @@ TXT
 
 test_subconverter_group_order_and_pool_names() {
   local config
-  for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini"; do
+  for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini" "$ROOT_DIR/CFOpt_Subconverter_lite_cmliussss.ini"; do
     python3 - "$config" <<'PY'
 import sys
 
@@ -322,8 +322,15 @@ expected = [
     "OKX",
 ]
 
-if path.endswith("_lite.ini"):
+if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     expected.extend([
+        "HK Pool",
+        "JP Pool",
+        "KR Pool",
+        "SG Pool",
+        "US Pool",
+        "DE Pool",
+        "GB Pool",
         "Auto",
         "Fallback",
         "Direct",
@@ -370,12 +377,19 @@ for legacy in [
 with open(path, encoding="utf-8") as fh:
     text = fh.read()
 
-if path.endswith("_lite.ini"):
+if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     required_lines = [
-        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Auto`[]Fallback`[]DIRECT`.*",
-        "custom_proxy_group=CodeAgent`select`(US|JP|KR|SG|HK|",
-        "custom_proxy_group=Polymarket`select`(DE|GB|IE|AT|KR|",
-        "custom_proxy_group=OKX`select`(HK|KR|SG|",
+        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]HK Pool`[]JP Pool`[]KR Pool`[]SG Pool`[]US Pool`[]DE Pool`[]GB Pool`[]Auto`[]Fallback`[]DIRECT`.*",
+        "custom_proxy_group=CodeAgent`select`[]US Pool`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=Polymarket`select`[]DE Pool`[]GB Pool`[]KR Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=OKX`select`[]HK Pool`[]KR Pool`[]SG Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=HK Pool`url-test`(^| )(HK) \\[",
+        "custom_proxy_group=JP Pool`url-test`(^| )(JP) \\[",
+        "custom_proxy_group=KR Pool`url-test`(^| )(KR) \\[",
+        "custom_proxy_group=SG Pool`url-test`(^| )(SG) \\[",
+        "custom_proxy_group=US Pool`url-test`(^| )(US) \\[",
+        "custom_proxy_group=DE Pool`url-test`(^| )(DE) \\[",
+        "custom_proxy_group=GB Pool`url-test`(^| )(GB) \\[",
         "custom_proxy_group=Auto`url-test`.*`",
         "custom_proxy_group=Fallback`fallback`.*`",
         "custom_proxy_group=Final`select`[]Proxy`[]CodeAgent`[]Auto`[]Polymarket`[]OKX`[]Fallback`[]DIRECT`.*",
@@ -392,7 +406,7 @@ for required in required_lines:
     if required not in text:
         raise SystemExit(f"{path}: missing simplified routing group: {required}")
 
-if not path.endswith("_lite.ini"):
+if not (path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini")):
     for required in [
         "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
         "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
@@ -420,9 +434,17 @@ for forbidden in [
     if forbidden in text:
         raise SystemExit(f"{path}: ordinary nodes still match a proxyip pool: {forbidden}")
 
-if path.endswith("_lite.ini") and "custom_proxy_group=LB-20min" in text:
+if (path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini")) and "custom_proxy_group=LB-20min" in text:
     raise SystemExit(f"{path}: lite config should not include LB-20min")
 PY
+  done
+}
+
+test_tracked_csv_node_labels_are_ascii_safe() {
+  for csv in "$ROOT_DIR/CloudflareSpeedTest_BJ.csv" "$ROOT_DIR/CloudflareSpeedTest_CD.csv"; do
+    if grep -Eq '馃|北京测速|成都测速' "$csv"; then
+      fail "tracked CSV contains mojibake or old location labels: $csv"
+    fi
   done
 }
 
@@ -436,5 +458,6 @@ test_runners_default_to_four_hour_interval
 test_focus_scopes_use_quick_download_screening
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 test_subconverter_group_order_and_pool_names
+test_tracked_csv_node_labels_are_ascii_safe
 
 printf 'Linux script tests passed.\n'
