@@ -530,23 +530,25 @@ start_cfst_for_port() {
     ) &
   fi
   printf '%s,%s,%s,%s,%s\n' "$port" "$scope" "$!" "$csv_path" "$selected_ip_path" >> "$WORK_DIR/cfst-processes.csv"
+  LAST_CFST_RECORD="$port,$scope,$!,$csv_path,$selected_ip_path"
 }
 
-wait_cfst_processes() {
+wait_cfst_record() {
+  local record="$1"
   local failed=0
-  while IFS=',' read -r port scope pid csv_path _selected_ip_path; do
-    if ! wait "$pid"; then
-      log "ERROR: cfst failed on port $port scope $scope."
-      failed=1
-    fi
-    local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
-    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" ]] && awk -v prefix="cfst[$port/$scope]: " '{ print prefix $0 }' "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" | tee -a "$LOG_FILE" >/dev/null || true
-    [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" ]] && awk -v prefix="cfst[$port/$scope] stderr: " '{ print prefix $0 }' "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" | tee -a "$LOG_FILE" >/dev/null || true
-    if [[ ! -f "$csv_path" ]]; then
-      log "WARN: cfst completed but CSV was not created for port $port scope $scope: $csv_path"
-    fi
-  done < "$WORK_DIR/cfst-processes.csv"
+  local port scope pid csv_path _selected_ip_path
+  IFS=',' read -r port scope pid csv_path _selected_ip_path <<< "$record"
 
+  if ! wait "$pid"; then
+    log "ERROR: cfst failed on port $port scope $scope."
+    failed=1
+  fi
+  local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
+  [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" ]] && awk -v prefix="cfst[$port/$scope]: " '{ print prefix $0 }' "$WORK_DIR/cfst-$port-$safe_scope-stdout.log" | tee -a "$LOG_FILE" >/dev/null || true
+  [[ -f "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" ]] && awk -v prefix="cfst[$port/$scope] stderr: " '{ print prefix $0 }' "$WORK_DIR/cfst-$port-$safe_scope-stderr.log" | tee -a "$LOG_FILE" >/dev/null || true
+  if [[ ! -f "$csv_path" ]]; then
+    log "WARN: cfst completed but CSV was not created for port $port scope $scope: $csv_path"
+  fi
   return "$failed"
 }
 
@@ -877,14 +879,31 @@ main() {
     exit 0
   fi
 
+  local max_parallel="$MAX_PARALLEL_CFST"
+  if (( max_parallel < 1 )); then
+    max_parallel=1
+  fi
+  local cfst_failed=0
+  local -a active_cfst_records=()
   while IFS=',' read -r port_value scope selected_ip_path _map_path; do
-    while (( $(jobs -rp | wc -l) >= MAX_PARALLEL_CFST )); do
-      sleep 2
+    while (( ${#active_cfst_records[@]} >= max_parallel )); do
+      if ! wait_cfst_record "${active_cfst_records[0]}"; then
+        cfst_failed=1
+      fi
+      active_cfst_records=("${active_cfst_records[@]:1}")
     done
     start_cfst_for_port "$port_value" "$scope" "$selected_ip_path"
+    active_cfst_records+=("$LAST_CFST_RECORD")
   done < "$WORK_DIR/port-work-items.csv"
 
-  wait_cfst_processes
+  for cfst_record in "${active_cfst_records[@]}"; do
+    if ! wait_cfst_record "$cfst_record"; then
+      cfst_failed=1
+    fi
+  done
+  if (( cfst_failed != 0 )); then
+    exit 1
+  fi
   build_combined_candidates
   filter_csv
 

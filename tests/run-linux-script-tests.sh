@@ -141,6 +141,75 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
   fi
 }
 
+test_linux_runner_waits_multiple_fast_cfst_jobs() {
+  local tmp_dir zip_src zip_path stub_cfst stdout_path stderr_path
+  tmp_dir="$(mktemp -d)"
+  zip_src="$tmp_dir/zip-src"
+  zip_path="$tmp_dir/ip.zip"
+  stub_cfst="$tmp_dir/cfst"
+  stdout_path="$tmp_dir/script.stdout"
+  stderr_path="$tmp_dir/script.stderr"
+
+  mkdir -p "$zip_src/443"
+  printf '198.18.1.1\n' > "$zip_src/443/HK.txt"
+  printf '198.18.2.1\n' > "$zip_src/443/DE.txt"
+  printf '198.18.3.1\n' > "$zip_src/443/GB.txt"
+  (cd "$zip_src" && zip -qr "$zip_path" .)
+
+  cat > "$stub_cfst" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+input=""
+out=""
+while (($#)); do
+  case "$1" in
+    -f)
+      input="$2"
+      shift 2
+      ;;
+    -o)
+      out="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+ip="$(head -n 1 "$input")"
+{
+  printf 'IP 地址,已发送,已接收,丢包率,平均延迟,下载速度(MB/s),地区码\n'
+  printf '%s,1,1,0.00,100.00,1.00,HKG\n' "$ip"
+} > "$out"
+SH
+  chmod +x "$stub_cfst"
+
+  FORCE=1 \
+  SKIP_UPLOAD=1 \
+  ENABLE_CFBESTIP=0 \
+  DOWNLOAD_URL="file://$zip_path" \
+  WORK_DIR="$tmp_dir/work" \
+  CFST_PATH="$stub_cfst" \
+  PORTS=443 \
+  COUNTRIES_CSV=HK,DE,GB \
+  FOCUS_COUNTRIES_CSV=DE,GB \
+  MAX_PARALLEL_CFST=1 \
+  CFST_THREADS=1 \
+  CFST_LATENCY_TEST_COUNT=1 \
+  CFST_DOWNLOAD_TEST_COUNT=1 \
+  CFST_DOWNLOAD_TEST_TIME=1 \
+  FOCUS_CFST_DOWNLOAD_TEST_COUNT=1 \
+  FOCUS_CFST_DOWNLOAD_TEST_TIME=1 \
+  MIN_SPEED_MBPS=0 \
+  bash "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" >"$stdout_path" 2>"$stderr_path"
+
+  if grep -q 'pid .* is not a child of this shell' "$stderr_path" "$tmp_dir/work/auto-push.log"; then
+    fail "runner should not wait for already-reaped cfst pids"
+  fi
+  grep -q 'SkipUpload enabled. CSV generated but GitHub upload and success-state update were skipped.' "$tmp_dir/work/auto-push.log" \
+    || fail "runner should complete after multiple fast cfst jobs"
+}
+
 test_runner_defaults_include_europe_focus_countries() {
   grep -q 'COUNTRIES_CSV="${COUNTRIES_CSV:-HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux runner default Countries should include DE/GB/NL/IT"
@@ -356,6 +425,7 @@ test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
 test_linux_runner_excludes_focus_countries_from_all_scope
+test_linux_runner_waits_multiple_fast_cfst_jobs
 test_runner_defaults_include_europe_focus_countries
 test_runners_default_to_four_hour_interval
 test_focus_scopes_use_quick_download_screening
