@@ -66,7 +66,7 @@ SH
   fi
   grep -q 'cfst\[443/focus-HK\]: stub stdout' "$tmp_dir/work/auto-push.log" || fail "prefixed stdout log was not captured"
   grep -q 'cfst\[443/focus-HK\] stderr: stub stderr' "$tmp_dir/work/auto-push.log" || fail "prefixed stderr log was not captured"
-  grep -q '🇭🇰 HK \[北京测速#01 ip.zip\]' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "generated CSV city should include HK flag"
+  grep -q 'HK \[BJ#01 ip.zip\]' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "generated CSV city should use ASCII labels"
 }
 
 test_linux_defaults_are_not_overly_strict_for_local_runs() {
@@ -313,30 +313,33 @@ for required in [
     "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
     "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
     "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
-    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^🇭🇰 HK ↪ \\[",
-    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^🇯🇵 JP ↪ \\[",
-    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^🇰🇷 KR ↪ \\[",
-    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^🇸🇬 SG ↪ \\[",
-    "custom_proxy_group=🇵🇭 Philippines Pool`url-test`^🇵🇭 PH ↪ \\[",
-    "custom_proxy_group=🇻🇳 Vietnam Pool`url-test`^🇻🇳 VN ↪ \\[",
-    "custom_proxy_group=🇲🇾 Malaysia Pool`url-test`^🇲🇾 MY ↪ \\[",
-    "custom_proxy_group=🇰🇿 Kazakhstan Pool`url-test`^🇰🇿 KZ ↪ \\[",
-    "custom_proxy_group=🇲🇳 Mongolia Pool`url-test`^🇲🇳 MN ↪ \\[",
-    "custom_proxy_group=🇺🇸 United States Pool`url-test`^🇺🇸 US ↪ \\[",
-    "custom_proxy_group=🇮🇪 Ireland Pool`url-test`^🇮🇪 IE ↪ \\[",
-    "custom_proxy_group=🇩🇪 Germany Pool`url-test`^🇩🇪 DE ↪ \\[",
-    "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^🇬🇧 GB ↪ \\[",
-    "custom_proxy_group=🇳🇱 Netherlands Pool`url-test`^🇳🇱 NL ↪ \\[",
-    "custom_proxy_group=🇮🇹 Italy Pool`url-test`^🇮🇹 IT ↪ \\[",
+    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^HK \\[",
+    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^JP \\[",
+    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^KR \\[",
+    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^SG \\[",
+    "custom_proxy_group=🇵🇭 Philippines Pool`url-test`^PH \\[",
+    "custom_proxy_group=🇻🇳 Vietnam Pool`url-test`^VN \\[",
+    "custom_proxy_group=🇲🇾 Malaysia Pool`url-test`^MY \\[",
+    "custom_proxy_group=🇰🇿 Kazakhstan Pool`url-test`^KZ \\[",
+    "custom_proxy_group=🇲🇳 Mongolia Pool`url-test`^MN \\[",
+    "custom_proxy_group=🇺🇸 United States Pool`url-test`^US \\[",
+    "custom_proxy_group=🇮🇪 Ireland Pool`url-test`^IE \\[",
+    "custom_proxy_group=🇩🇪 Germany Pool`url-test`^DE \\[",
+    "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^GB \\[",
+    "custom_proxy_group=🇳🇱 Netherlands Pool`url-test`^NL \\[",
+    "custom_proxy_group=🇮🇹 Italy Pool`url-test`^IT \\[",
 ]:
     if required not in text:
         raise SystemExit(f"{path}: missing proxyip-only pool matcher: {required}")
 
 for forbidden in [
-    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^HK",
-    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^JP",
-    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^KR",
-    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^SG",
+    "馃",
+    "北京测速",
+    "成都测速",
+    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^🇭🇰",
+    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^🇯🇵",
+    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^🇰🇷",
+    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^🇸🇬",
     "custom_proxy_group=Asia Pool`url-test`[]🇭🇰 Hong Kong Pool`[]🇯🇵 Japan Pool`[]🇰🇷 Korea Pool`[]🇸🇬 Singapore Pool`^(PH|VN|MY|KZ|MN)",
     "LB-20min",
     "custom_proxy_group=Final",

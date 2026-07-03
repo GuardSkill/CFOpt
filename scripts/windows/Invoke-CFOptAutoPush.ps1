@@ -58,7 +58,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($TestLocationName)) {
-    $TestLocationName = [string]([char]0x6210) + [string]([char]0x90FD) + [string]([char]0x6D4B) + [string]([char]0x901F)
+    $TestLocationName = "CD"
 }
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 if ([string]::IsNullOrWhiteSpace($ProxyipBestScript)) {
@@ -927,9 +927,7 @@ function Write-MergedFilteredCsv {
         $regionCounters[$regionKey]++
         $regionNumber = $regionCounters[$regionKey].ToString("00", [System.Globalization.CultureInfo]::InvariantCulture)
         $sourceText = if ([string]::IsNullOrWhiteSpace($row.Source)) { "unknown" } else { $row.Source }
-        $flag = Get-CountryFlag -Code $regionKey
-        $regionLabel = if ([string]::IsNullOrWhiteSpace($flag)) { $regionKey } else { "$flag $regionKey" }
-        $numberedCity = "$regionLabel [$TestLocationName#$regionNumber $sourceText]"
+        $numberedCity = "$regionKey [$TestLocationName#$regionNumber $sourceText]"
         $kept.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$numberedCity,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)")
     }
 

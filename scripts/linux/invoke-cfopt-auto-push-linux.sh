@@ -72,7 +72,7 @@ STATE_FILE="$WORK_DIR/last-success.txt"
 LOG_FILE="$WORK_DIR/auto-push.log"
 
 if [[ -z "$TEST_LOCATION_NAME" ]]; then
-  TEST_LOCATION_NAME=$'\u5317\u4eac\u6d4b\u901f'
+  TEST_LOCATION_NAME="BJ"
 fi
 
 log() {
@@ -669,7 +669,7 @@ filter_csv() {
           output_city_count[city]++
           source = cols[col_count]
           if (source == "") source = "unknown"
-          numbered_city = country_flag(city) " " city " [" test_location_name "#" sprintf("%02d", output_city_count[city]) " " source "]"
+          numbered_city = city " [" test_location_name "#" sprintf("%02d", output_city_count[city]) " " source "]"
           cols[4] = numbered_city
           out = cols[1]
           for (k = 2; k < col_count; k++) {
