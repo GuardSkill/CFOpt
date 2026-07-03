@@ -380,6 +380,12 @@ for legacy in [
 with open(path, encoding="utf-8") as fh:
     text = fh.read()
 
+if "github.com/GuardSkill/CFOpt/raw/refs/heads/main" in text:
+    raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
+
+if "rules/Bilibili.list" in text and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in text:
+    raise SystemExit(f"{path}: Bilibili rules must route to Direct")
+
 if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     required_lines = [
         "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]DE + IE Pool`[]DE + AT Pool`[]GB + IE Pool`[]HK Pool`[]JP Pool`[]KR Pool`[]SG Pool`[]DE Pool`[]GB Pool`[]US Pool`[]Auto`[]Fallback`[]DIRECT`.*",

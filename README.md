@@ -45,9 +45,9 @@ FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 订阅转换配置文件使用本仓库的 raw 地址：
 
 ```text
-https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter.ini
-https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite.ini
-https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite_cmliussss.ini
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter.ini
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter_lite.ini
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter_lite_cmliussss.ini
 ```
 
 CMLiussss 后端推荐填写 `CFOpt_Subconverter_lite_cmliussss.ini`，避免旧 `lite.ini` URL 被后端缓存后继续回落默认模板。
@@ -271,9 +271,9 @@ GITHUB_TOKEN_CFOPT="your GitHub token" AUTORUN_BACKEND=cron INSTALL_DAILY_AUTORU
 Use this repository's raw URLs as Subconverter config files:
 
 ```text
-https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter.ini
-https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite.ini
-https://github.com/GuardSkill/CFOpt/raw/refs/heads/main/CFOpt_Subconverter_lite_cmliussss.ini
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter.ini
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter_lite.ini
+https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter_lite_cmliussss.ini
 ```
 
 For CMLiussss backends, prefer `CFOpt_Subconverter_lite_cmliussss.ini` to avoid stale backend cache for the older `lite.ini` URL.
