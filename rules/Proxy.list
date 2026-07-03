@@ -1,0 +1,3 @@
+# Keep this file present because CFOpt_Subconverter.ini references it before
+# the broader ACL4SSR proxy fallbacks. Add project-specific proxy-only rules
+# here when needed.

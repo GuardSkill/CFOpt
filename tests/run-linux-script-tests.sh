@@ -251,7 +251,9 @@ expected = [
     "CodeAgent",
     "Polymarket",
     "OKX",
+    "Region",
     "Asia Pool",
+    "Europe Pool",
     "🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
     "🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
     "🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
@@ -259,7 +261,17 @@ expected = [
     "🇯🇵 Japan Pool",
     "🇰🇷 Korea Pool",
     "🇸🇬 Singapore Pool",
+    "🇵🇭 Philippines Pool",
+    "🇻🇳 Vietnam Pool",
+    "🇲🇾 Malaysia Pool",
+    "🇰🇿 Kazakhstan Pool",
+    "🇲🇳 Mongolia Pool",
+    "🇺🇸 United States Pool",
+    "🇮🇪 Ireland Pool",
+    "🇩🇪 Germany Pool",
     "🇬🇧 United Kingdom Pool",
+    "🇳🇱 Netherlands Pool",
+    "🇮🇹 Italy Pool",
     "CT Pool",
     "Domain Pool",
 ]
@@ -291,13 +303,31 @@ with open(path, encoding="utf-8") as fh:
     text = fh.read()
 
 for required in [
+    "custom_proxy_group=Proxy`select`[]CodeAgent`[]Region`[]Auto`[]Fallback`[]DIRECT`.*",
+    "custom_proxy_group=Region`select`[]Asia Pool`[]Europe Pool`[]🇺🇸 United States Pool",
+]:
+    if required not in text:
+        raise SystemExit(f"{path}: missing simplified routing group: {required}")
+
+for required in [
     "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
     "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
+    "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
     "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^🇭🇰 HK ↪ \\[",
     "custom_proxy_group=🇯🇵 Japan Pool`url-test`^🇯🇵 JP ↪ \\[",
     "custom_proxy_group=🇰🇷 Korea Pool`url-test`^🇰🇷 KR ↪ \\[",
     "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^🇸🇬 SG ↪ \\[",
-    "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
+    "custom_proxy_group=🇵🇭 Philippines Pool`url-test`^🇵🇭 PH ↪ \\[",
+    "custom_proxy_group=🇻🇳 Vietnam Pool`url-test`^🇻🇳 VN ↪ \\[",
+    "custom_proxy_group=🇲🇾 Malaysia Pool`url-test`^🇲🇾 MY ↪ \\[",
+    "custom_proxy_group=🇰🇿 Kazakhstan Pool`url-test`^🇰🇿 KZ ↪ \\[",
+    "custom_proxy_group=🇲🇳 Mongolia Pool`url-test`^🇲🇳 MN ↪ \\[",
+    "custom_proxy_group=🇺🇸 United States Pool`url-test`^🇺🇸 US ↪ \\[",
+    "custom_proxy_group=🇮🇪 Ireland Pool`url-test`^🇮🇪 IE ↪ \\[",
+    "custom_proxy_group=🇩🇪 Germany Pool`url-test`^🇩🇪 DE ↪ \\[",
+    "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^🇬🇧 GB ↪ \\[",
+    "custom_proxy_group=🇳🇱 Netherlands Pool`url-test`^🇳🇱 NL ↪ \\[",
+    "custom_proxy_group=🇮🇹 Italy Pool`url-test`^🇮🇹 IT ↪ \\[",
 ]:
     if required not in text:
         raise SystemExit(f"{path}: missing proxyip-only pool matcher: {required}")
@@ -308,6 +338,8 @@ for forbidden in [
     "custom_proxy_group=🇰🇷 Korea Pool`url-test`^KR",
     "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^SG",
     "custom_proxy_group=Asia Pool`url-test`[]🇭🇰 Hong Kong Pool`[]🇯🇵 Japan Pool`[]🇰🇷 Korea Pool`[]🇸🇬 Singapore Pool`^(PH|VN|MY|KZ|MN)",
+    "LB-20min",
+    "custom_proxy_group=Final",
 ]:
     if forbidden in text:
         raise SystemExit(f"{path}: ordinary nodes still match a proxyip pool: {forbidden}")
