@@ -111,6 +111,45 @@ test_linux_runner_samples_large_country_files() {
   [[ "$selected_count" == "10" ]] || fail "expected DE focus sampling to keep 10 of 100 candidates, got $selected_count"
 }
 
+test_linux_runner_applies_country_sample_multipliers() {
+  local tmp_dir zip_src zip_path stdout_path stderr_path
+  tmp_dir="$(mktemp -d)"
+  zip_src="$tmp_dir/zip-src"
+  zip_path="$tmp_dir/ip.zip"
+  stdout_path="$tmp_dir/script.stdout"
+  stderr_path="$tmp_dir/script.stderr"
+
+  mkdir -p "$zip_src/443"
+  for i in $(seq 1 100); do
+    printf '198.18.10.%s\n' "$i"
+  done > "$zip_src/443/KR.txt"
+  for i in $(seq 1 100); do
+    printf '198.18.20.%s\n' "$i"
+  done > "$zip_src/443/US.txt"
+  (cd "$zip_src" && zip -qr "$zip_path" .)
+
+  FORCE=1 \
+  DRY_RUN=1 \
+  ENABLE_CFBESTIP=0 \
+  DOWNLOAD_URL="file://$zip_path" \
+  WORK_DIR="$tmp_dir/work" \
+  CFST_PATH="$tmp_dir/missing-cfst-ok-for-dry-run" \
+  PORTS=443 \
+  COUNTRIES_CSV=KR,US \
+  FOCUS_COUNTRIES_CSV=KR,US \
+  IPZIP_SAMPLE_PERCENT=20 \
+  IPZIP_COUNTRY_MIN_CANDIDATES=0 \
+  IPZIP_COUNTRY_MAX_CANDIDATES=100 \
+  IPZIP_COUNTRY_SAMPLE_MULTIPLIERS="KR=2,US=0.5" \
+  bash "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" >"$stdout_path" 2>"$stderr_path"
+
+  local kr_count us_count
+  kr_count="$(wc -l < "$tmp_dir/work/selected-ip-443-focus-KR.txt" | tr -d ' ')"
+  us_count="$(wc -l < "$tmp_dir/work/selected-ip-443-focus-US.txt" | tr -d ' ')"
+  [[ "$kr_count" == "40" ]] || fail "expected KR multiplier to keep 40 candidates, got $kr_count"
+  [[ "$us_count" == "10" ]] || fail "expected US multiplier to keep 10 candidates, got $us_count"
+}
+
 test_linux_runner_excludes_focus_countries_from_all_scope() {
   local tmp_dir zip_src zip_path stdout_path stderr_path
   tmp_dir="$(mktemp -d)"
@@ -219,6 +258,10 @@ test_runner_defaults_include_europe_focus_countries() {
     || fail "Windows runner default Countries should include DE/GB/NL/IT"
   grep -q '\[string\]\$FocusCountries = "SG,HK,JP,KR,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner default FocusCountries should include SG/HK/JP/KR/DE/GB"
+  grep -q 'IPZIP_COUNTRY_SAMPLE_MULTIPLIERS="${IPZIP_COUNTRY_SAMPLE_MULTIPLIERS:-KR=2,US=0.5}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should default to KR and US country sampling multipliers"
+  grep -q '\[string\]\$IpZipCountrySampleMultipliers = "KR=2,US=0.5"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner should default to KR and US country sampling multipliers"
 }
 
 test_runners_default_to_four_hour_interval() {
@@ -463,6 +506,7 @@ test_tracked_csv_node_labels_are_ascii_safe() {
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
+test_linux_runner_applies_country_sample_multipliers
 test_linux_runner_excludes_focus_countries_from_all_scope
 test_linux_runner_waits_multiple_fast_cfst_jobs
 test_runner_defaults_include_europe_focus_countries

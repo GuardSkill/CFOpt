@@ -33,6 +33,7 @@ param(
     [int]$IpZipSamplePercent = 20,
     [int]$IpZipCountryMinCandidates = 20,
     [int]$IpZipCountryMaxCandidates = 160,
+    [string]$IpZipCountrySampleMultipliers = "KR=2,US=0.5",
     [double]$RollingReplaceFraction = 0.33,
     [int]$Vps789CtLimit = 50,
     [int]$Vps789MaxDxLatencyMs = 260,
@@ -121,7 +122,10 @@ function Get-FocusExcludedCountries {
 }
 
 function Get-SampledIpZipLines {
-    param([string[]]$Lines)
+    param(
+        [string[]]$Lines,
+        [string]$Country
+    )
 
     $rows = @(
         foreach ($line in $Lines) {
@@ -142,8 +146,10 @@ function Get-SampledIpZipLines {
         $percent = 100
     }
 
-    $minCount = [Math]::Max(0, $IpZipCountryMinCandidates)
-    $maxCount = $IpZipCountryMaxCandidates
+    $multiplier = Get-IpZipCountrySampleMultiplier -Country $Country
+    $percent = [Math]::Min(100, $percent * $multiplier)
+    $minCount = [Math]::Max(0, [int][Math]::Floor($IpZipCountryMinCandidates * $multiplier))
+    $maxCount = [int][Math]::Floor($IpZipCountryMaxCandidates * $multiplier)
     $target = [int][Math]::Ceiling($count * $percent / 100.0)
     if ($target -lt $minCount) {
         $target = $minCount
@@ -172,6 +178,24 @@ function Get-SampledIpZipLines {
     }
 
     return $sampled.ToArray()
+}
+
+function Get-IpZipCountrySampleMultiplier {
+    param([string]$Country)
+
+    foreach ($item in @($IpZipCountrySampleMultipliers -split '[,\s]+')) {
+        if ([string]::IsNullOrWhiteSpace($item) -or -not $item.Contains("=")) {
+            continue
+        }
+        $parts = $item.Split("=", 2)
+        $key = $parts[0].Trim()
+        $value = 0.0
+        if ($key.Equals($Country, [System.StringComparison]::OrdinalIgnoreCase) -and [double]::TryParse($parts[1].Trim(), [ref]$value) -and $value -gt 0) {
+            return $value
+        }
+    }
+
+    return 1.0
 }
 
 function Test-IntervalGate {
@@ -522,7 +546,7 @@ function New-PortWorkItem {
     $seenIps = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($file in $selectedFiles) {
         $city = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
-        $sampledLines = @(Get-SampledIpZipLines -Lines @(Get-Content -LiteralPath $file.FullName))
+        $sampledLines = @(Get-SampledIpZipLines -Lines @(Get-Content -LiteralPath $file.FullName) -Country $city)
         $ipLines = @($sampledLines | Where-Object { $seenIps.Add($_) })
 
         $ipLines | Add-Content -LiteralPath $selectedIpPath -Encoding ASCII

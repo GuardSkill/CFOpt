@@ -39,6 +39,7 @@ IPZIP_SAMPLE_ENABLED="${IPZIP_SAMPLE_ENABLED:-1}"
 IPZIP_SAMPLE_PERCENT="${IPZIP_SAMPLE_PERCENT:-20}"
 IPZIP_COUNTRY_MIN_CANDIDATES="${IPZIP_COUNTRY_MIN_CANDIDATES:-20}"
 IPZIP_COUNTRY_MAX_CANDIDATES="${IPZIP_COUNTRY_MAX_CANDIDATES:-160}"
+IPZIP_COUNTRY_SAMPLE_MULTIPLIERS="${IPZIP_COUNTRY_SAMPLE_MULTIPLIERS:-KR=2,US=0.5}"
 ENABLE_VPS789_CT="${ENABLE_VPS789_CT:-0}"
 VPS789_CT_LIMIT="${VPS789_CT_LIMIT:-50}"
 VPS789_MAX_DX_LATENCY_MS="${VPS789_MAX_DX_LATENCY_MS:-260}"
@@ -383,7 +384,21 @@ append_ipzip_country_file() {
     -v enabled="$IPZIP_SAMPLE_ENABLED" \
     -v percent="$IPZIP_SAMPLE_PERCENT" \
     -v min_keep="$IPZIP_COUNTRY_MIN_CANDIDATES" \
-    -v max_keep="$IPZIP_COUNTRY_MAX_CANDIDATES" '
+    -v max_keep="$IPZIP_COUNTRY_MAX_CANDIDATES" \
+    -v country="$country" \
+    -v multipliers="$IPZIP_COUNTRY_SAMPLE_MULTIPLIERS" '
+      function country_multiplier(   i, parts, key, value, nitems, items) {
+        nitems = split(multipliers, items, /[,[:space:]]+/)
+        for (i = 1; i <= nitems; i++) {
+          if (items[i] == "") continue
+          split(items[i], parts, "=")
+          key = toupper(parts[1])
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+          value = parts[2] + 0
+          if (key == toupper(country) && value > 0) return value
+        }
+        return 1
+      }
       /^[[:space:]]*(#|$)/ { next }
       {
         line = $0
@@ -398,9 +413,12 @@ append_ipzip_country_file() {
         }
 
         pct = percent + 0
-        min_count = min_keep + 0
-        max_count = max_keep + 0
+        multiplier = country_multiplier()
+        min_count = int((min_keep + 0) * multiplier)
+        max_count = int((max_keep + 0) * multiplier)
         if (pct <= 0 || pct > 100) pct = 100
+        pct = pct * multiplier
+        if (pct > 100) pct = 100
         if (min_count < 0) min_count = 0
 
         target = int((n * pct + 99) / 100)
