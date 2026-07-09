@@ -680,10 +680,32 @@ test_twitter_rules_cover_core_domains() {
     "DOMAIN-SUFFIX,t.co"
     "DOMAIN-SUFFIX,twimg.com"
     "DOMAIN-SUFFIX,tweetdeck.com"
+    "DOMAIN-SUFFIX,periscope.tv"
+    "DOMAIN-SUFFIX,pscp.tv"
   )
 
   for rule in "${required_rules[@]}"; do
     grep -qxF "$rule" "$rules_file" || fail "Twitter rules missing: $rule"
+  done
+}
+
+test_twitter_plain_experimental_config_uses_only_plain_asia_pools() {
+  local config="$ROOT_DIR/CFOpt_Subconverter_lite_twitter_plain.ini"
+  [[ -f "$config" ]] || fail "missing Twitter plain experimental config: $config"
+
+  grep -qxF 'custom_proxy_group=Twitter`select`[]Twitter JP Plain Pool`[]Twitter KR Plain Pool`[]Twitter SG Plain Pool`[]Twitter HK Plain Pool`[]Auto`[]DIRECT' "$config" || \
+    fail "Twitter plain config should route Twitter through plain-only Asia pools"
+
+  local required_plain_pools=(
+    'custom_proxy_group=Twitter JP Plain Pool`url-test`(^| )(🇯🇵 )?JP \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=Twitter KR Plain Pool`url-test`(^| )(🇰🇷 )?KR \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=Twitter SG Plain Pool`url-test`(^| )(🇸🇬 )?SG \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=Twitter HK Plain Pool`url-test`(^| )(🇭🇰 )?HK \[`http://www.gstatic.com/generate_204`3600,,50'
+  )
+
+  local pool
+  for pool in "${required_plain_pools[@]}"; do
+    grep -qxF "$pool" "$config" || fail "Twitter plain config missing plain-only pool: $pool"
   done
 }
 
@@ -712,5 +734,6 @@ test_polymarket_rules_cover_core_api_domains
 test_polymarket_rules_are_inlined_in_subconverter_configs
 test_twitter_rules_cover_core_domains
 test_twitter_rules_are_referenced_in_subconverter_configs
+test_twitter_plain_experimental_config_uses_only_plain_asia_pools
 
 printf 'Linux script tests passed.\n'
