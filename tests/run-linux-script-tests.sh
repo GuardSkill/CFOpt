@@ -295,6 +295,7 @@ test_proxyip_best_generator_ranks_candidates_by_tcp_latency() {
 
   python3 - "$ready_file" <<'PY' &
 import socket
+import re
 import sys
 import threading
 import time
@@ -347,6 +348,7 @@ test_subconverter_group_order_and_pool_names() {
   local config
   for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini" "$ROOT_DIR/CFOpt_Subconverter_lite_cmliussss.ini"; do
     python3 - "$config" <<'PY'
+import re
 import sys
 
 path = sys.argv[1]
@@ -367,6 +369,17 @@ expected = [
 
 if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     expected.extend([
+        "CodeAgent JP Pool",
+        "CodeAgent KR Pool",
+        "CodeAgent SG Pool",
+        "CodeAgent HK Pool",
+        "Polymarket DE + IE Pool",
+        "Polymarket DE + AT Pool",
+        "Polymarket KR Pool",
+        "Polymarket GB + IE Pool",
+        "OKX HK Pool",
+        "OKX KR Pool",
+        "OKX SG Pool",
         "DE + IE Pool",
         "DE + AT Pool",
         "GB + IE Pool",
@@ -384,6 +397,17 @@ if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     ])
 else:
     expected.extend([
+    "CodeAgent 🇯🇵 Japan Pool",
+    "CodeAgent 🇰🇷 Korea Pool",
+    "CodeAgent 🇸🇬 Singapore Pool",
+    "CodeAgent 🇭🇰 Hong Kong Pool",
+    "Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
+    "Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
+    "Polymarket 🇰🇷 Korea Pool",
+    "Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
+    "OKX 🇭🇰 Hong Kong Pool",
+    "OKX 🇰🇷 Korea Pool",
+    "OKX 🇸🇬 Singapore Pool",
     "Asia Pool",
     "🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
     "🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
@@ -432,16 +456,19 @@ if "rules/Bilibili.list" in text and "ruleset=Direct,https://raw.githubuserconte
 if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     required_lines = [
         "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]DE + IE Pool`[]DE + AT Pool`[]GB + IE Pool`[]HK Pool`[]JP Pool`[]KR Pool`[]SG Pool`[]DE Pool`[]GB Pool`[]US Pool`[]Auto`[]Fallback`[]DIRECT`.*",
-        "custom_proxy_group=CodeAgent`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]US Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=Polymarket`select`[]DE + IE Pool`[]DE + AT Pool`[]KR Pool`[]GB + IE Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=OKX`select`[]HK Pool`[]KR Pool`[]SG Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=CodeAgent`select`[]CodeAgent JP Pool`[]CodeAgent KR Pool`[]CodeAgent SG Pool`[]CodeAgent HK Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]Polymarket KR Pool`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=OKX`select`[]OKX HK Pool`[]OKX KR Pool`[]OKX SG Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=CodeAgent JP Pool`url-test`(^| )(🇯🇵 )?JP( ↪)? \\[`https://api.anthropic.com/`3600,,50",
+        "custom_proxy_group=Polymarket KR Pool`url-test`(^| )(🇰🇷 )?KR( ↪)? \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
+        "custom_proxy_group=OKX HK Pool`url-test`(^| )(🇭🇰 )?HK( ↪)? \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
         "custom_proxy_group=DE + IE Pool`url-test`DE .*IE \\[",
         "custom_proxy_group=DE + AT Pool`url-test`DE .*AT \\[",
         "custom_proxy_group=GB + IE Pool`url-test`GB .*IE \\[",
-        "custom_proxy_group=HK Pool`url-test`(^| )(HK) \\[",
-        "custom_proxy_group=JP Pool`url-test`(^| )(JP) \\[",
-        "custom_proxy_group=KR Pool`url-test`(^| )(KR) \\[",
-        "custom_proxy_group=SG Pool`url-test`(^| )(SG) \\[",
+        "custom_proxy_group=HK Pool`url-test`(^| )(🇭🇰 )?HK( ↪)? \\[",
+        "custom_proxy_group=JP Pool`url-test`(^| )(🇯🇵 )?JP( ↪)? \\[",
+        "custom_proxy_group=KR Pool`url-test`(^| )(🇰🇷 )?KR( ↪)? \\[",
+        "custom_proxy_group=SG Pool`url-test`(^| )(🇸🇬 )?SG( ↪)? \\[",
         "custom_proxy_group=US Pool`url-test`(^| )(US) \\[",
         "custom_proxy_group=DE Pool`url-test`(^| )(DE) \\[",
         "custom_proxy_group=GB Pool`url-test`(^| )(GB) \\[",
@@ -452,6 +479,12 @@ if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
 else:
     required_lines = [
         "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Auto`[]LB-20min`[]Fallback`[]DIRECT`.*",
+        "custom_proxy_group=CodeAgent`select`[]CodeAgent 🇯🇵 Japan Pool`[]CodeAgent 🇰🇷 Korea Pool`[]CodeAgent 🇸🇬 Singapore Pool`[]CodeAgent 🇭🇰 Hong Kong Pool",
+        "custom_proxy_group=Polymarket`select`[]Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy`[]Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy`[]Polymarket 🇰🇷 Korea Pool`[]Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
+        "custom_proxy_group=OKX`select`[]OKX 🇭🇰 Hong Kong Pool`[]OKX 🇰🇷 Korea Pool`[]OKX 🇸🇬 Singapore Pool",
+        "custom_proxy_group=CodeAgent 🇯🇵 Japan Pool`url-test`^(🇯🇵 )?JP( ↪)? \\[`https://api.anthropic.com/`3600,,50",
+        "custom_proxy_group=Polymarket 🇰🇷 Korea Pool`url-test`^(🇰🇷 )?KR( ↪)? \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
+        "custom_proxy_group=OKX 🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 )?HK( ↪)? \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
         "custom_proxy_group=Auto`url-test`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
         "custom_proxy_group=LB-20min`load-balance`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
         "custom_proxy_group=Fallback`fallback`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
@@ -461,15 +494,58 @@ for required in required_lines:
     if required not in text:
         raise SystemExit(f"{path}: missing simplified routing group: {required}")
 
+url_test_regexes = {}
+for raw_line in text.splitlines():
+    if not raw_line.startswith("custom_proxy_group="):
+        continue
+    parts = raw_line[len("custom_proxy_group="):].split("`")
+    if len(parts) >= 4 and parts[1] == "url-test":
+        url_test_regexes[parts[0]] = parts[2]
+
+if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
+    regex_samples = {
+        "OKX HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
+        "OKX KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "OKX SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
+        "CodeAgent JP Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
+        "CodeAgent HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
+        "Polymarket KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
+        "JP Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
+        "KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
+    }
+else:
+    regex_samples = {
+        "OKX 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
+        "OKX 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "OKX 🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
+        "CodeAgent 🇯🇵 Japan Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
+        "CodeAgent 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
+        "Polymarket 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
+        "🇯🇵 Japan Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
+        "🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
+    }
+
+for group, samples in regex_samples.items():
+    pattern = url_test_regexes.get(group)
+    if not pattern:
+        raise SystemExit(f"{path}: missing url-test regex for group {group!r}")
+    for sample in samples:
+        if not re.search(pattern, sample):
+            raise SystemExit(f"{path}: group {group!r} regex {pattern!r} does not match sample node {sample!r}")
+
 if not (path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini")):
     for required in [
         "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
         "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
         "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
-        "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 HK ↪|HK) \\[",
-        "custom_proxy_group=🇯🇵 Japan Pool`url-test`^(🇯🇵 JP ↪|JP) \\[",
-        "custom_proxy_group=🇰🇷 Korea Pool`url-test`^(🇰🇷 KR ↪|KR) \\[",
-        "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^(🇸🇬 SG ↪|SG) \\[",
+        "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 )?HK( ↪)? \\[",
+        "custom_proxy_group=🇯🇵 Japan Pool`url-test`^(🇯🇵 )?JP( ↪)? \\[",
+        "custom_proxy_group=🇰🇷 Korea Pool`url-test`^(🇰🇷 )?KR( ↪)? \\[",
+        "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^(🇸🇬 )?SG( ↪)? \\[",
         "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^(🇬🇧 GB → 🇮🇪 IE|GB) \\[",
     ]:
         if required not in text:
@@ -503,6 +579,26 @@ test_tracked_csv_node_labels_are_ascii_safe() {
   done
 }
 
+test_polymarket_rules_cover_core_api_domains() {
+  local rules_file="$ROOT_DIR/rules/Polymarket.list"
+  local required_rules=(
+    "DOMAIN-SUFFIX,gamma-api.polymarket.com"
+    "DOMAIN-SUFFIX,data-api.polymarket.com"
+    "DOMAIN-SUFFIX,clob.polymarket.com"
+    "DOMAIN-SUFFIX,ws-subscriptions-clob.polymarket.com"
+    "DOMAIN-SUFFIX,ws-subscriptions-user.polymarket.com"
+    "DOMAIN-SUFFIX,bridge.polymarket.com"
+    "DOMAIN-SUFFIX,polymarket.com"
+    "DOMAIN-SUFFIX,polymarketcdn.com"
+    "DOMAIN-KEYWORD,polymarket"
+    "DOMAIN-KEYWORD,thegraph"
+  )
+
+  for rule in "${required_rules[@]}"; do
+    grep -qxF "$rule" "$rules_file" || fail "Polymarket rules missing: $rule"
+  done
+}
+
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
@@ -515,5 +611,6 @@ test_focus_scopes_use_quick_download_screening
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 test_subconverter_group_order_and_pool_names
 test_tracked_csv_node_labels_are_ascii_safe
+test_polymarket_rules_cover_core_api_domains
 
 printf 'Linux script tests passed.\n'

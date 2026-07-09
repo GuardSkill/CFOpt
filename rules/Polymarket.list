@@ -1,4 +1,9 @@
+DOMAIN-SUFFIX,gamma-api.polymarket.com
+DOMAIN-SUFFIX,data-api.polymarket.com
 DOMAIN-SUFFIX,clob.polymarket.com
+DOMAIN-SUFFIX,ws-subscriptions-clob.polymarket.com
+DOMAIN-SUFFIX,ws-subscriptions-user.polymarket.com
+DOMAIN-SUFFIX,bridge.polymarket.com
 DOMAIN-SUFFIX,polymarket.com
 DOMAIN-SUFFIX,polymarketcdn.com
 DOMAIN-KEYWORD,polymarket
