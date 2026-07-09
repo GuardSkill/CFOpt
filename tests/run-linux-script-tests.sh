@@ -689,24 +689,46 @@ test_twitter_rules_cover_core_domains() {
   done
 }
 
-test_twitter_plain_experimental_config_uses_only_plain_asia_pools() {
+test_twitter_plain_experimental_config_splits_plain_and_proxy_asia_pools() {
   local config="$ROOT_DIR/CFOpt_Subconverter_lite_twitter_plain.ini"
   [[ -f "$config" ]] || fail "missing Twitter plain experimental config: $config"
 
-  grep -qxF 'custom_proxy_group=Twitter`select`[]Twitter JP Plain Pool`[]Twitter KR Plain Pool`[]Twitter SG Plain Pool`[]Twitter HK Plain Pool`[]Auto`[]DIRECT' "$config" || \
+  grep -qxF 'custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT' "$config" || \
     fail "Twitter plain config should route Twitter through plain-only Asia pools"
+  grep -qxF 'custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]HK Proxy ↪`[]Auto`[]DIRECT' "$config" || \
+    fail "Twitter plain config should route CodeAgent through shared ProxyIP Asia pools"
+  grep -qxF 'custom_proxy_group=OKX`select`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT' "$config" || \
+    fail "Twitter plain config should route OKX through shared ProxyIP Asia pools"
+  grep -qxF 'custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]Polymarket KR Pool`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT' "$config" || \
+    fail "Twitter plain config must keep Polymarket on its dedicated pools"
 
   local required_plain_pools=(
-    'custom_proxy_group=Twitter JP Plain Pool`url-test`(^| )(🇯🇵 )?JP \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=Twitter KR Plain Pool`url-test`(^| )(🇰🇷 )?KR \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=Twitter SG Plain Pool`url-test`(^| )(🇸🇬 )?SG \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=Twitter HK Plain Pool`url-test`(^| )(🇭🇰 )?HK \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=JP Pool`url-test`(^| )(🇯🇵 )?JP \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=KR Pool`url-test`(^| )(🇰🇷 )?KR \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=SG Pool`url-test`(^| )(🇸🇬 )?SG \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=HK Pool`url-test`(^| )(🇭🇰 )?HK \[`http://www.gstatic.com/generate_204`3600,,50'
+  )
+  local required_proxy_pools=(
+    'custom_proxy_group=JP Proxy ↪`url-test`(^| )(🇯🇵 )?JP ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=KR Proxy ↪`url-test`(^| )(🇰🇷 )?KR ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=SG Proxy ↪`url-test`(^| )(🇸🇬 )?SG ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
+    'custom_proxy_group=HK Proxy ↪`url-test`(^| )(🇭🇰 )?HK ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
   )
 
   local pool
   for pool in "${required_plain_pools[@]}"; do
     grep -qxF "$pool" "$config" || fail "Twitter plain config missing plain-only pool: $pool"
   done
+  for pool in "${required_proxy_pools[@]}"; do
+    grep -qxF "$pool" "$config" || fail "Twitter plain config missing ProxyIP-only pool: $pool"
+  done
+
+  if grep -q 'custom_proxy_group=Twitter`select`.*Proxy ↪' "$config"; then
+    fail "Twitter must not select ProxyIP pools in Twitter plain config"
+  fi
+  if grep -q 'custom_proxy_group=Polymarket`select`.*Proxy ↪' "$config"; then
+    fail "Polymarket must not be collapsed into shared ProxyIP pools"
+  fi
 }
 
 test_twitter_rules_are_referenced_in_subconverter_configs() {
@@ -734,6 +756,6 @@ test_polymarket_rules_cover_core_api_domains
 test_polymarket_rules_are_inlined_in_subconverter_configs
 test_twitter_rules_cover_core_domains
 test_twitter_rules_are_referenced_in_subconverter_configs
-test_twitter_plain_experimental_config_uses_only_plain_asia_pools
+test_twitter_plain_experimental_config_splits_plain_and_proxy_asia_pools
 
 printf 'Linux script tests passed.\n'
