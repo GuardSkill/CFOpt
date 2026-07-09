@@ -637,6 +637,32 @@ test_polymarket_rules_cover_core_api_domains() {
   done
 }
 
+test_polymarket_rules_are_inlined_in_subconverter_configs() {
+  local config
+  local required_rules=(
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,gamma-api.polymarket.com"
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,data-api.polymarket.com"
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,clob.polymarket.com"
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,ws-subscriptions-clob.polymarket.com"
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,ws-subscriptions-user.polymarket.com"
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,bridge.polymarket.com"
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,polymarket.com"
+    "ruleset=Polymarket,[]DOMAIN-SUFFIX,polymarketcdn.com"
+    "ruleset=Polymarket,[]DOMAIN-KEYWORD,polymarket"
+    "ruleset=Polymarket,[]DOMAIN-KEYWORD,thegraph"
+  )
+
+  for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini" "$ROOT_DIR/CFOpt_Subconverter_lite_cmliussss.ini"; do
+    for rule in "${required_rules[@]}"; do
+      grep -qxF "$rule" "$config" || fail "$config missing inline Polymarket rule: $rule"
+    done
+
+    if grep -q '^ruleset=Polymarket,https://' "$config"; then
+      fail "$config should inline Polymarket rules instead of depending on remote rule fetch"
+    fi
+  done
+}
+
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
@@ -650,5 +676,6 @@ test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 test_subconverter_group_order_and_pool_names
 test_tracked_csv_node_labels_are_ascii_safe
 test_polymarket_rules_cover_core_api_domains
+test_polymarket_rules_are_inlined_in_subconverter_configs
 
 printf 'Linux script tests passed.\n'
