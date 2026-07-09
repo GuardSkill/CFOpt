@@ -455,10 +455,11 @@ if "rules/Bilibili.list" in text and "ruleset=Direct,https://raw.githubuserconte
 
 if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     required_lines = [
-        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]DE + IE Pool`[]DE + AT Pool`[]GB + IE Pool`[]HK Pool`[]JP Pool`[]KR Pool`[]SG Pool`[]DE Pool`[]GB Pool`[]US Pool`[]Auto`[]Fallback`[]DIRECT`.*",
+        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Twitter`[]DE + IE Pool`[]DE + AT Pool`[]GB + IE Pool`[]HK Pool`[]JP Pool`[]KR Pool`[]SG Pool`[]DE Pool`[]GB Pool`[]US Pool`[]Auto`[]Fallback`[]DIRECT`.*",
         "custom_proxy_group=CodeAgent`select`[]CodeAgent JP Pool`[]CodeAgent KR Pool`[]CodeAgent SG Pool`[]CodeAgent HK Pool`[]Auto`[]DIRECT",
         "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]Polymarket KR Pool`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
         "custom_proxy_group=OKX`select`[]OKX HK Pool`[]OKX KR Pool`[]OKX SG Pool`[]Auto`[]DIRECT",
+        "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
         "custom_proxy_group=CodeAgent JP Pool`url-test`(^| )JP ↪ \\[`https://api.anthropic.com/`3600,,50",
         "custom_proxy_group=Polymarket KR Pool`url-test`(^| )KR ↪ \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
         "custom_proxy_group=OKX HK Pool`url-test`(^| )HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
@@ -474,14 +475,15 @@ if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
         "custom_proxy_group=GB Pool`url-test`(^| )(GB) \\[",
         "custom_proxy_group=Auto`url-test`.*`",
         "custom_proxy_group=Fallback`fallback`.*`",
-        "custom_proxy_group=Final`select`[]Proxy`[]CodeAgent`[]Auto`[]Polymarket`[]OKX`[]Fallback`[]DIRECT`.*",
+        "custom_proxy_group=Final`select`[]Proxy`[]CodeAgent`[]Auto`[]Polymarket`[]OKX`[]Twitter`[]Fallback`[]DIRECT`.*",
     ]
 else:
     required_lines = [
-        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Auto`[]LB-20min`[]Fallback`[]DIRECT`.*",
+        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Twitter`[]Auto`[]LB-20min`[]Fallback`[]DIRECT`.*",
         "custom_proxy_group=CodeAgent`select`[]CodeAgent 🇯🇵 Japan Pool`[]CodeAgent 🇰🇷 Korea Pool`[]CodeAgent 🇸🇬 Singapore Pool`[]CodeAgent 🇭🇰 Hong Kong Pool",
         "custom_proxy_group=Polymarket`select`[]Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy`[]Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy`[]Polymarket 🇰🇷 Korea Pool`[]Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
         "custom_proxy_group=OKX`select`[]OKX 🇭🇰 Hong Kong Pool`[]OKX 🇰🇷 Korea Pool`[]OKX 🇸🇬 Singapore Pool",
+        "custom_proxy_group=Twitter`select`[]🇯🇵 Japan Pool`[]🇰🇷 Korea Pool`[]🇸🇬 Singapore Pool`[]🇭🇰 Hong Kong Pool`[]Auto`[]DIRECT",
         "custom_proxy_group=CodeAgent 🇯🇵 Japan Pool`url-test`^.*JP ↪ \\[`https://api.anthropic.com/`3600,,50",
         "custom_proxy_group=Polymarket 🇰🇷 Korea Pool`url-test`^.*KR ↪ \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
         "custom_proxy_group=OKX 🇭🇰 Hong Kong Pool`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
@@ -670,6 +672,30 @@ test_polymarket_rules_are_inlined_in_subconverter_configs() {
   done
 }
 
+test_twitter_rules_cover_core_domains() {
+  local rules_file="$ROOT_DIR/rules/Twitter.list"
+  local required_rules=(
+    "DOMAIN-SUFFIX,x.com"
+    "DOMAIN-SUFFIX,twitter.com"
+    "DOMAIN-SUFFIX,t.co"
+    "DOMAIN-SUFFIX,twimg.com"
+    "DOMAIN-SUFFIX,tweetdeck.com"
+  )
+
+  for rule in "${required_rules[@]}"; do
+    grep -qxF "$rule" "$rules_file" || fail "Twitter rules missing: $rule"
+  done
+}
+
+test_twitter_rules_are_referenced_in_subconverter_configs() {
+  local config
+  local rule="ruleset=Twitter,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Twitter.list"
+
+  for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini" "$ROOT_DIR/CFOpt_Subconverter_lite_cmliussss.ini"; do
+    grep -qxF "$rule" "$config" || fail "$config missing Twitter ruleset: $rule"
+  done
+}
+
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
@@ -684,5 +710,7 @@ test_subconverter_group_order_and_pool_names
 test_tracked_csv_node_labels_are_ascii_safe
 test_polymarket_rules_cover_core_api_domains
 test_polymarket_rules_are_inlined_in_subconverter_configs
+test_twitter_rules_cover_core_domains
+test_twitter_rules_are_referenced_in_subconverter_configs
 
 printf 'Linux script tests passed.\n'
