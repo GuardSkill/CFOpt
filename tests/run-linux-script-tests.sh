@@ -459,19 +459,19 @@ if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
         "custom_proxy_group=CodeAgent`select`[]CodeAgent JP Pool`[]CodeAgent KR Pool`[]CodeAgent SG Pool`[]CodeAgent HK Pool`[]Auto`[]DIRECT",
         "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]Polymarket KR Pool`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
         "custom_proxy_group=OKX`select`[]OKX HK Pool`[]OKX KR Pool`[]OKX SG Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=CodeAgent JP Pool`url-test`JP [^\\[]+\\[`[]Auto`https://api.anthropic.com/`3600,,50",
-        "custom_proxy_group=Polymarket KR Pool`url-test`KR.*\\[`[]Auto`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
-        "custom_proxy_group=OKX HK Pool`url-test`HK [^\\[]+\\[`[]Auto`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
+        "custom_proxy_group=CodeAgent JP Pool`url-test`(^| )(🇯🇵 )?JP( ↪)? \\[`https://api.anthropic.com/`3600,,50",
+        "custom_proxy_group=Polymarket KR Pool`url-test`(^| )(🇰🇷 )?KR( ↪)? \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
+        "custom_proxy_group=OKX HK Pool`url-test`(^| )(🇭🇰 )?HK( ↪)? \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
         "custom_proxy_group=DE + IE Pool`url-test`DE .*IE \\[",
         "custom_proxy_group=DE + AT Pool`url-test`DE .*AT \\[",
         "custom_proxy_group=GB + IE Pool`url-test`GB .*IE \\[",
-        "custom_proxy_group=HK Pool`url-test`HK.*\\[",
-        "custom_proxy_group=JP Pool`url-test`JP.*\\[",
-        "custom_proxy_group=KR Pool`url-test`KR.*\\[",
-        "custom_proxy_group=SG Pool`url-test`SG.*\\[",
-        "custom_proxy_group=US Pool`url-test`US.*\\[",
-        "custom_proxy_group=DE Pool`url-test`DE.*\\[",
-        "custom_proxy_group=GB Pool`url-test`GB.*\\[",
+        "custom_proxy_group=HK Pool`url-test`(^| )(🇭🇰 )?HK( ↪)? \\[",
+        "custom_proxy_group=JP Pool`url-test`(^| )(🇯🇵 )?JP( ↪)? \\[",
+        "custom_proxy_group=KR Pool`url-test`(^| )(🇰🇷 )?KR( ↪)? \\[",
+        "custom_proxy_group=SG Pool`url-test`(^| )(🇸🇬 )?SG( ↪)? \\[",
+        "custom_proxy_group=US Pool`url-test`(^| )(US) \\[",
+        "custom_proxy_group=DE Pool`url-test`(^| )(DE) \\[",
+        "custom_proxy_group=GB Pool`url-test`(^| )(GB) \\[",
         "custom_proxy_group=Auto`url-test`.*`",
         "custom_proxy_group=Fallback`fallback`.*`",
         "custom_proxy_group=Final`select`[]Proxy`[]CodeAgent`[]Auto`[]Polymarket`[]OKX`[]Fallback`[]DIRECT`.*",
@@ -482,9 +482,9 @@ else:
         "custom_proxy_group=CodeAgent`select`[]CodeAgent 🇯🇵 Japan Pool`[]CodeAgent 🇰🇷 Korea Pool`[]CodeAgent 🇸🇬 Singapore Pool`[]CodeAgent 🇭🇰 Hong Kong Pool",
         "custom_proxy_group=Polymarket`select`[]Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy`[]Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy`[]Polymarket 🇰🇷 Korea Pool`[]Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
         "custom_proxy_group=OKX`select`[]OKX 🇭🇰 Hong Kong Pool`[]OKX 🇰🇷 Korea Pool`[]OKX 🇸🇬 Singapore Pool",
-        "custom_proxy_group=CodeAgent 🇯🇵 Japan Pool`url-test`JP [^\\[]+\\[`[]Auto`https://api.anthropic.com/`3600,,50",
-        "custom_proxy_group=Polymarket 🇰🇷 Korea Pool`url-test`KR.*\\[`[]Auto`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
-        "custom_proxy_group=OKX 🇭🇰 Hong Kong Pool`url-test`HK [^\\[]+\\[`[]Auto`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
+        "custom_proxy_group=CodeAgent 🇯🇵 Japan Pool`url-test`^(🇯🇵 )?JP( ↪)? \\[`https://api.anthropic.com/`3600,,50",
+        "custom_proxy_group=Polymarket 🇰🇷 Korea Pool`url-test`^(🇰🇷 )?KR( ↪)? \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
+        "custom_proxy_group=OKX 🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 )?HK( ↪)? \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
         "custom_proxy_group=Auto`url-test`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
         "custom_proxy_group=LB-20min`load-balance`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
         "custom_proxy_group=Fallback`fallback`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
@@ -507,13 +507,13 @@ def python_regex_from_pcre(pattern):
 
 if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     regex_samples = {
-        "OKX HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
-        "OKX KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "OKX SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent JP Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]"],
-        "CodeAgent KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "CodeAgent SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
+        "OKX HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "🇭🇰 HK [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
+        "OKX KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "🇰🇷 KR [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "OKX SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "🇸🇬 SG [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
+        "CodeAgent JP Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "🇯🇵 JP [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
+        "CodeAgent KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "🇰🇷 KR [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
+        "CodeAgent SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "🇸🇬 SG [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
+        "CodeAgent HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "🇭🇰 HK [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
         "Polymarket KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
         "HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
         "JP Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
@@ -522,13 +522,13 @@ if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
     }
 else:
     regex_samples = {
-        "OKX 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
-        "OKX 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "OKX 🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇯🇵 Japan Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
+        "OKX 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "🇭🇰 HK [BJ#01 ip.zip]"],
+        "OKX 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "🇰🇷 KR [BJ#01 ip.zip]"],
+        "OKX 🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "🇸🇬 SG [BJ#01 ip.zip]"],
+        "CodeAgent 🇯🇵 Japan Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "🇯🇵 JP [BJ#01 ip.zip]"],
+        "CodeAgent 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "🇰🇷 KR [BJ#01 ip.zip]"],
+        "CodeAgent 🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "🇸🇬 SG [BJ#01 ip.zip]"],
+        "CodeAgent 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "🇭🇰 HK [BJ#01 ip.zip]"],
         "Polymarket 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
         "🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
         "🇯🇵 Japan Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
@@ -545,137 +545,16 @@ for group, samples in regex_samples.items():
         if not re.search(pattern, sample):
             raise SystemExit(f"{path}: group {group!r} regex {pattern!r} does not match sample node {sample!r}")
 
-if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
-    reject_samples = {
-        "OKX HK Pool": ["HK [BJ#01 ip.zip]"],
-        "OKX KR Pool": ["KR [BJ#01 ip.zip]"],
-        "OKX SG Pool": ["SG [BJ#01 ip.zip]"],
-        "CodeAgent JP Pool": ["JP [BJ#01 ip.zip]"],
-        "CodeAgent KR Pool": ["KR [BJ#01 ip.zip]"],
-        "CodeAgent SG Pool": ["SG [BJ#01 ip.zip]"],
-        "CodeAgent HK Pool": ["HK [BJ#01 ip.zip]"],
-    }
-else:
-    reject_samples = {
-        "OKX 🇭🇰 Hong Kong Pool": ["HK [BJ#01 ip.zip]"],
-        "OKX 🇰🇷 Korea Pool": ["KR [BJ#01 ip.zip]"],
-        "OKX 🇸🇬 Singapore Pool": ["SG [BJ#01 ip.zip]"],
-        "CodeAgent 🇯🇵 Japan Pool": ["JP [BJ#01 ip.zip]"],
-        "CodeAgent 🇰🇷 Korea Pool": ["KR [BJ#01 ip.zip]"],
-        "CodeAgent 🇸🇬 Singapore Pool": ["SG [BJ#01 ip.zip]"],
-        "CodeAgent 🇭🇰 Hong Kong Pool": ["HK [BJ#01 ip.zip]"],
-    }
-
-for group, samples in reject_samples.items():
-    pattern = url_test_regexes.get(group)
-    if not pattern:
-        raise SystemExit(f"{path}: missing url-test regex for group {group!r}")
-    pattern = python_regex_from_pcre(pattern)
-    for sample in samples:
-        if re.search(pattern, sample):
-            raise SystemExit(f"{path}: group {group!r} regex {pattern!r} should not match non-proxyip node {sample!r}")
-
-raw_cf_nodes = [
-    "电信域名优选+三网优化",
-    "电信域名优选+三网优化 2",
-    "电信移动域名优选",
-    "电信域名优选",
-    "电信移动域名优选 2",
-    "CF 电信优选",
-    "CF 电信优选 2",
-    "CF 电信优选 3",
-    "CF 电信优选 4",
-]
-
-def simulate_asdlokj_group(rules, nodes):
-    # Mirrors asdlokj1qpi233/subconverter src/generator/config/subexport.cpp:
-    # groupGenerate() adds [] names directly, regex-filters existing node remarks,
-    # then proxyToClash() inserts DIRECT if the filtered list is still empty.
-    filtered = []
-    for rule in rules:
-        if rule.startswith("[]"):
-            name = rule[2:]
-            if name not in filtered:
-                filtered.append(name)
-            continue
-        pattern = python_regex_from_pcre(rule)
-        for node in nodes:
-            if re.search(pattern, node) and node not in filtered:
-                filtered.append(node)
-    return filtered or ["DIRECT"]
-
-group_rules = {}
-for raw_line in text.splitlines():
-    if not raw_line.startswith("custom_proxy_group="):
-        continue
-    parts = raw_line[len("custom_proxy_group="):].split("`")
-    if len(parts) >= 4 and parts[1] in {"url-test", "load-balance", "fallback"}:
-        group_rules[parts[0]] = parts[2:-2]
-
-if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
-    fallback_groups = [
-        "CodeAgent JP Pool",
-        "CodeAgent KR Pool",
-        "CodeAgent SG Pool",
-        "CodeAgent HK Pool",
-        "Polymarket DE + IE Pool",
-        "Polymarket DE + AT Pool",
-        "Polymarket KR Pool",
-        "Polymarket GB + IE Pool",
-        "OKX HK Pool",
-        "OKX KR Pool",
-        "OKX SG Pool",
-        "HK Pool",
-        "JP Pool",
-        "KR Pool",
-        "SG Pool",
-        "US Pool",
-        "DE Pool",
-        "GB Pool",
-    ]
-else:
-    fallback_groups = [
-        "CodeAgent 🇯🇵 Japan Pool",
-        "CodeAgent 🇰🇷 Korea Pool",
-        "CodeAgent 🇸🇬 Singapore Pool",
-        "CodeAgent 🇭🇰 Hong Kong Pool",
-        "Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
-        "Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
-        "Polymarket 🇰🇷 Korea Pool",
-        "Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
-        "OKX 🇭🇰 Hong Kong Pool",
-        "OKX 🇰🇷 Korea Pool",
-        "OKX 🇸🇬 Singapore Pool",
-        "🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
-        "🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
-        "🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
-        "🇭🇰 Hong Kong Pool",
-        "🇯🇵 Japan Pool",
-        "🇰🇷 Korea Pool",
-        "🇸🇬 Singapore Pool",
-        "🇬🇧 United Kingdom Pool",
-    ]
-
-for group in fallback_groups:
-    rules = group_rules.get(group)
-    if not rules:
-        raise SystemExit(f"{path}: missing rules for fallback-protected group {group!r}")
-    generated = simulate_asdlokj_group(rules, raw_cf_nodes)
-    if generated == ["DIRECT"]:
-        raise SystemExit(f"{path}: group {group!r} falls back to DIRECT when country nodes are absent")
-    if "Auto" not in generated:
-        raise SystemExit(f"{path}: group {group!r} should include Auto fallback for raw CF-only subscriptions")
-
 if not (path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini")):
     for required in [
-        "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[`[]Auto`",
-        "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[`[]Auto`",
-        "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[`[]Auto`",
-        "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`HK.*\\[`[]Auto`",
-        "custom_proxy_group=🇯🇵 Japan Pool`url-test`JP.*\\[`[]Auto`",
-        "custom_proxy_group=🇰🇷 Korea Pool`url-test`KR.*\\[`[]Auto`",
-        "custom_proxy_group=🇸🇬 Singapore Pool`url-test`SG.*\\[`[]Auto`",
-        "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^(🇬🇧 GB → 🇮🇪 IE|GB) \\[`[]Auto`",
+        "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
+        "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
+        "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
+        "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 )?HK( ↪)? \\[",
+        "custom_proxy_group=🇯🇵 Japan Pool`url-test`^(🇯🇵 )?JP( ↪)? \\[",
+        "custom_proxy_group=🇰🇷 Korea Pool`url-test`^(🇰🇷 )?KR( ↪)? \\[",
+        "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^(🇸🇬 )?SG( ↪)? \\[",
+        "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^(🇬🇧 GB → 🇮🇪 IE|GB) \\[",
     ]:
         if required not in text:
             raise SystemExit(f"{path}: missing proxyip-only pool matcher: {required}")
