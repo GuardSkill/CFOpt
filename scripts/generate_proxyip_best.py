@@ -78,21 +78,46 @@ def rank_pool(addresses, limit, timeout, workers):
     return [address for _latency, address in ranked[:limit]]
 
 
+def parse_country_limits(value):
+    limits = {}
+    for raw_item in (value or "").split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise argparse.ArgumentTypeError(f"invalid country limit '{item}', expected COUNTRY=LIMIT")
+        country, raw_limit = item.split("=", 1)
+        country = country.strip().upper()
+        if not country:
+            raise argparse.ArgumentTypeError(f"invalid country limit '{item}', missing country")
+        try:
+            limit = int(raw_limit.strip())
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(f"invalid country limit '{item}', limit must be an integer") from exc
+        if limit < 1:
+            raise argparse.ArgumentTypeError(f"invalid country limit '{item}', limit must be >= 1")
+        limits[country] = limit
+    return limits
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate a small per-country proxyip-best.txt from zip.cm.edu.kg all.txt.")
     parser.add_argument("--source", default="https://zip.cm.edu.kg/all.txt")
     parser.add_argument("--output", required=True)
     parser.add_argument("--countries", default=",".join(DEFAULT_COUNTRIES))
     parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--country-limits", default="", help="Comma-separated COUNTRY=LIMIT overrides, for example HK=50.")
     parser.add_argument("--timeout", type=float, default=0.75)
     parser.add_argument("--workers", type=int, default=64)
     args = parser.parse_args()
 
     countries = [item.strip().upper() for item in args.countries.split(",") if item.strip()]
+    country_limits = parse_country_limits(args.country_limits)
     pools = parse_source(load_text(args.source), countries)
     lines = []
     for country in countries:
-        ranked = rank_pool(pools.get(country, []), max(1, args.limit), args.timeout, args.workers)
+        country_limit = country_limits.get(country, args.limit)
+        ranked = rank_pool(pools.get(country, []), max(1, country_limit), args.timeout, args.workers)
         for address in ranked:
             lines.append(f"{address}#{country}")
 

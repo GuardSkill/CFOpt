@@ -36,7 +36,7 @@ FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 - `CloudflareSpeedTest_CD.csv`：Windows / 成都测速默认输出。
 - `CloudflareSpeedTest_BJ.csv`：Linux / 北京测速默认输出。
-- `proxyip-best.txt`：每日从 `https://zip.cm.edu.kg/all.txt` 拉取并按 TCP 连接延迟筛选出的每国 Top 10 ProxyIP，供 Edge Tunnel 订阅生成阶段使用。
+- `proxyip-best.txt`：每日从 `https://zip.cm.edu.kg/all.txt` 拉取并按 TCP 连接延迟筛选出的 ProxyIP，默认每国 Top 10，HK 默认 Top 50，供 Edge Tunnel 订阅生成阶段继续筛选使用。
 - `CFOpt_Subconverter.ini`：Subconverter 配置。
 - `CFOpt_Subconverter_lite.ini`：精简版 Subconverter 配置。
 - `CFOpt_Subconverter_lite_cmliussss.ini`：面向 CMLiussss / `asdlokj1qpi233/subconverter` 后端的精简配置，`ruleset=` 数量控制在默认上限 64 以下。
@@ -262,7 +262,7 @@ GITHUB_TOKEN_CFOPT="your GitHub token" AUTORUN_BACKEND=cron INSTALL_DAILY_AUTORU
 
 - `CloudflareSpeedTest_CD.csv`: default Windows / Chengdu output.
 - `CloudflareSpeedTest_BJ.csv`: default Linux / Beijing output.
-- `proxyip-best.txt`: daily per-country Top 10 ProxyIP list selected from `https://zip.cm.edu.kg/all.txt` by TCP connect latency for Edge Tunnel subscription generation.
+- `proxyip-best.txt`: daily ProxyIP list selected from `https://zip.cm.edu.kg/all.txt` by TCP connect latency for Edge Tunnel subscription generation. Defaults to Top 10 per country, with HK expanded to Top 50 for downstream reachability filtering.
 - `CFOpt_Subconverter.ini`: Subconverter config.
 - `CFOpt_Subconverter_lite.ini`: lite Subconverter config.
 - `CFOpt_Subconverter_lite_cmliussss.ini`: lite config for CMLiussss / `asdlokj1qpi233/subconverter` backends, keeping `ruleset=` entries under the default limit of 64.

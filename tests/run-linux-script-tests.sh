@@ -344,6 +344,37 @@ TXT
   fi
 }
 
+test_proxyip_best_generator_allows_country_specific_limits() {
+  local tmp_dir source_txt output_txt
+  tmp_dir="$(mktemp -d)"
+  source_txt="$tmp_dir/all.txt"
+  output_txt="$tmp_dir/proxyip-best.txt"
+
+  {
+    for i in $(seq 1 12); do
+      printf '127.0.1.%s:443#HK\n' "$i"
+    done
+    for i in $(seq 1 12); do
+      printf '127.0.2.%s:443#SG\n' "$i"
+    done
+  } > "$source_txt"
+
+  python3 "$ROOT_DIR/scripts/generate_proxyip_best.py" \
+    --source "file://$source_txt" \
+    --output "$output_txt" \
+    --countries HK,SG \
+    --limit 2 \
+    --country-limits HK=5 \
+    --timeout 0.01 \
+    --workers 4
+
+  local hk_count sg_count
+  hk_count="$(grep -c '#HK$' "$output_txt" || true)"
+  sg_count="$(grep -c '#SG$' "$output_txt" || true)"
+  [[ "$hk_count" == "5" ]] || fail "expected HK country-specific proxyip limit to keep 5 candidates, got $hk_count"
+  [[ "$sg_count" == "2" ]] || fail "expected default proxyip limit to keep 2 SG candidates, got $sg_count"
+}
+
 test_subconverter_group_order_and_pool_names() {
   python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
@@ -382,7 +413,7 @@ for rule in cmliussss_rules:
 required_business_groups = [
     "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
-    "custom_proxy_group=OKX`select`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
 ]
 full_text = text(full)
@@ -398,6 +429,10 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: Bilibili rules must route to Direct")
     if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT" not in content:
         raise SystemExit(f"{path}: CodeAgent must default to JP Proxy first")
+    if "custom_proxy_group=OKX HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`780,,50" not in content:
+        raise SystemExit(f"{path}: OKX HK Proxy must retest every 13 minutes")
+    if "custom_proxy_group=HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`" in content:
+        raise SystemExit(f"{path}: OKX must not reuse the shared HK Proxy group")
     for forbidden in ["馃", "北京测速", "成都测速", "custom_proxy_group=Region"]:
         if forbidden in content:
             raise SystemExit(f"{path}: forbidden stale content found: {forbidden}")
@@ -496,6 +531,7 @@ test_runner_defaults_include_europe_focus_countries
 test_runners_default_to_four_hour_interval
 test_focus_scopes_use_quick_download_screening
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
+test_proxyip_best_generator_allows_country_specific_limits
 test_subconverter_group_order_and_pool_names
 test_tracked_csv_node_labels_are_ascii_safe
 test_polymarket_rules_cover_core_api_domains

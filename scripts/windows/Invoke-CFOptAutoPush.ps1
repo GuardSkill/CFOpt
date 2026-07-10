@@ -51,6 +51,7 @@ param(
     [string]$ProxyipBestTargetPath = "proxyip-best.txt",
     [string]$ProxyipBestCountries = "IE,AT,AU,KR,HK,SG,JP,DE,GB",
     [int]$ProxyipBestLimit = 10,
+    [string]$ProxyipBestCountryLimits = "HK=50",
     [double]$ProxyipBestTimeout = 0.75,
     [int]$ProxyipBestWorkers = 64,
     [string]$ProxyipBestScript = ""
@@ -1029,7 +1030,7 @@ function New-ProxyipBestFile {
         return
     }
     Write-Log "Generating proxyip best list from $ProxyipBestSource"
-    & python $ProxyipBestScript --source $ProxyipBestSource --output $proxyipBestPath --countries $ProxyipBestCountries --limit $ProxyipBestLimit --timeout $ProxyipBestTimeout --workers $ProxyipBestWorkers
+    & python $ProxyipBestScript --source $ProxyipBestSource --output $proxyipBestPath --countries $ProxyipBestCountries --limit $ProxyipBestLimit --country-limits $ProxyipBestCountryLimits --timeout $ProxyipBestTimeout --workers $ProxyipBestWorkers
     if ($LASTEXITCODE -ne 0) {
         Write-Log "WARN: proxyip-best generation failed with exit code $LASTEXITCODE."
         return
