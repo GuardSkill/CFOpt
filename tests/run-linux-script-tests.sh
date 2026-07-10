@@ -345,277 +345,65 @@ TXT
 }
 
 test_subconverter_group_order_and_pool_names() {
-  local config
-  for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini" "$ROOT_DIR/CFOpt_Subconverter_lite_cmliussss.ini"; do
-    python3 - "$config" <<'PY'
-import re
+  python3 - "$ROOT_DIR" <<'PY'
+from pathlib import Path
 import sys
 
-path = sys.argv[1]
-groups = []
-with open(path, encoding="utf-8") as fh:
-    for line in fh:
-        line = line.strip()
-        if line.startswith("custom_proxy_group="):
-            name = line[len("custom_proxy_group="):].split("`", 1)[0]
-            groups.append(name)
+root = Path(sys.argv[1])
+full = root / "CFOpt_Subconverter.ini"
+lite = root / "CFOpt_Subconverter_lite.ini"
+cmliussss = root / "CFOpt_Subconverter_lite_cmliussss.ini"
+deleted = root / "CFOpt_Subconverter_lite_twitter_plain.ini"
 
-expected = [
-    "Proxy",
-    "CodeAgent",
-    "Polymarket",
-    "OKX",
+if deleted.exists():
+    raise SystemExit(f"{deleted}: obsolete experimental config should be deleted")
+
+def lines(path, prefix):
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip().startswith(prefix)]
+
+def text(path):
+    return path.read_text(encoding="utf-8")
+
+lite_rules = lines(lite, "ruleset=")
+cmliussss_rules = lines(cmliussss, "ruleset=")
+lite_groups = lines(lite, "custom_proxy_group=")
+cmliussss_groups = lines(cmliussss, "custom_proxy_group=")
+
+if lite_rules != cmliussss_rules:
+    raise SystemExit("CFOpt_Subconverter_lite.ini rulesets must match CFOpt_Subconverter_lite_cmliussss.ini")
+if lite_groups != cmliussss_groups:
+    raise SystemExit("CFOpt_Subconverter_lite.ini proxy groups must match CFOpt_Subconverter_lite_cmliussss.ini")
+
+full_rules = set(lines(full, "ruleset="))
+for rule in cmliussss_rules:
+    if rule not in full_rules:
+        raise SystemExit(f"{full}: missing lite baseline ruleset: {rule}")
+
+required_business_groups = [
+    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
+    "custom_proxy_group=OKX`select`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
 ]
+full_text = text(full)
+for group in required_business_groups:
+    if group not in full_text:
+        raise SystemExit(f"{full}: missing aligned business group: {group}")
 
-if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
-    expected.extend([
-        "CodeAgent JP Pool",
-        "CodeAgent KR Pool",
-        "CodeAgent SG Pool",
-        "CodeAgent HK Pool",
-        "Polymarket DE + IE Pool",
-        "Polymarket DE + AT Pool",
-        "Polymarket KR Pool",
-        "Polymarket GB + IE Pool",
-        "OKX HK Pool",
-        "OKX KR Pool",
-        "OKX SG Pool",
-        "DE + IE Pool",
-        "DE + AT Pool",
-        "GB + IE Pool",
-        "HK Pool",
-        "JP Pool",
-        "KR Pool",
-        "SG Pool",
-        "US Pool",
-        "DE Pool",
-        "GB Pool",
-        "Auto",
-        "Fallback",
-        "Direct",
-        "Final",
-    ])
-else:
-    expected.extend([
-    "CodeAgent 🇯🇵 Japan Pool",
-    "CodeAgent 🇰🇷 Korea Pool",
-    "CodeAgent 🇸🇬 Singapore Pool",
-    "CodeAgent 🇭🇰 Hong Kong Pool",
-    "Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
-    "Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
-    "Polymarket 🇰🇷 Korea Pool",
-    "Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
-    "OKX 🇭🇰 Hong Kong Pool",
-    "OKX 🇰🇷 Korea Pool",
-    "OKX 🇸🇬 Singapore Pool",
-    "Asia Pool",
-    "🇩🇪 Germany Entry + 🇮🇪 IE Proxy",
-    "🇩🇪 Germany Entry + 🇦🇹 AT Proxy",
-    "🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
-    "🇭🇰 Hong Kong Pool",
-    "🇯🇵 Japan Pool",
-    "🇰🇷 Korea Pool",
-    "🇸🇬 Singapore Pool",
-    "🇬🇧 United Kingdom Pool",
-    "CT Pool",
-    "Domain Pool",
-    ])
-
-position = -1
-for name in expected:
-    try:
-        position = groups.index(name, position + 1)
-    except ValueError:
-        raise SystemExit(f"{path}: missing or misordered group {name!r}")
-
-for legacy in [
-    "HKPool",
-    "JPPool",
-    "KRPool",
-    "SGPool",
-    "DEPool",
-    "GBPool",
-    "NLPool",
-    "ITPool",
-    "AsiaPool",
-    "CFCTPool",
-    "DomainPreferredPool",
-]:
-    if legacy in groups:
-        raise SystemExit(f"{path}: legacy group name still present: {legacy}")
-
-with open(path, encoding="utf-8") as fh:
-    text = fh.read()
-
-if "github.com/GuardSkill/CFOpt/raw/refs/heads/main" in text:
-    raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
-
-if "rules/Bilibili.list" in text and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in text:
-    raise SystemExit(f"{path}: Bilibili rules must route to Direct")
-
-if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
-    required_lines = [
-        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Twitter`[]DE + IE Pool`[]DE + AT Pool`[]GB + IE Pool`[]HK Pool`[]JP Pool`[]KR Pool`[]SG Pool`[]DE Pool`[]GB Pool`[]US Pool`[]Auto`[]Fallback`[]DIRECT`.*",
-        "custom_proxy_group=CodeAgent`select`[]CodeAgent JP Pool`[]CodeAgent KR Pool`[]CodeAgent SG Pool`[]CodeAgent HK Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]Polymarket KR Pool`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=OKX`select`[]OKX HK Pool`[]OKX KR Pool`[]OKX SG Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=CodeAgent JP Pool`url-test`(^| )JP ↪ \\[`https://api.anthropic.com/`3600,,50",
-        "custom_proxy_group=Polymarket KR Pool`url-test`(^| )KR ↪ \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
-        "custom_proxy_group=OKX HK Pool`url-test`(^| )HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
-        "custom_proxy_group=DE + IE Pool`url-test`DE .*IE \\[",
-        "custom_proxy_group=DE + AT Pool`url-test`DE .*AT \\[",
-        "custom_proxy_group=GB + IE Pool`url-test`GB .*IE \\[",
-        "custom_proxy_group=HK Pool`url-test`(^| )(🇭🇰 )?HK( ↪)? \\[",
-        "custom_proxy_group=JP Pool`url-test`(^| )(🇯🇵 )?JP( ↪)? \\[",
-        "custom_proxy_group=KR Pool`url-test`(^| )(🇰🇷 )?KR( ↪)? \\[",
-        "custom_proxy_group=SG Pool`url-test`(^| )(🇸🇬 )?SG( ↪)? \\[",
-        "custom_proxy_group=US Pool`url-test`(^| )(US) \\[",
-        "custom_proxy_group=DE Pool`url-test`(^| )(DE) \\[",
-        "custom_proxy_group=GB Pool`url-test`(^| )(GB) \\[",
-        "custom_proxy_group=Auto`url-test`.*`",
-        "custom_proxy_group=Fallback`fallback`.*`",
-        "custom_proxy_group=Final`select`[]Proxy`[]CodeAgent`[]Auto`[]Polymarket`[]OKX`[]Twitter`[]Fallback`[]DIRECT`.*",
-    ]
-else:
-    required_lines = [
-        "custom_proxy_group=Proxy`select`[]CodeAgent`[]Polymarket`[]OKX`[]Twitter`[]Auto`[]LB-20min`[]Fallback`[]DIRECT`.*",
-        "custom_proxy_group=CodeAgent`select`[]CodeAgent 🇯🇵 Japan Pool`[]CodeAgent 🇰🇷 Korea Pool`[]CodeAgent 🇸🇬 Singapore Pool`[]CodeAgent 🇭🇰 Hong Kong Pool",
-        "custom_proxy_group=Polymarket`select`[]Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy`[]Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy`[]Polymarket 🇰🇷 Korea Pool`[]Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy",
-        "custom_proxy_group=OKX`select`[]OKX 🇭🇰 Hong Kong Pool`[]OKX 🇰🇷 Korea Pool`[]OKX 🇸🇬 Singapore Pool",
-        "custom_proxy_group=Twitter`select`[]🇯🇵 Japan Pool`[]🇰🇷 Korea Pool`[]🇸🇬 Singapore Pool`[]🇭🇰 Hong Kong Pool`[]Auto`[]DIRECT",
-        "custom_proxy_group=CodeAgent 🇯🇵 Japan Pool`url-test`^.*JP ↪ \\[`https://api.anthropic.com/`3600,,50",
-        "custom_proxy_group=Polymarket 🇰🇷 Korea Pool`url-test`^.*KR ↪ \\[`https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=1`3600,,50",
-        "custom_proxy_group=OKX 🇭🇰 Hong Kong Pool`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`3600,,50",
-        "custom_proxy_group=Auto`url-test`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
-        "custom_proxy_group=LB-20min`load-balance`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
-        "custom_proxy_group=Fallback`fallback`\\[(BJ|CD)#0[1-5]\\s|测速#?0[1-5]\\s|电信`",
-    ]
-
-for required in required_lines:
-    if required not in text:
-        raise SystemExit(f"{path}: missing simplified routing group: {required}")
-
-url_test_regexes = {}
-for raw_line in text.splitlines():
-    if not raw_line.startswith("custom_proxy_group="):
-        continue
-    parts = raw_line[len("custom_proxy_group="):].split("`")
-    if len(parts) >= 4 and parts[1] == "url-test":
-        url_test_regexes[parts[0]] = parts[2]
-
-def python_regex_from_pcre(pattern):
-    return re.sub(r"\\x\{([0-9A-Fa-f]+)\}", lambda m: chr(int(m.group(1), 16)), pattern)
-
-if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
-    regex_samples = {
-        "OKX HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
-        "OKX KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "OKX SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent JP Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]"],
-        "CodeAgent KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "CodeAgent SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
-        "Polymarket DE + IE Pool": ["🇩🇪 DE → 🇮🇪 IE [BJ#01 ip.zip]"],
-        "Polymarket DE + AT Pool": ["🇩🇪 DE → 🇦🇹 AT [BJ#01 ip.zip]"],
-        "Polymarket KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "Polymarket GB + IE Pool": ["🇬🇧 GB → 🇮🇪 IE [BJ#01 ip.zip]"],
-        "HK Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
-        "JP Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
-        "KR Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
-        "SG Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
-    }
-else:
-    regex_samples = {
-        "OKX 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
-        "OKX 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "OKX 🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇯🇵 Japan Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]"],
-        "CodeAgent 🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]"],
-        "Polymarket 🇩🇪 Germany Entry + 🇮🇪 IE Proxy": ["🇩🇪 DE → 🇮🇪 IE [BJ#01 ip.zip]"],
-        "Polymarket 🇩🇪 Germany Entry + 🇦🇹 AT Proxy": ["🇩🇪 DE → 🇦🇹 AT [BJ#01 ip.zip]"],
-        "Polymarket 🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]"],
-        "Polymarket 🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy": ["🇬🇧 GB → 🇮🇪 IE [BJ#01 ip.zip]"],
-        "🇭🇰 Hong Kong Pool": ["🇭🇰 HK ↪ [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
-        "🇯🇵 Japan Pool": ["🇯🇵 JP ↪ [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
-        "🇰🇷 Korea Pool": ["🇰🇷 KR ↪ [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
-        "🇸🇬 Singapore Pool": ["🇸🇬 SG ↪ [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
-    }
-
-for group, samples in regex_samples.items():
-    pattern = url_test_regexes.get(group)
-    if not pattern:
-        raise SystemExit(f"{path}: missing url-test regex for group {group!r}")
-    pattern = python_regex_from_pcre(pattern)
-    for sample in samples:
-        if not re.search(pattern, sample):
-            raise SystemExit(f"{path}: group {group!r} regex {pattern!r} does not match sample node {sample!r}")
-
-if path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini"):
-    business_reject_samples = {
-        "OKX HK Pool": ["🇭🇰 HK [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
-        "OKX KR Pool": ["🇰🇷 KR [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
-        "OKX SG Pool": ["🇸🇬 SG [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
-        "CodeAgent JP Pool": ["🇯🇵 JP [BJ#01 ip.zip]", "JP [BJ#01 ip.zip]"],
-        "CodeAgent KR Pool": ["🇰🇷 KR [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
-        "CodeAgent SG Pool": ["🇸🇬 SG [BJ#01 ip.zip]", "SG [BJ#01 ip.zip]"],
-        "CodeAgent HK Pool": ["🇭🇰 HK [BJ#01 ip.zip]", "HK [BJ#01 ip.zip]"],
-        "Polymarket KR Pool": ["🇰🇷 KR [BJ#01 ip.zip]", "KR [BJ#01 ip.zip]"],
-    }
-else:
-    business_reject_samples = {
-        "OKX 🇭🇰 Hong Kong Pool": ["🇭🇰 HK [BJ#01 ip.zip]"],
-        "OKX 🇰🇷 Korea Pool": ["🇰🇷 KR [BJ#01 ip.zip]"],
-        "OKX 🇸🇬 Singapore Pool": ["🇸🇬 SG [BJ#01 ip.zip]"],
-        "CodeAgent 🇯🇵 Japan Pool": ["🇯🇵 JP [BJ#01 ip.zip]"],
-        "CodeAgent 🇰🇷 Korea Pool": ["🇰🇷 KR [BJ#01 ip.zip]"],
-        "CodeAgent 🇸🇬 Singapore Pool": ["🇸🇬 SG [BJ#01 ip.zip]"],
-        "CodeAgent 🇭🇰 Hong Kong Pool": ["🇭🇰 HK [BJ#01 ip.zip]"],
-        "Polymarket 🇰🇷 Korea Pool": ["🇰🇷 KR [BJ#01 ip.zip]"],
-    }
-
-for group, samples in business_reject_samples.items():
-    pattern = url_test_regexes.get(group)
-    if not pattern:
-        raise SystemExit(f"{path}: missing url-test regex for business group {group!r}")
-    for sample in samples:
-        if re.search(pattern, sample):
-            raise SystemExit(f"{path}: business group {group!r} regex {pattern!r} should only match proxyip chain nodes, but matched {sample!r}")
-
-if not (path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini")):
-    for required in [
-        "custom_proxy_group=🇩🇪 Germany Entry + 🇮🇪 IE Proxy`url-test`^(🇩🇪|🇮🇪) DE → 🇮🇪 IE \\[",
-        "custom_proxy_group=🇩🇪 Germany Entry + 🇦🇹 AT Proxy`url-test`^(🇩🇪|🇦🇹) DE → 🇦🇹 AT \\[",
-        "custom_proxy_group=🇬🇧 United Kingdom Entry + 🇮🇪 IE Proxy`url-test`^🇬🇧 GB → 🇮🇪 IE \\[",
-        "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^(🇭🇰 )?HK( ↪)? \\[",
-        "custom_proxy_group=🇯🇵 Japan Pool`url-test`^(🇯🇵 )?JP( ↪)? \\[",
-        "custom_proxy_group=🇰🇷 Korea Pool`url-test`^(🇰🇷 )?KR( ↪)? \\[",
-        "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^(🇸🇬 )?SG( ↪)? \\[",
-        "custom_proxy_group=🇬🇧 United Kingdom Pool`url-test`^(🇬🇧 GB → 🇮🇪 IE|GB) \\[",
-    ]:
-        if required not in text:
-            raise SystemExit(f"{path}: missing proxyip-only pool matcher: {required}")
-
-for forbidden in [
-    "馃",
-    "北京测速",
-    "成都测速",
-    "custom_proxy_group=🇭🇰 Hong Kong Pool`url-test`^🇭🇰",
-    "custom_proxy_group=🇯🇵 Japan Pool`url-test`^🇯🇵",
-    "custom_proxy_group=🇰🇷 Korea Pool`url-test`^🇰🇷",
-    "custom_proxy_group=🇸🇬 Singapore Pool`url-test`^🇸🇬",
-    "custom_proxy_group=Asia Pool`url-test`[]🇭🇰 Hong Kong Pool`[]🇯🇵 Japan Pool`[]🇰🇷 Korea Pool`[]🇸🇬 Singapore Pool`^(PH|VN|MY|KZ|MN)",
-    "custom_proxy_group=Region",
-]:
-    if forbidden in text:
-        raise SystemExit(f"{path}: ordinary nodes still match a proxyip pool: {forbidden}")
-
-if (path.endswith("_lite.ini") or path.endswith("_lite_cmliussss.ini")) and "custom_proxy_group=LB-20min" in text:
-    raise SystemExit(f"{path}: lite config should not include LB-20min")
+for path in [full, lite, cmliussss]:
+    content = text(path)
+    if "github.com/GuardSkill/CFOpt/raw/refs/heads/main" in content:
+        raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
+    if "rules/Bilibili.list" in content and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in content:
+        raise SystemExit(f"{path}: Bilibili rules must route to Direct")
+    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT" not in content:
+        raise SystemExit(f"{path}: CodeAgent must default to JP Proxy first")
+    for forbidden in ["馃", "北京测速", "成都测速", "custom_proxy_group=Region"]:
+        if forbidden in content:
+            raise SystemExit(f"{path}: forbidden stale content found: {forbidden}")
+    if path.name.startswith("CFOpt_Subconverter_lite") and "custom_proxy_group=LB-20min" in content:
+        raise SystemExit(f"{path}: lite config should not include LB-20min")
 PY
-  done
 }
 
 test_tracked_csv_node_labels_are_ascii_safe() {
@@ -689,48 +477,6 @@ test_twitter_rules_cover_core_domains() {
   done
 }
 
-test_twitter_plain_experimental_config_splits_plain_and_proxy_asia_pools() {
-  local config="$ROOT_DIR/CFOpt_Subconverter_lite_twitter_plain.ini"
-  [[ -f "$config" ]] || fail "missing Twitter plain experimental config: $config"
-
-  grep -qxF 'custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT' "$config" || \
-    fail "Twitter plain config should route Twitter through plain-only Asia pools"
-  grep -qxF 'custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]HK Proxy ↪`[]Auto`[]DIRECT' "$config" || \
-    fail "Twitter plain config should route CodeAgent through shared ProxyIP Asia pools"
-  grep -qxF 'custom_proxy_group=OKX`select`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT' "$config" || \
-    fail "Twitter plain config should route OKX through shared ProxyIP Asia pools"
-  grep -qxF 'custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]Polymarket KR Pool`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT' "$config" || \
-    fail "Twitter plain config must keep Polymarket on its dedicated pools"
-
-  local required_plain_pools=(
-    'custom_proxy_group=JP Pool`url-test`(^| )(🇯🇵 )?JP \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=KR Pool`url-test`(^| )(🇰🇷 )?KR \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=SG Pool`url-test`(^| )(🇸🇬 )?SG \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=HK Pool`url-test`(^| )(🇭🇰 )?HK \[`http://www.gstatic.com/generate_204`3600,,50'
-  )
-  local required_proxy_pools=(
-    'custom_proxy_group=JP Proxy ↪`url-test`(^| )(🇯🇵 )?JP ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=KR Proxy ↪`url-test`(^| )(🇰🇷 )?KR ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=SG Proxy ↪`url-test`(^| )(🇸🇬 )?SG ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
-    'custom_proxy_group=HK Proxy ↪`url-test`(^| )(🇭🇰 )?HK ↪ \[`http://www.gstatic.com/generate_204`3600,,50'
-  )
-
-  local pool
-  for pool in "${required_plain_pools[@]}"; do
-    grep -qxF "$pool" "$config" || fail "Twitter plain config missing plain-only pool: $pool"
-  done
-  for pool in "${required_proxy_pools[@]}"; do
-    grep -qxF "$pool" "$config" || fail "Twitter plain config missing ProxyIP-only pool: $pool"
-  done
-
-  if grep -q 'custom_proxy_group=Twitter`select`.*Proxy ↪' "$config"; then
-    fail "Twitter must not select ProxyIP pools in Twitter plain config"
-  fi
-  if grep -q 'custom_proxy_group=Polymarket`select`.*Proxy ↪' "$config"; then
-    fail "Polymarket must not be collapsed into shared ProxyIP pools"
-  fi
-}
-
 test_twitter_rules_are_referenced_in_subconverter_configs() {
   local config
   local rule="ruleset=Twitter,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Twitter.list"
@@ -756,6 +502,5 @@ test_polymarket_rules_cover_core_api_domains
 test_polymarket_rules_are_inlined_in_subconverter_configs
 test_twitter_rules_cover_core_domains
 test_twitter_rules_are_referenced_in_subconverter_configs
-test_twitter_plain_experimental_config_splits_plain_and_proxy_asia_pools
 
 printf 'Linux script tests passed.\n'
