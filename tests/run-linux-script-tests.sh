@@ -378,6 +378,7 @@ test_proxyip_best_generator_allows_country_specific_limits() {
 test_subconverter_group_order_and_pool_names() {
   python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
+import re
 import sys
 
 root = Path(sys.argv[1])
@@ -433,6 +434,27 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: OKX HK Proxy must retest every 13 minutes")
     if "custom_proxy_group=HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`" in content:
         raise SystemExit(f"{path}: OKX must not reuse the shared HK Proxy group")
+    plain_pool_patterns = {
+        "HK Pool": ["🇭🇰 HK [BJ#01 ip.zip]", "🇭🇰 HK ↪ [BJ#01 ip.zip]"],
+        "JP Pool": ["🇯🇵 JP [BJ#01 ip.zip]", "🇯🇵 JP ↪ [BJ#01 ip.zip]"],
+        "KR Pool": ["🇰🇷 KR [BJ#01 ip.zip]", "🇰🇷 KR ↪ [BJ#01 ip.zip]"],
+        "SG Pool": ["🇸🇬 SG [BJ#01 ip.zip]", "🇸🇬 SG ↪ [BJ#01 ip.zip]"],
+    }
+    groups = {}
+    for line in lines(path, "custom_proxy_group="):
+        parts = line[len("custom_proxy_group="):].split("`")
+        if len(parts) >= 3 and parts[1] == "url-test":
+            groups[parts[0]] = parts[2]
+    for group, samples in plain_pool_patterns.items():
+        pattern = groups.get(group)
+        if not pattern:
+            raise SystemExit(f"{path}: missing plain country pool: {group}")
+        if "↪" in pattern:
+            raise SystemExit(f"{path}: {group} must only match plain nodes, got {pattern}")
+        if not re.search(pattern, samples[0]):
+            raise SystemExit(f"{path}: {group} does not match plain node {samples[0]!r}")
+        if re.search(pattern, samples[1]):
+            raise SystemExit(f"{path}: {group} must not match ProxyIP node {samples[1]!r}")
     for forbidden in ["馃", "北京测速", "成都测速", "custom_proxy_group=Region"]:
         if forbidden in content:
             raise SystemExit(f"{path}: forbidden stale content found: {forbidden}")
