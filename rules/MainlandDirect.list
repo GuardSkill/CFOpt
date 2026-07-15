@@ -11,6 +11,11 @@ DOMAIN-SUFFIX,bytedanceapi.com
 DOMAIN-SUFFIX,bytedanceoss.com
 DOMAIN-SUFFIX,bytedanceoss.net
 DOMAIN-SUFFIX,bytedancevod.com
+DOMAIN-SUFFIX,doubao.com
+DOMAIN-SUFFIX,doubao.com.cn
+DOMAIN-SUFFIX,doubao.cn
+DOMAIN-SUFFIX,volcengine.com
+DOMAIN-SUFFIX,volces.com
 DOMAIN-SUFFIX,douyin.com
 DOMAIN-SUFFIX,douyinact.com
 DOMAIN-SUFFIX,douyinact.net
@@ -91,3 +96,10 @@ DOMAIN-SUFFIX,youdaocdn.com
 DOMAIN-SUFFIX,qijiayoudao.net
 DOMAIN,note.youdao.com
 DOMAIN,docs.youdao.com
+DOMAIN-SUFFIX,deepseek.com
+DOMAIN-SUFFIX,moonshot.cn
+DOMAIN-SUFFIX,moonshot.ai
+DOMAIN-SUFFIX,kimi.com
+DOMAIN-SUFFIX,qwen.ai
+DOMAIN-SUFFIX,dashscope.aliyuncs.com
+DOMAIN-SUFFIX,maas.aliyuncs.com

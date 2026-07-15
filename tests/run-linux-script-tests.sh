@@ -543,6 +543,28 @@ test_twitter_rules_are_referenced_in_subconverter_configs() {
   done
 }
 
+test_mainland_direct_covers_domestic_ai_model_providers() {
+  local rules_file="$ROOT_DIR/rules/MainlandDirect.list"
+  local required_rules=(
+    "DOMAIN-SUFFIX,deepseek.com"
+    "DOMAIN-SUFFIX,doubao.com"
+    "DOMAIN-SUFFIX,doubao.com.cn"
+    "DOMAIN-SUFFIX,doubao.cn"
+    "DOMAIN-SUFFIX,volcengine.com"
+    "DOMAIN-SUFFIX,volces.com"
+    "DOMAIN-SUFFIX,moonshot.cn"
+    "DOMAIN-SUFFIX,moonshot.ai"
+    "DOMAIN-SUFFIX,kimi.com"
+    "DOMAIN-SUFFIX,qwen.ai"
+    "DOMAIN-SUFFIX,dashscope.aliyuncs.com"
+    "DOMAIN-SUFFIX,maas.aliyuncs.com"
+  )
+
+  for rule in "${required_rules[@]}"; do
+    grep -qxF "$rule" "$rules_file" || fail "MainlandDirect rules missing domestic AI provider: $rule"
+  done
+}
+
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_runner_samples_large_country_files
@@ -560,5 +582,6 @@ test_polymarket_rules_cover_core_api_domains
 test_polymarket_rules_are_inlined_in_subconverter_configs
 test_twitter_rules_cover_core_domains
 test_twitter_rules_are_referenced_in_subconverter_configs
+test_mainland_direct_covers_domestic_ai_model_providers
 
 printf 'Linux script tests passed.\n'
