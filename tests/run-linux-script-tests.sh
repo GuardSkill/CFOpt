@@ -442,6 +442,16 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: OKX HK Proxy must retest every 13 minutes")
     if "custom_proxy_group=HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`" in content:
         raise SystemExit(f"{path}: OKX must not reuse the shared HK Proxy group")
+    polymarket_test_url = "https://clob.polymarket.com/markets?next_cursor="
+    polymarket_url_test_groups = [
+        line for line in lines(path, "custom_proxy_group=")
+        if "`url-test`" in line and ("Polymarket" in line or "gamma-api.polymarket.com" in line or "clob.polymarket.com" in line)
+    ]
+    for group in polymarket_url_test_groups:
+        if polymarket_test_url not in group:
+            raise SystemExit(f"{path}: Polymarket url-test must use stable CLOB markets URL: {group}")
+    if "book?token_id=" in content:
+        raise SystemExit(f"{path}: Polymarket url-test must not use changing book token URLs")
     plain_pool_patterns = {
         "HK Pool": ["🇭🇰 HK [BJ#01 ip.zip]", "🇭🇰 HK ↪ [BJ#01 ip.zip]"],
         "JP Pool": ["🇯🇵 JP [BJ#01 ip.zip]", "🇯🇵 JP ↪ [BJ#01 ip.zip]"],
