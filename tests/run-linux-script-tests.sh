@@ -416,6 +416,7 @@ required_business_groups = [
     "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
+    "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
 ]
 full_text = text(full)
 for group in required_business_groups:
@@ -430,6 +431,13 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: Bilibili rules must route to Direct")
     if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT" not in content:
         raise SystemExit(f"{path}: CodeAgent must default to JP Proxy first")
+    if "ruleset=Steam,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Steam.list" not in content:
+        raise SystemExit(f"{path}: missing Steam ruleset")
+    if "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT" not in content:
+        raise SystemExit(f"{path}: Steam must use plain country pools like Twitter")
+    steam_group = next((line for line in lines(path, "custom_proxy_group=Steam`select`")), "")
+    if "Proxy ↪" in steam_group or "[]Proxy" in steam_group:
+        raise SystemExit(f"{path}: Steam must not use Proxy or ProxyIP chain groups: {steam_group}")
     if "custom_proxy_group=OKX HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`780,,50" not in content:
         raise SystemExit(f"{path}: OKX HK Proxy must retest every 13 minutes")
     if "custom_proxy_group=HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`" in content:
@@ -543,6 +551,37 @@ test_twitter_rules_are_referenced_in_subconverter_configs() {
   done
 }
 
+test_steam_rules_cover_core_store_community_and_cdn_domains() {
+  local rules_file="$ROOT_DIR/rules/Steam.list"
+  local required_rules=(
+    "DOMAIN-SUFFIX,steampowered.com"
+    "DOMAIN-SUFFIX,steamcommunity.com"
+    "DOMAIN-SUFFIX,steam-chat.com"
+    "DOMAIN-SUFFIX,steamstatic.com"
+    "DOMAIN-SUFFIX,steamcontent.com"
+    "DOMAIN-SUFFIX,steamusercontent.com"
+    "DOMAIN-SUFFIX,steamserver.net"
+    "DOMAIN-SUFFIX,valvesoftware.com"
+    "DOMAIN,steamcdn-a.akamaihd.net"
+    "DOMAIN,steamcommunity-a.akamaihd.net"
+    "DOMAIN,steamstore-a.akamaihd.net"
+    "DOMAIN,steamusercontent-a.akamaihd.net"
+  )
+
+  for rule in "${required_rules[@]}"; do
+    grep -qxF "$rule" "$rules_file" || fail "Steam rules missing: $rule"
+  done
+}
+
+test_steam_rules_are_referenced_in_subconverter_configs() {
+  local config
+  local rule="ruleset=Steam,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Steam.list"
+
+  for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini" "$ROOT_DIR/CFOpt_Subconverter_lite_cmliussss.ini"; do
+    grep -qxF "$rule" "$config" || fail "$config missing Steam ruleset: $rule"
+  done
+}
+
 test_mainland_direct_covers_domestic_ai_model_providers() {
   local rules_file="$ROOT_DIR/rules/MainlandDirect.list"
   local required_rules=(
@@ -558,6 +597,7 @@ test_mainland_direct_covers_domestic_ai_model_providers() {
     "DOMAIN-SUFFIX,qwen.ai"
     "DOMAIN-SUFFIX,dashscope.aliyuncs.com"
     "DOMAIN-SUFFIX,maas.aliyuncs.com"
+    "DOMAIN-SUFFIX,hf-mirror.com"
   )
 
   for rule in "${required_rules[@]}"; do
@@ -582,6 +622,8 @@ test_polymarket_rules_cover_core_api_domains
 test_polymarket_rules_are_inlined_in_subconverter_configs
 test_twitter_rules_cover_core_domains
 test_twitter_rules_are_referenced_in_subconverter_configs
+test_steam_rules_cover_core_store_community_and_cdn_domains
+test_steam_rules_are_referenced_in_subconverter_configs
 test_mainland_direct_covers_domestic_ai_model_providers
 
 printf 'Linux script tests passed.\n'
