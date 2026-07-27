@@ -979,10 +979,36 @@ function Publish-FileToGitHub {
         "User-Agent" = "CFOptAutoPush"
     }
 
+    function Invoke-GitHubRestMethodWithRetry {
+        param(
+            [hashtable]$Parameters,
+            [int]$MaxAttempts = 3,
+            [int]$InitialDelaySeconds = 2
+        )
+
+        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            try {
+                return Invoke-RestMethod @Parameters
+            }
+            catch {
+                if ($attempt -ge $MaxAttempts) {
+                    throw
+                }
+
+                Write-Log "WARN: GitHub request failed on attempt $attempt/$($MaxAttempts): $($_.Exception.Message). Retrying."
+                Start-Sleep -Seconds ($InitialDelaySeconds * $attempt)
+            }
+        }
+    }
+
     Write-Log "Reading current GitHub file metadata: $Owner/$Repo/$UploadTargetPath"
     $existingSha = $null
     try {
-        $existing = Invoke-RestMethod -Method Get -Uri "$uri`?ref=$Branch" -Headers $headers
+        $existing = Invoke-GitHubRestMethodWithRetry -Parameters @{
+            Method = "Get"
+            Uri = "$uri`?ref=$Branch"
+            Headers = $headers
+        }
         $existingSha = $existing.sha
         Write-Log "GitHub file exists. Upload will update existing file."
     }
@@ -1013,7 +1039,13 @@ function Publish-FileToGitHub {
     $body = $bodyMap | ConvertTo-Json -Depth 5
 
     Write-Log "Uploading $LocalPath to GitHub branch $Branch as $UploadTargetPath."
-    Invoke-RestMethod -Method Put -Uri $uri -Headers $headers -Body $body -ContentType "application/json" | Out-Null
+    Invoke-GitHubRestMethodWithRetry -Parameters @{
+        Method = "Put"
+        Uri = $uri
+        Headers = $headers
+        Body = $body
+        ContentType = "application/json"
+    } | Out-Null
 }
 
 function Publish-ToGitHub {
