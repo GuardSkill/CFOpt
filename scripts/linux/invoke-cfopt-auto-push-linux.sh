@@ -514,6 +514,16 @@ merge_country_files_for_port() {
   printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
+positive_tcp_precheck_value() {
+  local value="$1"
+  local fallback="$2"
+  if [[ "$value" =~ ^[0-9]+$ ]] && (( value > 0 )); then
+    printf '%s\n' "$value"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
 apply_tcp_precheck() {
   local port="$1"
   local selected_ip_path="$2"
@@ -521,12 +531,16 @@ apply_tcp_precheck() {
   local input_count start_ms elapsed_ms timeout_seconds tmp_dir
   local new_map_path previous_path results_path errors_path kept_new_path output_path
   local kept_previous connected kept_new ip probe_start probe_elapsed probe_pid probe_status
+  local effective_timeout_ms effective_threads effective_max_candidates
   local -a probe_pids=()
 
   input_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
   if [[ "$TCP_PRECHECK_ENABLED" != "1" || "$input_count" -le "$TCP_PRECHECK_MIN_CANDIDATES" ]]; then
     return 0
   fi
+  effective_timeout_ms="$(positive_tcp_precheck_value "$TCP_PRECHECK_TIMEOUT_MS" 800)"
+  effective_threads="$(positive_tcp_precheck_value "$TCP_PRECHECK_THREADS" 128)"
+  effective_max_candidates="$(positive_tcp_precheck_value "$TCP_PRECHECK_MAX_CANDIDATES" 80)"
 
   start_ms="$(date +%s%3N)"
   tmp_dir="$(mktemp -d "$WORK_DIR/tcp-precheck.XXXXXX")" || {
@@ -567,7 +581,7 @@ apply_tcp_precheck() {
     return 0
   fi
 
-  timeout_seconds="$(awk -v milliseconds="$TCP_PRECHECK_TIMEOUT_MS" 'BEGIN { printf "%.3f", milliseconds / 1000 }')"
+  timeout_seconds="$(awk -v milliseconds="$effective_timeout_ms" 'BEGIN { printf "%.3f", milliseconds / 1000 }')"
   while IFS=',' read -r ip _city _source ordinal; do
     [[ -n "$ip" ]] || continue
     (
@@ -582,7 +596,7 @@ apply_tcp_precheck() {
       fi
     ) &
     probe_pids+=("$!")
-    if (( ${#probe_pids[@]} >= TCP_PRECHECK_THREADS )); then
+    if (( ${#probe_pids[@]} >= effective_threads )); then
       wait "${probe_pids[0]}" || true
       probe_pids=("${probe_pids[@]:1}")
     fi
@@ -597,7 +611,7 @@ apply_tcp_precheck() {
     return 0
   fi
 
-  if ! sort -s -t $'\t' -k2,2n -k3,3n "$results_path" | awk -F'\t' -v map_path="$new_map_path" -v max_keep="$TCP_PRECHECK_MAX_CANDIDATES" '
+  if ! sort -s -t $'\t' -k2,2n -k3,3n "$results_path" | awk -F'\t' -v map_path="$new_map_path" -v max_keep="$effective_max_candidates" '
     BEGIN {
       while ((getline line < map_path) > 0) {
         split(line, fields, ",")

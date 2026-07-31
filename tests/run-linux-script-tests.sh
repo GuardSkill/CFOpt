@@ -342,6 +342,8 @@ PY
   printf '192.0.2.1,DE,previous\n' >> "$map_path"
 
   CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+  [[ "$(positive_tcp_precheck_value 0 1)" == "1" ]] || fail "TCP precheck zero values should use a positive fallback"
+  [[ "$(positive_tcp_precheck_value 32 1)" == "32" ]] || fail "TCP precheck positive values should be preserved"
   WORK_DIR="$tmp_dir/work"
   LOG_FILE="$tmp_dir/precheck.log"
   TCP_PRECHECK_ENABLED=1

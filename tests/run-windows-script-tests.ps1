@@ -28,6 +28,9 @@ try {
 
     $env:CFOPT_SOURCE_ONLY = "1"
     . $runnerPath
+    if ((Get-PositiveTcpPrecheckValue -Value 0 -Fallback 1) -ne 1 -or (Get-PositiveTcpPrecheckValue -Value 32 -Fallback 1) -ne 32) {
+        throw "TCP precheck values must be normalized to positive integers."
+    }
     $script:WorkDir = $tempDir
     $script:logFile = $logPath
     $script:TcpPrecheckEnabled = $true

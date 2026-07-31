@@ -641,6 +641,18 @@ function New-PortWorkItem {
     }
 }
 
+function Get-PositiveTcpPrecheckValue {
+    param(
+        [int]$Value,
+        [int]$Fallback
+    )
+
+    if ($Value -gt 0) {
+        return $Value
+    }
+    return $Fallback
+}
+
 function Select-TcpPrecheckCandidates {
     param(
         [object[]]$Successful,
@@ -671,6 +683,10 @@ function Invoke-TcpPrecheck {
     if (-not $TcpPrecheckEnabled -or $inputLines.Count -le $TcpPrecheckMinCandidates) {
         return
     }
+
+    $effectiveTimeoutMs = Get-PositiveTcpPrecheckValue -Value $TcpPrecheckTimeoutMs -Fallback 800
+    $effectiveThreads = Get-PositiveTcpPrecheckValue -Value $TcpPrecheckThreads -Fallback 128
+    $effectiveMaxCandidates = Get-PositiveTcpPrecheckValue -Value $TcpPrecheckMaxCandidates -Fallback 80
 
     $timer = [System.Diagnostics.Stopwatch]::StartNew()
     try {
@@ -707,9 +723,9 @@ function Invoke-TcpPrecheck {
         }
 
         $successful = [System.Collections.Generic.List[object]]::new()
-        for ($offset = 0; $offset -lt $newCandidates.Count; $offset += $TcpPrecheckThreads) {
+        for ($offset = 0; $offset -lt $newCandidates.Count; $offset += $effectiveThreads) {
             $batch = [System.Collections.Generic.List[object]]::new()
-            $lastIndex = [Math]::Min($offset + $TcpPrecheckThreads - 1, $newCandidates.Count - 1)
+            $lastIndex = [Math]::Min($offset + $effectiveThreads - 1, $newCandidates.Count - 1)
             foreach ($index in $offset..$lastIndex) {
                 $candidate = $newCandidates[$index]
                 $client = [System.Net.Sockets.TcpClient]::new()
@@ -731,7 +747,7 @@ function Invoke-TcpPrecheck {
                 $madeProgress = $false
                 foreach ($pending in @($pendingItems.ToArray())) {
                     $completed = $pending.AsyncResult.IsCompleted
-                    $expired = $pending.Stopwatch.ElapsedMilliseconds -ge $TcpPrecheckTimeoutMs
+                    $expired = $pending.Stopwatch.ElapsedMilliseconds -ge $effectiveTimeoutMs
                     if (-not $completed -and -not $expired) {
                         continue
                     }
@@ -763,7 +779,7 @@ function Invoke-TcpPrecheck {
             }
         }
 
-        $keptNew = @(Select-TcpPrecheckCandidates -Successful $successful.ToArray() -MaxCandidates $TcpPrecheckMaxCandidates)
+        $keptNew = @(Select-TcpPrecheckCandidates -Successful $successful.ToArray() -MaxCandidates $effectiveMaxCandidates)
 
         $result = [System.Collections.Generic.List[string]]::new()
         $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
