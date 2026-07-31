@@ -197,6 +197,20 @@ IntervalDays=1
 
 ### 调参
 
+Windows 和 Linux 默认会在 CFST 深度测速前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 80 个新候选。上一轮已发布的 `previous` 节点始终绕过粗筛并进入 CFST。TCP 连通仅用于减少候选，最终仍由 CFST 的延迟、丢包和下载测试决定是否发布。
+
+临时关闭粗筛或调整参数：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -TcpPrecheckEnabled $false
+```
+
+```bash
+FORCE=1 TCP_PRECHECK_ENABLED=0 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+可调参数为 `TcpPrecheckMinCandidates` / `TCP_PRECHECK_MIN_CANDIDATES`、`TcpPrecheckTimeoutMs` / `TCP_PRECHECK_TIMEOUT_MS`、`TcpPrecheckThreads` / `TCP_PRECHECK_THREADS` 和 `TcpPrecheckMaxCandidates` / `TCP_PRECHECK_MAX_CANDIDATES`。
+
 提高下载测速数量和时间：
 
 ```powershell
@@ -341,6 +355,22 @@ Possible sources are `ip.zip`, `cf-bestip`, `vps789`, `previous`, and `unknown`.
 ### Rolling Retest
 
 Each run fetches the current published CSV, retests old nodes, removes failing nodes, keeps at most about two thirds old nodes per group, and fills the rest with the best newly tested candidates. The default replacement fraction is `0.33`.
+
+### TCP Precheck
+
+Windows and Linux perform a local TCP precheck before CFST deep testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 80 new candidates per region/source group. Published `previous` nodes always bypass the precheck and enter CFST. TCP connectivity only reduces the candidate set; CFST latency, loss, and download tests remain the final publication criteria.
+
+Disable it for one run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -TcpPrecheckEnabled $false
+```
+
+```bash
+FORCE=1 TCP_PRECHECK_ENABLED=0 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+The tuning pairs are `TcpPrecheckMinCandidates` / `TCP_PRECHECK_MIN_CANDIDATES`, `TcpPrecheckTimeoutMs` / `TCP_PRECHECK_TIMEOUT_MS`, `TcpPrecheckThreads` / `TCP_PRECHECK_THREADS`, and `TcpPrecheckMaxCandidates` / `TCP_PRECHECK_MAX_CANDIDATES`.
 
 ### Debugging
 

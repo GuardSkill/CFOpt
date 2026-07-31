@@ -24,6 +24,11 @@ param(
     [int]$FocusCfstDownloadTestTime = 8,
     [double]$CfstLossRateLimit = 0,
     [int]$MaxParallelCfst = 1,
+    [bool]$TcpPrecheckEnabled = $true,
+    [int]$TcpPrecheckMinCandidates = 120,
+    [int]$TcpPrecheckTimeoutMs = 800,
+    [int]$TcpPrecheckThreads = 128,
+    [int]$TcpPrecheckMaxCandidates = 80,
     [switch]$UseProxyForCfst,
     [string]$FocusCountries = "SG,HK,JP,KR,DE,GB",
     [string]$TestLocationName = "",
@@ -636,6 +641,117 @@ function New-PortWorkItem {
     }
 }
 
+function Invoke-TcpPrecheck {
+    param(
+        [int]$Port,
+        [string]$SelectedIpPath,
+        [string]$MapPath
+    )
+
+    $inputLines = @(Get-Content -LiteralPath $SelectedIpPath | Where-Object {
+        -not [string]::IsNullOrWhiteSpace($_) -and -not $_.TrimStart().StartsWith("#")
+    })
+    if (-not $TcpPrecheckEnabled -or $inputLines.Count -le $TcpPrecheckMinCandidates) {
+        return
+    }
+
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $mapByIp = @{}
+        foreach ($line in @(Get-Content -LiteralPath $MapPath)) {
+            $fields = $line -split ',', 3
+            if ($fields.Count -lt 3) {
+                continue
+            }
+            $ip = $fields[0].Trim()
+            $candidate = [pscustomobject]@{ Ip = $ip; City = $fields[1].Trim(); Source = $fields[2].Trim() }
+            if (-not $mapByIp.ContainsKey($ip) -or $candidate.Source -eq "previous" -or ($mapByIp[$ip].Source -eq "unknown" -and $candidate.Source -ne "unknown")) {
+                $mapByIp[$ip] = $candidate
+            }
+        }
+
+        $previous = [System.Collections.Generic.List[string]]::new()
+        $newCandidates = [System.Collections.Generic.List[object]]::new()
+        foreach ($rawIp in $inputLines) {
+            $ip = $rawIp.Trim()
+            $mapped = $mapByIp[$ip]
+            if ($null -ne $mapped -and $mapped.Source -eq "previous") {
+                $previous.Add($ip)
+            }
+            else {
+                if ($null -eq $mapped) {
+                    $mapped = [pscustomobject]@{ Ip = $ip; City = "UNKNOWN"; Source = "unknown" }
+                }
+                $newCandidates.Add($mapped)
+            }
+        }
+
+        $successful = [System.Collections.Generic.List[object]]::new()
+        for ($offset = 0; $offset -lt $newCandidates.Count; $offset += $TcpPrecheckThreads) {
+            $batch = [System.Collections.Generic.List[object]]::new()
+            $lastIndex = [Math]::Min($offset + $TcpPrecheckThreads - 1, $newCandidates.Count - 1)
+            foreach ($index in $offset..$lastIndex) {
+                $candidate = $newCandidates[$index]
+                $client = [System.Net.Sockets.TcpClient]::new()
+                $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                try {
+                    $asyncResult = $client.BeginConnect($candidate.Ip, $Port, $null, $null)
+                    $batch.Add([pscustomobject]@{ Candidate = $candidate; Client = $client; AsyncResult = $asyncResult; Stopwatch = $stopwatch })
+                }
+                catch {
+                    $client.Dispose()
+                }
+            }
+
+            foreach ($pending in $batch) {
+                try {
+                    $remainingMs = [Math]::Max(0, $TcpPrecheckTimeoutMs - [int]$pending.Stopwatch.ElapsedMilliseconds)
+                    if ($pending.AsyncResult.AsyncWaitHandle.WaitOne($remainingMs) -and $pending.Client.Connected) {
+                        $pending.Client.EndConnect($pending.AsyncResult)
+                        $successful.Add([pscustomobject]@{
+                            Ip = $pending.Candidate.Ip
+                            City = $pending.Candidate.City
+                            Source = $pending.Candidate.Source
+                            ElapsedMs = [int]$pending.Stopwatch.ElapsedMilliseconds
+                        })
+                    }
+                }
+                catch {
+                }
+                finally {
+                    $pending.AsyncResult.AsyncWaitHandle.Close()
+                    $pending.Client.Dispose()
+                }
+            }
+        }
+
+        $keptNew = [System.Collections.Generic.List[string]]::new()
+        $groupCounts = @{}
+        foreach ($candidate in @($successful | Sort-Object ElapsedMs, Ip)) {
+            $groupKey = "$($candidate.City)|$($candidate.Source)"
+            $currentCount = if ($groupCounts.ContainsKey($groupKey)) { [int]$groupCounts[$groupKey] } else { 0 }
+            if ($currentCount -lt $TcpPrecheckMaxCandidates) {
+                $keptNew.Add($candidate.Ip)
+                $groupCounts[$groupKey] = $currentCount + 1
+            }
+        }
+
+        $result = [System.Collections.Generic.List[string]]::new()
+        $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($ip in @($keptNew) + @($previous)) {
+            if ($seen.Add($ip)) {
+                $result.Add($ip)
+            }
+        }
+        [System.IO.File]::WriteAllLines($SelectedIpPath, $result, [System.Text.Encoding]::ASCII)
+        $timer.Stop()
+        Write-Log "TCP precheck input=$($inputLines.Count) connected=$($successful.Count) kept_new=$($keptNew.Count) kept_previous=$($previous.Count) elapsed_ms=$($timer.ElapsedMilliseconds) port=$Port"
+    }
+    catch {
+        Write-Log "WARN: TCP precheck failed; using original candidates."
+    }
+}
+
 function Start-CfstProcesses {
     param([object[]]$WorkItems)
 
@@ -1070,6 +1186,7 @@ function New-ProxyipBestFile {
     Write-Log "Generated proxyip best list: $proxyipBestPath"
 }
 
+if ($env:CFOPT_SOURCE_ONLY -ne "1") {
 try {
     New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
     Write-Log "Starting CFOpt auto push."
@@ -1116,6 +1233,10 @@ try {
     $workItems = @($generatedWorkItems | Where-Object { $null -ne $_ })
     if ($workItems.Count -eq 0) {
         throw "No usable port/country inputs were prepared."
+    }
+
+    foreach ($item in $workItems) {
+        Invoke-TcpPrecheck -Port $item.Port -SelectedIpPath $item.SelectedIpPath -MapPath $item.MapPath
     }
 
     if ($DryRun) {
@@ -1179,4 +1300,5 @@ catch {
     Write-Log "ERROR_DETAIL: $($_.InvocationInfo.PositionMessage)"
     Write-Log "ERROR_STACK: $($_.ScriptStackTrace)"
     throw
+}
 }

@@ -2,10 +2,28 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PATH="$ROOT_DIR/tests/bin:$PATH"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
   exit 1
+}
+
+make_zip_fixture() {
+  local source_dir="$1"
+  local output_path="$2"
+  python3 - "$source_dir" "$output_path" <<'PY'
+import pathlib
+import sys
+import zipfile
+
+source = pathlib.Path(sys.argv[1])
+output = pathlib.Path(sys.argv[2])
+with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+    for path in source.rglob("*"):
+        if path.is_file():
+            archive.write(path, path.relative_to(source))
+PY
 }
 
 test_cfst_log_prefix_handles_scopes() {
@@ -19,7 +37,7 @@ test_cfst_log_prefix_handles_scopes() {
 
   mkdir -p "$zip_src/443"
   printf '104.16.132.229\n' > "$zip_src/443/HK.txt"
-  (cd "$zip_src" && zip -qr "$zip_path" .)
+  make_zip_fixture "$zip_src" "$zip_path"
 
   cat > "$stub_cfst" <<'SH'
 #!/usr/bin/env bash
@@ -90,7 +108,7 @@ test_linux_runner_samples_large_country_files() {
   for i in $(seq 1 100); do
     printf '198.18.0.%s\n' "$i"
   done > "$zip_src/443/DE.txt"
-  (cd "$zip_src" && zip -qr "$zip_path" .)
+  make_zip_fixture "$zip_src" "$zip_path"
 
   FORCE=1 \
   DRY_RUN=1 \
@@ -126,7 +144,7 @@ test_linux_runner_applies_country_sample_multipliers() {
   for i in $(seq 1 100); do
     printf '198.18.20.%s\n' "$i"
   done > "$zip_src/443/US.txt"
-  (cd "$zip_src" && zip -qr "$zip_path" .)
+  make_zip_fixture "$zip_src" "$zip_path"
 
   FORCE=1 \
   DRY_RUN=1 \
@@ -161,7 +179,7 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
   mkdir -p "$zip_src/443"
   printf '198.18.1.1\n' > "$zip_src/443/HK.txt"
   printf '198.18.2.1\n' > "$zip_src/443/DE.txt"
-  (cd "$zip_src" && zip -qr "$zip_path" .)
+  make_zip_fixture "$zip_src" "$zip_path"
 
   FORCE=1 \
   DRY_RUN=1 \
@@ -193,7 +211,7 @@ test_linux_runner_waits_multiple_fast_cfst_jobs() {
   printf '198.18.1.1\n' > "$zip_src/443/HK.txt"
   printf '198.18.2.1\n' > "$zip_src/443/DE.txt"
   printf '198.18.3.1\n' > "$zip_src/443/GB.txt"
-  (cd "$zip_src" && zip -qr "$zip_path" .)
+  make_zip_fixture "$zip_src" "$zip_path"
 
   cat > "$stub_cfst" <<'SH'
 #!/usr/bin/env bash
@@ -284,6 +302,65 @@ test_focus_scopes_use_quick_download_screening() {
     || fail "Windows focus scopes should default to a smaller download-test count"
   grep -q '\[int\]\$FocusCfstDownloadTestTime = 8' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows focus scopes should default to a shorter download-test time"
+}
+
+test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous() {
+  local tmp_dir selected_path map_path port_path server_pid port new_count total_count
+  tmp_dir="$(mktemp -d)"
+  selected_path="$tmp_dir/selected.txt"
+  map_path="$tmp_dir/map.csv"
+  port_path="$tmp_dir/port.txt"
+
+  python3 - "$port_path" <<'PY' &
+import socket
+import sys
+
+server = socket.socket()
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind(("0.0.0.0", 0))
+server.listen(256)
+with open(sys.argv[1], "w", encoding="ascii") as output:
+    output.write(str(server.getsockname()[1]))
+while True:
+    connection, _ = server.accept()
+    connection.close()
+PY
+  server_pid=$!
+  for _ in $(seq 1 100); do
+    [[ -s "$port_path" ]] && break
+    sleep 0.01
+  done
+  [[ -s "$port_path" ]] || fail "TCP fixture server did not start"
+  port="$(cat "$port_path")"
+
+  for index in $(seq 1 121); do
+    printf '127.0.0.%s\n' "$index" >> "$selected_path"
+    printf '127.0.0.%s,DE,ip.zip\n' "$index" >> "$map_path"
+  done
+  printf '192.0.2.1\n' >> "$selected_path"
+  printf '192.0.2.1,DE,ip.zip\n' >> "$map_path"
+  printf '192.0.2.1,DE,previous\n' >> "$map_path"
+
+  CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+  WORK_DIR="$tmp_dir/work"
+  LOG_FILE="$tmp_dir/precheck.log"
+  TCP_PRECHECK_ENABLED=1
+  TCP_PRECHECK_MIN_CANDIDATES=120
+  TCP_PRECHECK_TIMEOUT_MS=200
+  TCP_PRECHECK_THREADS=32
+  TCP_PRECHECK_MAX_CANDIDATES=80
+  mkdir -p "$WORK_DIR"
+  apply_tcp_precheck "$port" "$selected_path" "$map_path"
+  kill "$server_pid" 2>/dev/null || true
+  wait "$server_pid" 2>/dev/null || true
+
+  total_count="$(wc -l < "$selected_path" | tr -d ' ')"
+  new_count="$(grep -vc '^192\.0\.2\.1$' "$selected_path")"
+  [[ "$total_count" == "81" ]] || fail "TCP precheck should keep 80 new and one previous candidate, got $total_count"
+  [[ "$new_count" == "80" ]] || fail "TCP precheck should cap new candidates at 80, got $new_count"
+  grep -qx '192.0.2.1' "$selected_path" || fail "TCP precheck should always retain previous candidates"
+  grep -q 'TCP precheck input=122 connected=121 kept_new=80 kept_previous=1 elapsed_ms=' "$LOG_FILE" \
+    || fail "TCP precheck should log input, connected, retained counts, and elapsed time"
 }
 
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency() {
@@ -624,6 +701,7 @@ test_linux_runner_waits_multiple_fast_cfst_jobs
 test_runner_defaults_include_europe_focus_countries
 test_runners_default_to_four_hour_interval
 test_focus_scopes_use_quick_download_screening
+test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 test_proxyip_best_generator_allows_country_specific_limits
 test_subconverter_group_order_and_pool_names
