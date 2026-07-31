@@ -361,6 +361,35 @@ PY
   grep -qx '192.0.2.1' "$selected_path" || fail "TCP precheck should always retain previous candidates"
   grep -q 'TCP precheck input=122 connected=121 kept_new=80 kept_previous=1 elapsed_ms=' "$LOG_FILE" \
     || fail "TCP precheck should log input, connected, retained counts, and elapsed time"
+
+  local infra_selected_path="$tmp_dir/infra-selected.txt"
+  local infra_map_path="$tmp_dir/infra-map.csv"
+  for index in $(seq 1 121); do
+    printf '198.18.0.%s\n' "$index" >> "$infra_selected_path"
+    printf '198.18.0.%s,DE,ip.zip\n' "$index" >> "$infra_map_path"
+  done
+  timeout() { return 127; }
+  apply_tcp_precheck "$port" "$infra_selected_path" "$infra_map_path"
+  unset -f timeout
+  [[ "$(wc -l < "$infra_selected_path" | tr -d ' ')" == "121" ]] \
+    || fail "TCP precheck infrastructure failure should retain the original candidates"
+  grep -q 'WARN: TCP precheck failed; using original candidates.' "$LOG_FILE" \
+    || fail "TCP precheck infrastructure failure should be logged"
+
+  local empty_selected_path="$tmp_dir/empty-selected.txt"
+  local empty_map_path="$tmp_dir/empty-map.csv"
+  local work_items_path="$tmp_dir/port-work-items.csv"
+  for index in $(seq 1 121); do
+    printf '127.0.1.%s\n' "$index" >> "$empty_selected_path"
+    printf '127.0.1.%s,DE,ip.zip\n' "$index" >> "$empty_map_path"
+  done
+  apply_tcp_precheck "$port" "$empty_selected_path" "$empty_map_path"
+  [[ ! -s "$empty_selected_path" ]] || fail "Valid zero-connect TCP precheck should produce an empty candidate file"
+  printf '%s,focus-DE,%s,%s\n' "$port" "$empty_selected_path" "$empty_map_path" > "$work_items_path"
+  prune_empty_work_items "$work_items_path"
+  [[ ! -s "$work_items_path" ]] || fail "Empty TCP precheck work items should be removed before CFST"
+  grep -q 'Skipping empty TCP precheck work item' "$LOG_FILE" \
+    || fail "Skipped empty TCP precheck work item should be logged"
 }
 
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency() {

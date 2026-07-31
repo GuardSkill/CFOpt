@@ -581,9 +581,9 @@ function New-PortWorkItem {
         $ip = $ip.Trim()
         if ($seenIps.Add($ip)) {
             Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
-            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($entry.City),previous" -Encoding ASCII
             $previousAdded++
         }
+        Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($entry.City),previous" -Encoding ASCII
     }
 
     $cfBestIpAdded = 0
@@ -641,6 +641,23 @@ function New-PortWorkItem {
     }
 }
 
+function Select-TcpPrecheckCandidates {
+    param(
+        [object[]]$Successful,
+        [int]$MaxCandidates
+    )
+
+    $groupCounts = @{}
+    foreach ($candidate in @($Successful | Sort-Object ElapsedMs, Ordinal)) {
+        $groupKey = "$($candidate.City)|$($candidate.Source)"
+        $currentCount = if ($groupCounts.ContainsKey($groupKey)) { [int]$groupCounts[$groupKey] } else { 0 }
+        if ($currentCount -lt $MaxCandidates) {
+            $candidate.Ip
+            $groupCounts[$groupKey] = $currentCount + 1
+        }
+    }
+}
+
 function Invoke-TcpPrecheck {
     param(
         [int]$Port,
@@ -672,6 +689,7 @@ function Invoke-TcpPrecheck {
 
         $previous = [System.Collections.Generic.List[string]]::new()
         $newCandidates = [System.Collections.Generic.List[object]]::new()
+        $ordinal = 0
         foreach ($rawIp in $inputLines) {
             $ip = $rawIp.Trim()
             $mapped = $mapByIp[$ip]
@@ -682,6 +700,8 @@ function Invoke-TcpPrecheck {
                 if ($null -eq $mapped) {
                     $mapped = [pscustomobject]@{ Ip = $ip; City = "UNKNOWN"; Source = "unknown" }
                 }
+                $ordinal++
+                $mapped | Add-Member -NotePropertyName Ordinal -NotePropertyValue $ordinal -Force
                 $newCandidates.Add($mapped)
             }
         }
@@ -703,38 +723,47 @@ function Invoke-TcpPrecheck {
                 }
             }
 
+            $pendingItems = [System.Collections.Generic.List[object]]::new()
             foreach ($pending in $batch) {
-                try {
-                    $remainingMs = [Math]::Max(0, $TcpPrecheckTimeoutMs - [int]$pending.Stopwatch.ElapsedMilliseconds)
-                    if ($pending.AsyncResult.AsyncWaitHandle.WaitOne($remainingMs) -and $pending.Client.Connected) {
-                        $pending.Client.EndConnect($pending.AsyncResult)
-                        $successful.Add([pscustomobject]@{
-                            Ip = $pending.Candidate.Ip
-                            City = $pending.Candidate.City
-                            Source = $pending.Candidate.Source
-                            ElapsedMs = [int]$pending.Stopwatch.ElapsedMilliseconds
-                        })
+                $pendingItems.Add($pending)
+            }
+            while ($pendingItems.Count -gt 0) {
+                $madeProgress = $false
+                foreach ($pending in @($pendingItems.ToArray())) {
+                    $completed = $pending.AsyncResult.IsCompleted
+                    $expired = $pending.Stopwatch.ElapsedMilliseconds -ge $TcpPrecheckTimeoutMs
+                    if (-not $completed -and -not $expired) {
+                        continue
+                    }
+                    try {
+                        if ($completed -and $pending.Client.Connected) {
+                            $elapsedMs = [int]$pending.Stopwatch.ElapsedMilliseconds
+                            $pending.Client.EndConnect($pending.AsyncResult)
+                            $successful.Add([pscustomobject]@{
+                                Ip = $pending.Candidate.Ip
+                                City = $pending.Candidate.City
+                                Source = $pending.Candidate.Source
+                                ElapsedMs = $elapsedMs
+                                Ordinal = $pending.Candidate.Ordinal
+                            })
+                        }
+                    }
+                    catch {
+                    }
+                    finally {
+                        $pending.AsyncResult.AsyncWaitHandle.Close()
+                        $pending.Client.Dispose()
+                        [void]$pendingItems.Remove($pending)
+                        $madeProgress = $true
                     }
                 }
-                catch {
-                }
-                finally {
-                    $pending.AsyncResult.AsyncWaitHandle.Close()
-                    $pending.Client.Dispose()
+                if (-not $madeProgress) {
+                    Start-Sleep -Milliseconds 1
                 }
             }
         }
 
-        $keptNew = [System.Collections.Generic.List[string]]::new()
-        $groupCounts = @{}
-        foreach ($candidate in @($successful | Sort-Object ElapsedMs, Ip)) {
-            $groupKey = "$($candidate.City)|$($candidate.Source)"
-            $currentCount = if ($groupCounts.ContainsKey($groupKey)) { [int]$groupCounts[$groupKey] } else { 0 }
-            if ($currentCount -lt $TcpPrecheckMaxCandidates) {
-                $keptNew.Add($candidate.Ip)
-                $groupCounts[$groupKey] = $currentCount + 1
-            }
-        }
+        $keptNew = @(Select-TcpPrecheckCandidates -Successful $successful.ToArray() -MaxCandidates $TcpPrecheckMaxCandidates)
 
         $result = [System.Collections.Generic.List[string]]::new()
         $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -749,6 +778,22 @@ function Invoke-TcpPrecheck {
     }
     catch {
         Write-Log "WARN: TCP precheck failed; using original candidates."
+    }
+}
+
+function Get-NonEmptyWorkItems {
+    param([object[]]$WorkItems)
+
+    foreach ($item in $WorkItems) {
+        $hasCandidates = (Test-Path -LiteralPath $item.SelectedIpPath) -and @(
+            Get-Content -LiteralPath $item.SelectedIpPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+        ).Count -gt 0
+        if ($hasCandidates) {
+            $item
+        }
+        else {
+            Write-Log "WARN: Skipping empty TCP precheck work item port=$($item.Port) scope=$($item.Scope)."
+        }
     }
 }
 
@@ -1237,6 +1282,10 @@ try {
 
     foreach ($item in $workItems) {
         Invoke-TcpPrecheck -Port $item.Port -SelectedIpPath $item.SelectedIpPath -MapPath $item.MapPath
+    }
+    $workItems = @(Get-NonEmptyWorkItems -WorkItems $workItems)
+    if ($workItems.Count -eq 0) {
+        throw "No usable port/country inputs remained after TCP precheck."
     }
 
     if ($DryRun) {

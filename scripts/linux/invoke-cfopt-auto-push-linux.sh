@@ -344,9 +344,9 @@ append_previous_for_port() {
     [[ "$city" =~ ^($countries_pattern)$ ]] || continue
     if ! grep -Fxq "$ip" "$selected_ip_path"; then
       printf '%s\n' "$ip" >> "$selected_ip_path"
-      printf '%s,%s,previous\n' "$ip" "$city" >> "$map_path"
       added=$((added + 1))
     fi
+    printf '%s,%s,previous\n' "$ip" "$city" >> "$map_path"
   done < "$PREVIOUS_NODES_PATH"
 
   printf '%s\n' "$added"
@@ -519,8 +519,8 @@ apply_tcp_precheck() {
   local selected_ip_path="$2"
   local map_path="$3"
   local input_count start_ms elapsed_ms timeout_seconds tmp_dir
-  local new_map_path previous_path results_path kept_new_path output_path
-  local kept_previous connected kept_new ip probe_start probe_elapsed probe_pid
+  local new_map_path previous_path results_path errors_path kept_new_path output_path
+  local kept_previous connected kept_new ip probe_start probe_elapsed probe_pid probe_status
   local -a probe_pids=()
 
   input_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
@@ -536,11 +536,13 @@ apply_tcp_precheck() {
   new_map_path="$tmp_dir/new.csv"
   previous_path="$tmp_dir/previous.txt"
   results_path="$tmp_dir/results.tsv"
+  errors_path="$tmp_dir/errors.txt"
   kept_new_path="$tmp_dir/kept-new.txt"
   output_path="$tmp_dir/selected.txt"
   : > "$new_map_path"
   : > "$previous_path"
   : > "$results_path"
+  : > "$errors_path"
 
   if ! awk -F',' -v new_map="$new_map_path" -v previous="$previous_path" '
     NR == FNR {
@@ -554,7 +556,10 @@ apply_tcp_precheck() {
     {
       ip = $1
       if (source[ip] == "previous") print ip >> previous
-      else print ip "," city[ip] "," source[ip] >> new_map
+      else {
+        ordinal++
+        print ip "," city[ip] "," source[ip] "," ordinal >> new_map
+      }
     }
   ' "$map_path" "$selected_ip_path"; then
     log "WARN: TCP precheck failed; using original candidates."
@@ -563,13 +568,17 @@ apply_tcp_precheck() {
   fi
 
   timeout_seconds="$(awk -v milliseconds="$TCP_PRECHECK_TIMEOUT_MS" 'BEGIN { printf "%.3f", milliseconds / 1000 }')"
-  while IFS=',' read -r ip _city _source; do
+  while IFS=',' read -r ip _city _source ordinal; do
     [[ -n "$ip" ]] || continue
     (
       probe_start="$(date +%s%3N)"
-      if timeout "$timeout_seconds" bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$ip" "$port" 2>/dev/null; then
+      probe_status=0
+      timeout "$timeout_seconds" bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "$ip" "$port" 2>/dev/null || probe_status=$?
+      if (( probe_status == 0 )); then
         probe_elapsed=$(( $(date +%s%3N) - probe_start ))
-        printf '%s\t%s\n' "$ip" "$probe_elapsed" >> "$results_path"
+        printf '%s\t%s\t%s\n' "$ip" "$probe_elapsed" "$ordinal" >> "$results_path"
+      elif (( probe_status == 125 || probe_status == 126 || probe_status == 127 )); then
+        printf '%s\n' "$probe_status" >> "$errors_path"
       fi
     ) &
     probe_pids+=("$!")
@@ -582,7 +591,13 @@ apply_tcp_precheck() {
     wait "$probe_pid" || true
   done
 
-  if ! sort -t $'\t' -k2,2n -k1,1 "$results_path" | awk -F'\t' -v map_path="$new_map_path" -v max_keep="$TCP_PRECHECK_MAX_CANDIDATES" '
+  if [[ -s "$errors_path" ]]; then
+    log "WARN: TCP precheck failed; using original candidates."
+    rm -rf "$tmp_dir"
+    return 0
+  fi
+
+  if ! sort -s -t $'\t' -k2,2n -k3,3n "$results_path" | awk -F'\t' -v map_path="$new_map_path" -v max_keep="$TCP_PRECHECK_MAX_CANDIDATES" '
     BEGIN {
       while ((getline line < map_path) > 0) {
         split(line, fields, ",")
@@ -617,6 +632,21 @@ apply_tcp_precheck() {
   elapsed_ms=$(( $(date +%s%3N) - start_ms ))
   log "TCP precheck input=$input_count connected=$connected kept_new=$kept_new kept_previous=$kept_previous elapsed_ms=$elapsed_ms port=$port"
   rm -rf "$tmp_dir"
+}
+
+prune_empty_work_items() {
+  local work_items_path="$1"
+  local filtered_path="$work_items_path.tcp-precheck"
+  local port scope selected_ip_path map_path
+  : > "$filtered_path"
+  while IFS=',' read -r port scope selected_ip_path map_path; do
+    if [[ -s "$selected_ip_path" ]]; then
+      printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$filtered_path"
+    else
+      log "WARN: Skipping empty TCP precheck work item port=$port scope=$scope."
+    fi
+  done < "$work_items_path"
+  mv "$filtered_path" "$work_items_path"
 }
 
 start_cfst_for_port() {
@@ -990,6 +1020,11 @@ main() {
   while IFS=',' read -r port_value _scope selected_ip_path map_path; do
     apply_tcp_precheck "$port_value" "$selected_ip_path" "$map_path"
   done < "$WORK_DIR/port-work-items.csv"
+  prune_empty_work_items "$WORK_DIR/port-work-items.csv"
+  if [[ ! -s "$WORK_DIR/port-work-items.csv" ]]; then
+    log "ERROR: No usable port/country inputs remained after TCP precheck."
+    exit 1
+  fi
 
   if [[ "$DRY_RUN" == "1" ]]; then
     log "Dry run enabled. Skipping cfst execution and GitHub upload."
