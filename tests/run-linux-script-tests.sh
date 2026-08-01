@@ -220,7 +220,7 @@ test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retentio
 }
 
 test_linux_country_speed_floor_stats_are_logged_when_all_rows_are_filtered() {
-  local tmp_dir
+  local tmp_dir filter_output
   tmp_dir="$(mktemp -d)"
 
   (
@@ -232,9 +232,10 @@ test_linux_country_speed_floor_stats_are_logged_when_all_rows_are_filtered() {
 
     mkdir -p "$WORK_DIR"
     printf '443,JP,ip.zip,203.0.113.9,1,1,0.00,100.00,9.99,NRT\n' > "$COMBINED_CANDIDATES_PATH"
-    if filter_csv; then
+    if filter_output="$(filter_csv 2>&1)"; then
       fail "all-filtered country floor fixture must fail"
     fi
+    grep -Fq 'ERROR: Filtering removed all CSV rows.' <<< "$filter_output" || fail "all-filtered failure output was not captured"
 
     local expected_summary
     for expected_summary in \
@@ -244,6 +245,39 @@ test_linux_country_speed_floor_stats_are_logged_when_all_rows_are_filtered() {
       'Country speed floor HK >= 2 MB/s: evaluated=0 removed=0 passed=0.'; do
       grep -Fq "$expected_summary" "$LOG_FILE" || fail "missing all-filtered floor summary: $expected_summary"
     done
+  )
+}
+
+test_linux_filter_rejects_invalid_candidate_speeds_at_zero_floors() {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+
+  (
+    CFOPT_SOURCE_ONLY=1
+    WORK_DIR="$tmp_dir/work"
+    COUNTRIES_CSV=JP,HK,DE
+    COUNTRY_MIN_SPEED_MB_PER_SEC='JP=0.001,HK=0'
+    MIN_SPEED_MBPS=0
+    source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+
+    mkdir -p "$WORK_DIR"
+    printf '%s\n' \
+      '443,JP,ip.zip,203.0.113.40,1,1,0.00,100.00,0.001,NRT' \
+      '443,HK,ip.zip,203.0.113.41,1,1,0.00,100.00,malformed,HKG' \
+      '443,HK,ip.zip,203.0.113.42,1,1,0.00,100.00,,HKG' \
+      '443,DE,ip.zip,203.0.113.43,1,1,0.00,100.00,NaN,FRA' \
+      '443,DE,ip.zip,203.0.113.44,1,1,0.00,100.00,Infinity,FRA' \
+      > "$COMBINED_CANDIDATES_PATH"
+
+    filter_csv
+
+    grep -q '^203\.0\.113\.40,' "$CSV_PATH" || fail "finite 0.001 MB/s candidate at its country floor was removed"
+    local invalid_ip
+    for invalid_ip in 203.0.113.41 203.0.113.42 203.0.113.43 203.0.113.44; do
+      ! grep -q "^${invalid_ip//./\\.}," "$CSV_PATH" || fail "invalid candidate speed reached the final CSV: $invalid_ip"
+    done
+    grep -Fq 'Country speed floor JP >= 0.001 MB/s: evaluated=1 removed=0 passed=1.' "$LOG_FILE" \
+      || fail "country speed floor log lost three-decimal precision"
   )
 }
 
@@ -915,6 +949,7 @@ test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_country_speed_floor_defaults_and_parser
 test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention
 test_linux_country_speed_floor_stats_are_logged_when_all_rows_are_filtered
+test_linux_filter_rejects_invalid_candidate_speeds_at_zero_floors
 test_linux_runner_samples_large_country_files
 test_linux_runner_applies_country_sample_multipliers
 test_linux_runner_excludes_focus_countries_from_all_scope

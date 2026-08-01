@@ -181,6 +181,41 @@ try {
         throw 'Country speed floor summaries were not logged.'
     }
 
+    $invalidSpeedMapPath = Join-Path $tempDir "invalid-speed-map.csv"
+    $invalidSpeedCfstPath = Join-Path $tempDir "invalid-speed-cfst.csv"
+    $script:csvPath = Join-Path $tempDir "invalid-speed-merged.csv"
+    [System.IO.File]::WriteAllLines($invalidSpeedMapPath, @(
+        "203.0.113.40,JP,ip.zip",
+        "203.0.113.41,HK,ip.zip",
+        "203.0.113.42,HK,ip.zip",
+        "203.0.113.43,DE,ip.zip",
+        "203.0.113.44,DE,ip.zip"
+    ), [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllLines($invalidSpeedCfstPath, @(
+        "IP,Sent,Received,Loss,Latency,Speed,DataCenter",
+        "203.0.113.40,4,4,0,10,0.001,NRT",
+        "203.0.113.41,4,4,0,10,malformed,HKG",
+        "203.0.113.42,4,4,0,10,,HKG",
+        "203.0.113.43,4,4,0,10,NaN,FRA",
+        "203.0.113.44,4,4,0,10,Infinity,FRA"
+    ), [System.Text.Encoding]::ASCII)
+    $script:countryMinSpeedByCode = ConvertFrom-CountryMinSpeedMap -Value "JP=0.001,HK=0" -AllowedCountries $Countries
+    Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath = $invalidSpeedMapPath; CsvPath = $invalidSpeedCfstPath; Port = 443 }) -PreviousNodeKeys ([System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase))
+
+    $invalidSpeedOutput = Import-Csv -LiteralPath $script:csvPath
+    if ($invalidSpeedOutput.$ipHeaderName -notcontains '203.0.113.40') {
+        throw 'Finite 0.001 MB/s candidate at its country floor was removed.'
+    }
+    foreach ($invalidIp in @('203.0.113.41', '203.0.113.42', '203.0.113.43', '203.0.113.44')) {
+        if ($invalidSpeedOutput.$ipHeaderName -contains $invalidIp) {
+            throw "Invalid candidate speed reached the final CSV: $invalidIp"
+        }
+    }
+    $precisionLog = Get-Content -LiteralPath $logPath -Raw
+    if ($precisionLog -notmatch 'Country speed floor JP >= 0\.001 MB/s: evaluated=1 removed=0 passed=1\.') {
+        throw 'Country speed floor log lost three-decimal precision.'
+    }
+
     $equalDuration = foreach ($index in 1..31) {
         [pscustomobject]@{ Ip = "203.0.113.$index"; City = "DE"; Source = "ip.zip"; ElapsedMs = 5; Ordinal = $index }
     }

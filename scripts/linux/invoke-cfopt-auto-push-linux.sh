@@ -839,7 +839,17 @@ filter_csv() {
       received = $6 + 0
       loss = $7 + 0
       latency = $8 + 0
-      speed = $9 + 0
+      speed_text = $9
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", speed_text)
+      if (speed_text !~ /^([0-9]+(\.[0-9]+)?|\.[0-9]+)$/) {
+        removed++
+        next
+      }
+      speed = speed_text + 0
+      if (speed > 1.7976931348623157e308) {
+        removed++
+        next
+      }
       datacenter = $10
       speed_mbps = speed * 8
       if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {

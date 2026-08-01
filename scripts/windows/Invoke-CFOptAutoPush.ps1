@@ -1086,9 +1086,10 @@ function Write-MergedFilteredCsv {
             $received = Convert-ToNumber $columns[2]
             $lossRate = Convert-ToNumber $columns[3]
             $latency = Convert-ToNumber $columns[4]
-            $speed = Convert-ToNumber $columns[5]
+            $speedText = $columns[5].Trim()
+            $speed = 0.0
 
-            if ($null -eq $received -or $null -eq $lossRate -or $null -eq $latency -or $null -eq $speed) {
+            if ($null -eq $received -or $null -eq $lossRate -or $null -eq $latency -or $speedText -notmatch '^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$' -or -not [double]::TryParse($speedText, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$speed) -or [double]::IsNaN($speed) -or [double]::IsInfinity($speed)) {
                 $removed++
                 continue
             }
@@ -1151,7 +1152,7 @@ function Write-MergedFilteredCsv {
     }
 
     foreach ($countryCode in @($countryMinSpeedByCode.Keys | Sort-Object)) {
-        $floor = $countryMinSpeedByCode[$countryCode].ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)
+        $floor = $countryMinSpeedByCode[$countryCode].ToString("R", [System.Globalization.CultureInfo]::InvariantCulture)
         $stats = $countrySpeedStats[$countryCode]
         Write-Log "Country speed floor $countryCode >= $floor MB/s: evaluated=$($stats.Evaluated) removed=$($stats.Removed) passed=$($stats.Passed)."
     }
