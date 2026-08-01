@@ -587,7 +587,7 @@ for rule in cmliussss_rules:
         raise SystemExit(f"{full}: missing lite baseline ruleset: {rule}")
 
 required_business_groups = [
-    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
@@ -604,13 +604,14 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
     if "rules/Bilibili.list" in content and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in content:
         raise SystemExit(f"{path}: Bilibili rules must route to Direct")
-    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT" not in content:
-        raise SystemExit(f"{path}: CodeAgent must default to JP Proxy first")
+    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT" not in content:
+        raise SystemExit(f"{path}: CodeAgent must include the US Proxy pool")
     codeagent_filters = {
         "JP Proxy ↪": "(🇯🇵 )?JP ↪ \\[",
         "HK Proxy ↪": "(🇭🇰 )?HK ↪ \\[",
         "KR Proxy ↪": "(🇰🇷 )?KR ↪ \\[",
         "SG Proxy ↪": "(🇸🇬 )?SG ↪ \\[",
+        "US Proxy ↪": "(🇺🇸 )?US ↪ \\[",
     }
     for group_name, node_filter in codeagent_filters.items():
         prefix = f"custom_proxy_group={group_name}`url-test`"
