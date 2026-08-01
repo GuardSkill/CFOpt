@@ -28,6 +28,10 @@ try {
 
     $env:CFOPT_SOURCE_ONLY = "1"
     . $runnerPath
+    $profile = @($CfstLatencyTestCount, $CfstDownloadTestCount, $CfstDownloadTestTime, $FocusCfstDownloadTestCount, $FocusCfstDownloadTestTime) -join ","
+    if ($profile -ne "2,10,4,10,4") {
+        throw "Expected fast CFST defaults 2,10,4,10,4; got $profile."
+    }
     if ((Get-PositiveTcpPrecheckValue -Value 0 -Fallback 1) -ne 1 -or (Get-PositiveTcpPrecheckValue -Value 32 -Fallback 1) -ne 32) {
         throw "TCP precheck values must be normalized to positive integers."
     }

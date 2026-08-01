@@ -196,6 +196,10 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
   if grep -q '^198\.18\.2\.1$' "$tmp_dir/work/selected-ip-443-all.txt"; then
     fail "all scope should exclude focus country DE"
   fi
+  grep -Eq 'Would run: .*selected-ip-443-all\.txt.* -t 2 -dn 10 -dt 4 ' "$tmp_dir/work/auto-push.log" \
+    || fail "all scope should use the fast CFST profile"
+  grep -Eq 'Would run: .*selected-ip-443-focus-DE\.txt.* -t 2 -dn 10 -dt 4 ' "$tmp_dir/work/auto-push.log" \
+    || fail "focus scope should use the fast CFST profile"
 }
 
 test_linux_runner_waits_multiple_fast_cfst_jobs() {
@@ -293,15 +297,15 @@ test_runners_default_to_four_hour_interval() {
     || fail "Windows scheduled task should pass -IntervalHours 4"
 }
 
-test_focus_scopes_use_quick_download_screening() {
-  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-12}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux focus scopes should default to a smaller download-test count"
-  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_TIME="${FOCUS_CFST_DOWNLOAD_TEST_TIME:-8}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux focus scopes should default to a shorter download-test time"
-  grep -q '\[int\]\$FocusCfstDownloadTestCount = 12' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows focus scopes should default to a smaller download-test count"
-  grep -q '\[int\]\$FocusCfstDownloadTestTime = 8' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows focus scopes should default to a shorter download-test time"
+test_focus_scopes_use_fast_download_profile() {
+  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-10}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux focus scopes should default to 10 download candidates"
+  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_TIME="${FOCUS_CFST_DOWNLOAD_TEST_TIME:-4}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux focus scopes should default to a 4-second download test"
+  grep -q '\[int\]\$FocusCfstDownloadTestCount = 10' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows focus scopes should default to 10 download candidates"
+  grep -q '\[int\]\$FocusCfstDownloadTestTime = 4' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows focus scopes should default to a 4-second download test"
 }
 
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous() {
@@ -731,7 +735,7 @@ test_linux_runner_excludes_focus_countries_from_all_scope
 test_linux_runner_waits_multiple_fast_cfst_jobs
 test_runner_defaults_include_europe_focus_countries
 test_runners_default_to_four_hour_interval
-test_focus_scopes_use_quick_download_screening
+test_focus_scopes_use_fast_download_profile
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 test_proxyip_best_generator_allows_country_specific_limits
