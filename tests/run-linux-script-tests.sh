@@ -308,6 +308,21 @@ test_focus_scopes_use_fast_download_profile() {
     || fail "Windows focus scopes should default to a 4-second download test"
 }
 
+test_candidate_pool_defaults_are_expanded_before_precheck() {
+  grep -q 'IPZIP_SAMPLE_PERCENT="${IPZIP_SAMPLE_PERCENT:-40}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should sample 40 percent of each ip.zip country pool"
+  grep -q 'IPZIP_COUNTRY_MIN_CANDIDATES="${IPZIP_COUNTRY_MIN_CANDIDATES:-40}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should keep at least 40 ip.zip candidates when available"
+  grep -q 'IPZIP_COUNTRY_MAX_CANDIDATES="${IPZIP_COUNTRY_MAX_CANDIDATES:-320}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should cap each ip.zip country pool at 320"
+  grep -q 'CFBESTIP_PER_COUNTRY_LIMIT="${CFBESTIP_PER_COUNTRY_LIMIT:-400}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should collect up to 400 cf-bestip candidates per country"
+  grep -q 'VPS789_CT_LIMIT="${VPS789_CT_LIMIT:-100}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should collect up to 100 VPS789 CT candidates"
+  grep -q 'TCP_PRECHECK_MAX_CANDIDATES="${TCP_PRECHECK_MAX_CANDIDATES:-30}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should retain 30 new candidates per country and source"
+}
+
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous() {
   local tmp_dir selected_path map_path port_path server_pid port new_count total_count
   tmp_dir="$(mktemp -d)"
@@ -354,7 +369,7 @@ PY
   TCP_PRECHECK_MIN_CANDIDATES=120
   TCP_PRECHECK_TIMEOUT_MS=200
   TCP_PRECHECK_THREADS=32
-  TCP_PRECHECK_MAX_CANDIDATES=80
+  TCP_PRECHECK_MAX_CANDIDATES=30
   mkdir -p "$WORK_DIR"
   apply_tcp_precheck "$port" "$selected_path" "$map_path"
   kill "$server_pid" 2>/dev/null || true
@@ -362,10 +377,10 @@ PY
 
   total_count="$(wc -l < "$selected_path" | tr -d ' ')"
   new_count="$(grep -vc '^192\.0\.2\.1$' "$selected_path")"
-  [[ "$total_count" == "81" ]] || fail "TCP precheck should keep 80 new and one previous candidate, got $total_count"
-  [[ "$new_count" == "80" ]] || fail "TCP precheck should cap new candidates at 80, got $new_count"
+  [[ "$total_count" == "31" ]] || fail "TCP precheck should keep 30 new and one previous candidate, got $total_count"
+  [[ "$new_count" == "30" ]] || fail "TCP precheck should cap new candidates at 30, got $new_count"
   grep -qx '192.0.2.1' "$selected_path" || fail "TCP precheck should always retain previous candidates"
-  grep -q 'TCP precheck input=122 connected=121 kept_new=80 kept_previous=1 elapsed_ms=' "$LOG_FILE" \
+  grep -q 'TCP precheck input=122 connected=121 kept_new=30 kept_previous=1 elapsed_ms=' "$LOG_FILE" \
     || fail "TCP precheck should log input, connected, retained counts, and elapsed time"
 
   local infra_selected_path="$tmp_dir/infra-selected.txt"
@@ -736,6 +751,7 @@ test_linux_runner_waits_multiple_fast_cfst_jobs
 test_runner_defaults_include_europe_focus_countries
 test_runners_default_to_four_hour_interval
 test_focus_scopes_use_fast_download_profile
+test_candidate_pool_defaults_are_expanded_before_precheck
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_tcp_latency
 test_proxyip_best_generator_allows_country_specific_limits
