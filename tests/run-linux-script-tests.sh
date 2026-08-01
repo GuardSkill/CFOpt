@@ -558,6 +558,19 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: Bilibili rules must route to Direct")
     if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT" not in content:
         raise SystemExit(f"{path}: CodeAgent must default to JP Proxy first")
+    codeagent_filters = {
+        "JP Proxy ↪": "(🇯🇵 )?JP ↪ \\[",
+        "HK Proxy ↪": "(🇭🇰 )?HK ↪ \\[",
+        "KR Proxy ↪": "(🇰🇷 )?KR ↪ \\[",
+        "SG Proxy ↪": "(🇸🇬 )?SG ↪ \\[",
+    }
+    for group_name, node_filter in codeagent_filters.items():
+        prefix = f"custom_proxy_group={group_name}`url-test`"
+        matches = [line for line in lines(path, prefix) if node_filter in line]
+        if len(matches) != 1:
+            raise SystemExit(f"{path}: expected one shared CodeAgent group for {group_name}, got {matches}")
+        if "https://chatgpt.com/backend-api/codex" not in matches[0]:
+            raise SystemExit(f"{path}: {group_name} must probe the Codex backend: {matches[0]}")
     if "ruleset=Steam,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Steam.list" not in content:
         raise SystemExit(f"{path}: missing Steam ruleset")
     if "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT" not in content:
