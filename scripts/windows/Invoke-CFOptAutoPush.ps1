@@ -17,11 +17,11 @@ param(
     [double]$MinSpeedMbps = 0.03,
     [int]$MaxPerCity = 20,
     [int]$CfstThreads = 80,
-    [int]$CfstLatencyTestCount = 6,
-    [int]$CfstDownloadTestCount = 30,
-    [int]$CfstDownloadTestTime = 15,
-    [int]$FocusCfstDownloadTestCount = 12,
-    [int]$FocusCfstDownloadTestTime = 8,
+    [int]$CfstLatencyTestCount = 2,
+    [int]$CfstDownloadTestCount = 10,
+    [int]$CfstDownloadTestTime = 4,
+    [int]$FocusCfstDownloadTestCount = 10,
+    [int]$FocusCfstDownloadTestTime = 4,
     [double]$CfstLossRateLimit = 0,
     [int]$MaxParallelCfst = 1,
     [bool]$TcpPrecheckEnabled = $true,
@@ -813,6 +813,42 @@ function Get-NonEmptyWorkItems {
     }
 }
 
+function Get-CfstArguments {
+    param([object]$Item)
+
+    $downloadTestCount = $CfstDownloadTestCount
+    $downloadTestTime = $CfstDownloadTestTime
+    if ([string]$Item.Scope -like "focus-*") {
+        $downloadTestCount = $FocusCfstDownloadTestCount
+        $downloadTestTime = $FocusCfstDownloadTestTime
+    }
+
+    $arguments = @(
+        "-f", $Item.SelectedIpPath,
+        "-o", $Item.CsvPath,
+        "-n", ([string]$CfstThreads),
+        "-t", ([string]$CfstLatencyTestCount),
+        "-dn", ([string]$downloadTestCount),
+        "-dt", ([string]$downloadTestTime),
+        "-tl", ([string]$MaxLatencyMs),
+        "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
+        "-p", "0"
+    )
+    if ($Item.Port -ne 443) {
+        $arguments += @("-tp", ([string]$Item.Port))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
+        $arguments += @("-url", $DownloadTestUrl)
+    }
+    if ($MinSpeedMbps -gt 0) {
+        $arguments += @("-sl", $MinSpeedMbps.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture))
+    }
+    if ($CfstDebug) {
+        $arguments += "-debug"
+    }
+    return $arguments
+}
+
 function Start-CfstProcesses {
     param([object[]]$WorkItems)
 
@@ -841,36 +877,7 @@ function Start-CfstProcesses {
         }
         Set-Content -LiteralPath $item.StdinPath -Value "" -Encoding ASCII
 
-        $downloadTestCount = $CfstDownloadTestCount
-        $downloadTestTime = $CfstDownloadTestTime
-        if ([string]$item.Scope -like "focus-*") {
-            $downloadTestCount = $FocusCfstDownloadTestCount
-            $downloadTestTime = $FocusCfstDownloadTestTime
-        }
-
-        $cfstArgs = @(
-            "-f", $item.SelectedIpPath,
-            "-o", $item.CsvPath,
-            "-n", ([string]$CfstThreads),
-            "-t", ([string]$CfstLatencyTestCount),
-            "-dn", ([string]$downloadTestCount),
-            "-dt", ([string]$downloadTestTime),
-            "-tl", ([string]$MaxLatencyMs),
-            "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
-            "-p", "0"
-        )
-        if ($item.Port -ne 443) {
-            $cfstArgs += @("-tp", ([string]$item.Port))
-        }
-        if (-not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
-            $cfstArgs += @("-url", $DownloadTestUrl)
-        }
-        if ($MinSpeedMbps -gt 0) {
-            $cfstArgs += @("-sl", $MinSpeedMbps.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture))
-        }
-        if ($CfstDebug) {
-            $cfstArgs += "-debug"
-        }
+        $cfstArgs = @(Get-CfstArguments -Item $item)
 
         $argumentText = Join-ProcessArguments -Arguments $cfstArgs
         Write-Log "Starting cfst on port $($item.Port) scope $($item.Scope): $CfstPath $argumentText"
@@ -1307,36 +1314,7 @@ try {
     if ($DryRun) {
         Write-Log "Dry run enabled. Skipping cfst execution and GitHub upload."
         foreach ($item in $workItems) {
-            $downloadTestCount = $CfstDownloadTestCount
-            $downloadTestTime = $CfstDownloadTestTime
-            if ([string]$item.Scope -like "focus-*") {
-                $downloadTestCount = $FocusCfstDownloadTestCount
-                $downloadTestTime = $FocusCfstDownloadTestTime
-            }
-
-            $dryRunArgs = @(
-                "-f", $item.SelectedIpPath,
-                "-o", $item.CsvPath,
-                "-n", ([string]$CfstThreads),
-                "-t", ([string]$CfstLatencyTestCount),
-                "-dn", ([string]$downloadTestCount),
-                "-dt", ([string]$downloadTestTime),
-                "-tl", ([string]$MaxLatencyMs),
-                "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
-                "-p", "0"
-            )
-            if ($item.Port -ne 443) {
-                $dryRunArgs += @("-tp", ([string]$item.Port))
-            }
-            if (-not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
-                $dryRunArgs += @("-url", $DownloadTestUrl)
-            }
-            if ($MinSpeedMbps -gt 0) {
-                $dryRunArgs += @("-sl", $MinSpeedMbps.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture))
-            }
-            if ($CfstDebug) {
-                $dryRunArgs += "-debug"
-            }
+            $dryRunArgs = @(Get-CfstArguments -Item $item)
             Write-Log "Would run: `"$CfstPath`" $(Join-ProcessArguments -Arguments $dryRunArgs)"
         }
         exit 0

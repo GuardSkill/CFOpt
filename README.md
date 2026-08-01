@@ -115,14 +115,16 @@ HK,KR,JP,SG
 
 ```text
 -n 80
--t 6
--dn 30
--dt 15
+-t 2
+-dn 10
+-dt 4
 -tl 420
 -tlr 0
 -sl 0
 -p 0
 ```
+
+普通与重点地区默认使用同一套快速参数；仍可通过 `Cfst*` / `FocusCfst*` 参数或对应的 `CFST_*` / `FOCUS_CFST_*` 环境变量分别覆盖。
 
 默认外层 CFST 任务串行运行：
 
@@ -322,14 +324,16 @@ Default CFST parameters:
 
 ```text
 -n 80
--t 6
--dn 30
--dt 15
+-t 2
+-dn 10
+-dt 4
 -tl 420
 -tlr 0
 -sl 0
 -p 0
 ```
+
+All and focus scopes use the same fast defaults. They can still be overridden independently through the `Cfst*` / `FocusCfst*` parameters or matching `CFST_*` / `FOCUS_CFST_*` environment variables.
 
 The final CSV keeps the Top 20 rows per region/group.
 
