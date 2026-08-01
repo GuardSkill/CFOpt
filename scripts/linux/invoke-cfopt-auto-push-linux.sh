@@ -19,6 +19,7 @@ INTERVAL_HOURS="${INTERVAL_HOURS:-4}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
+COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=5,KR=3,HK=2}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
 ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.33}"
 CFST_THREADS="${CFST_THREADS:-80}"
@@ -35,7 +36,7 @@ TCP_PRECHECK_TIMEOUT_MS="${TCP_PRECHECK_TIMEOUT_MS:-800}"
 TCP_PRECHECK_THREADS="${TCP_PRECHECK_THREADS:-128}"
 TCP_PRECHECK_MAX_CANDIDATES="${TCP_PRECHECK_MAX_CANDIDATES:-30}"
 USE_PROXY_FOR_CFST="${USE_PROXY_FOR_CFST:-0}"
-FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,DE,GB}"
+FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,US,DE,GB}"
 TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
 ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
 CFBESTIP_BASE_URL="${CFBESTIP_BASE_URL:-https://zoroaaa.github.io/cf-bestip}"
@@ -73,6 +74,7 @@ COMBINED_CANDIDATES_PATH="$WORK_DIR/CloudflareSpeedTest.candidates.csv"
 PREVIOUS_CSV_PATH="$WORK_DIR/previous-CloudflareSpeedTest.csv"
 PREVIOUS_NODES_PATH="$WORK_DIR/previous-nodes.csv"
 PREVIOUS_NODE_KEYS_PATH="$WORK_DIR/previous-node-keys.txt"
+COUNTRY_SPEED_STATS_PATH="$WORK_DIR/country-speed-floor-stats.csv"
 VPS789_CT_IP_PATH="$WORK_DIR/vps789-ct-ip.txt"
 VPS789_CT_CSV_PATH="$WORK_DIR/VPS789_CF_CT_Candidates.csv"
 STATE_FILE="$WORK_DIR/last-success.txt"
@@ -85,6 +87,53 @@ fi
 log() {
   mkdir -p "$WORK_DIR"
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
+}
+
+normalize_country_min_speed_map() {
+  local value="$1"
+  local allowed_countries="$2"
+
+  awk -v value="$value" -v allowed_countries="$allowed_countries" '
+    function trim(text) {
+      sub(/^[[:space:]]+/, "", text)
+      sub(/[[:space:]]+$/, "", text)
+      return text
+    }
+    BEGIN {
+      if (trim(value) == "") exit 0
+
+      allowed_count = split(allowed_countries, allowed_parts, ",")
+      for (i = 1; i <= allowed_count; i++) {
+        country = toupper(trim(allowed_parts[i]))
+        if (country != "") allowed[country] = 1
+      }
+
+      pair_count = split(value, pairs, ",")
+      for (i = 1; i <= pair_count; i++) {
+        pair = trim(pairs[i])
+        field_count = split(pair, fields, "=")
+        if (pair == "" || field_count != 2) exit 1
+
+        country = toupper(trim(fields[1]))
+        speed = trim(fields[2])
+        if (country !~ /^[A-Z][A-Z]$/ || !(country in allowed)) exit 1
+        if (speed !~ /^([0-9]+(\.[0-9]+)?|\.[0-9]+)$/) exit 1
+        if (country in seen) exit 1
+
+        seen[country] = 1
+        normalized[++normalized_count] = country "=" speed
+      }
+
+      for (i = 1; i <= normalized_count; i++) {
+        printf "%s%s", (i == 1 ? "" : ","), normalized[i]
+      }
+    }
+  '
+}
+
+COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED="$(normalize_country_min_speed_map "$COUNTRY_MIN_SPEED_MB_PER_SEC" "$COUNTRIES_CSV")" || {
+  log "ERROR: Invalid COUNTRY_MIN_SPEED_MB_PER_SEC: $COUNTRY_MIN_SPEED_MB_PER_SEC"
+  exit 1
 }
 
 effective_ports() {
@@ -764,8 +813,18 @@ build_combined_candidates() {
 
 filter_csv() {
   local tmp_csv="$CSV_PATH.filtered"
+  rm -f "$COUNTRY_SPEED_STATS_PATH"
   [[ -s "$PREVIOUS_NODE_KEYS_PATH" ]] || printf '__none__\n' > "$PREVIOUS_NODE_KEYS_PATH"
-  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" '
+  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
+    BEGIN {
+      floor_count = split(country_speed_floors, floor_entries, ",")
+      for (i = 1; i <= floor_count; i++) {
+        split(floor_entries[i], floor_parts, "=")
+        country_floor[floor_parts[1]] = floor_parts[2] + 0
+        country_floor_value[floor_parts[1]] = floor_parts[2]
+        country_floor_codes[++country_floor_code_count] = floor_parts[1]
+      }
+    }
     FNR == NR {
       previous[$0] = 1
       next
@@ -783,6 +842,15 @@ filter_csv() {
       datacenter = $10
       speed_mbps = speed * 8
       if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
+        if (city in country_floor) {
+          country_evaluated[city]++
+          if (speed < country_floor[city]) {
+            country_removed[city]++
+            removed++
+            next
+          }
+          country_passed[city]++
+        }
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
         row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s,%s", ip, port, datacenter, remark, sent, received, loss, latency, speed, source)
         key = ip "|" port "|" city
@@ -798,6 +866,10 @@ filter_csv() {
       }
     }
     END {
+      for (i = 1; i <= country_floor_code_count; i++) {
+        country = country_floor_codes[i]
+        print country "," country_floor_value[country] "," (country_evaluated[country] + 0) "," (country_removed[country] + 0) "," (country_passed[country] + 0) > country_speed_stats_path
+      }
       for (dedupe_key in best_row) rows[++count] = best_row[dedupe_key]
       if (count < 1) exit 2
       print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
@@ -885,6 +957,13 @@ filter_csv() {
     log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
     rm -f "$tmp_csv"
     return 1
+  fi
+  if [[ -f "$COUNTRY_SPEED_STATS_PATH" ]]; then
+    local country floor evaluated removed passed
+    while IFS=',' read -r country floor evaluated removed passed; do
+      [[ -n "$country" ]] || continue
+      log "Country speed floor $country >= $floor MB/s: evaluated=$evaluated removed=$removed passed=$passed."
+    done < "$COUNTRY_SPEED_STATS_PATH"
   fi
   mv "$tmp_csv" "$CSV_PATH"
   local kept

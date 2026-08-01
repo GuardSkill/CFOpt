@@ -72,6 +72,7 @@ SH
   PORTS=443 \
   COUNTRIES_CSV=HK \
   FOCUS_COUNTRIES_CSV=HK \
+  COUNTRY_MIN_SPEED_MB_PER_SEC='' \
   CFST_THREADS=1 \
   CFST_LATENCY_TEST_COUNT=1 \
   CFST_DOWNLOAD_TEST_COUNT=1 \
@@ -94,6 +95,107 @@ test_linux_defaults_are_not_overly_strict_for_local_runs() {
   if grep -q 'DOWNLOAD_TEST_URL:-https://speed.cloudflare.com/__down?bytes=100000000' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh"; then
     fail "installer should not override the runner download-test URL by default"
   fi
+}
+
+test_linux_country_speed_floor_defaults_and_parser() {
+  (
+    unset COUNTRY_MIN_SPEED_MB_PER_SEC FOCUS_COUNTRIES_CSV
+    CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+
+    [[ "$FOCUS_COUNTRIES_CSV" == "SG,HK,JP,KR,US,DE,GB" ]] || fail "US must be a default focus country"
+    [[ "$COUNTRY_MIN_SPEED_MB_PER_SEC" == "JP=10,US=5,KR=3,HK=2" ]] || fail "unexpected country floors"
+    [[ "$(normalize_country_min_speed_map 'jp=10, US=5' 'HK,JP,US')" == "JP=10,US=5" ]] || fail "country floor normalization failed"
+    [[ -z "$(normalize_country_min_speed_map '' 'HK,JP,US')" ]] || fail "empty map must disable floors"
+
+    local invalid_value
+    for invalid_value in JP JP=x JP=-1 JP=1,JP=2 ZZ=1; do
+      if normalize_country_min_speed_map "$invalid_value" 'HK,JP,US'; then
+        fail "invalid country floor map was accepted: $invalid_value"
+      fi
+    done
+  )
+}
+
+test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention() {
+  local tmp_dir zip_src zip_path stub_cfst stub_curl stdout_path stderr_path
+  tmp_dir="$(mktemp -d)"
+  zip_src="$tmp_dir/zip-src"
+  zip_path="$tmp_dir/ip.zip"
+  stub_cfst="$tmp_dir/cfst"
+  stub_curl="$tmp_dir/curl"
+  stdout_path="$tmp_dir/script.stdout"
+  stderr_path="$tmp_dir/script.stderr"
+
+  mkdir -p "$zip_src/443"
+  printf '%s\n' '203.0.113.9' '203.0.113.10' '203.0.113.11' > "$zip_src/443/JP.txt"
+  printf '%s\n' '203.0.113.12' > "$zip_src/443/HK.txt"
+  printf '%s\n' '203.0.113.20' > "$zip_src/443/DE.txt"
+  make_zip_fixture "$zip_src" "$zip_path"
+
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'input=""' \
+    'out=""' \
+    'while (($#)); do' \
+    '  case "$1" in' \
+    '    -f) input="$2"; shift 2 ;;' \
+    '    -o) out="$2"; shift 2 ;;' \
+    '    *) shift ;;' \
+    '  esac' \
+    'done' \
+    '{' \
+    '  printf "IP,Sent,Received,Loss,Latency,Speed,DC\\n"' \
+    '  while IFS= read -r ip; do' \
+    '    case "$ip" in' \
+    '      203.0.113.9) printf "%s,1,1,0.00,100.00,9.99,NRT\\n" "$ip" ;;' \
+    '      203.0.113.10) printf "%s,1,1,0.00,100.00,10.00,NRT\\n" "$ip" ;;' \
+    '      203.0.113.11) printf "%s,1,1,0.00,100.00,11.00,NRT\\n" "$ip" ;;' \
+    '      203.0.113.12) printf "%s,1,1,0.00,100.00,1.99,HKG\\n" "$ip" ;;' \
+    '      203.0.113.20) printf "%s,1,1,0.00,100.00,0.10,FRA\\n" "$ip" ;;' \
+    '    esac' \
+    '  done < "$input"' \
+    '} > "$out"' > "$stub_cfst"
+  chmod +x "$stub_cfst"
+
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'url="${!#}"' \
+    'out=""' \
+    'while (($#)); do' \
+    '  if [[ "$1" == "-o" ]]; then out="$2"; shift 2; else shift; fi' \
+    'done' \
+    'if [[ "$url" == file://* ]]; then' \
+    '  cp "${url#file://}" "$out"' \
+    'else' \
+    '  printf "IP,Port,DataCenter,City\\n203.0.113.9,443,,JP [BJ#01 previous]\\n" > "$out"' \
+    'fi' > "$stub_curl"
+  chmod +x "$stub_curl"
+
+  PATH="$tmp_dir:$PATH" \
+  FORCE=1 \
+  SKIP_UPLOAD=1 \
+  ENABLE_CFBESTIP=0 \
+  ENABLE_VPS789_CT=0 \
+  DOWNLOAD_URL="file://$zip_path" \
+  WORK_DIR="$tmp_dir/work" \
+  CFST_PATH="$stub_cfst" \
+  PORTS=443 \
+  COUNTRIES_CSV=JP,HK,DE \
+  FOCUS_COUNTRIES_CSV=JP,HK \
+  COUNTRY_MIN_SPEED_MB_PER_SEC='JP=10,HK=2' \
+  TCP_PRECHECK_ENABLED=0 \
+  IPZIP_SAMPLE_ENABLED=0 \
+  MIN_SPEED_MBPS=0 \
+  bash "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" >"$stdout_path" 2>"$stderr_path"
+
+  grep -q '^203\.0\.113\.10,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "JP boundary row must survive"
+  grep -q '^203\.0\.113\.11,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "JP above-floor row must survive"
+  ! grep -q '^203\.0\.113\.9,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "JP below-floor row survived"
+  ! grep -q ',HK \[' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "HK should produce zero rows"
+  grep -q '^203\.0\.113\.20,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "DE should retain global behavior"
+  grep -q 'Country speed floor JP >= 10 MB/s: evaluated=3 removed=1 passed=2.' "$tmp_dir/work/auto-push.log" || fail "missing JP floor stats"
 }
 
 test_linux_runner_samples_large_country_files() {
@@ -119,6 +221,7 @@ test_linux_runner_samples_large_country_files() {
   PORTS=443 \
   COUNTRIES_CSV=DE \
   FOCUS_COUNTRIES_CSV=DE \
+  COUNTRY_MIN_SPEED_MB_PER_SEC='' \
   IPZIP_SAMPLE_PERCENT=10 \
   IPZIP_COUNTRY_MIN_CANDIDATES=5 \
   IPZIP_COUNTRY_MAX_CANDIDATES=12 \
@@ -155,6 +258,7 @@ test_linux_runner_applies_country_sample_multipliers() {
   PORTS=443 \
   COUNTRIES_CSV=KR,US \
   FOCUS_COUNTRIES_CSV=KR,US \
+  COUNTRY_MIN_SPEED_MB_PER_SEC='' \
   IPZIP_SAMPLE_PERCENT=20 \
   IPZIP_COUNTRY_MIN_CANDIDATES=0 \
   IPZIP_COUNTRY_MAX_CANDIDATES=100 \
@@ -190,6 +294,7 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
   PORTS=443 \
   COUNTRIES_CSV=HK,DE \
   FOCUS_COUNTRIES_CSV=DE \
+  COUNTRY_MIN_SPEED_MB_PER_SEC='' \
   bash "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" >"$stdout_path" 2>"$stderr_path"
 
   grep -q '^198\.18\.1\.1$' "$tmp_dir/work/selected-ip-443-all.txt" || fail "all scope should keep non-focus HK"
@@ -254,6 +359,7 @@ SH
   PORTS=443 \
   COUNTRIES_CSV=HK,DE,GB \
   FOCUS_COUNTRIES_CSV=DE,GB \
+  COUNTRY_MIN_SPEED_MB_PER_SEC='' \
   MAX_PARALLEL_CFST=1 \
   CFST_THREADS=1 \
   CFST_LATENCY_TEST_COUNT=1 \
@@ -274,12 +380,12 @@ SH
 test_runner_defaults_include_europe_focus_countries() {
   grep -q 'COUNTRIES_CSV="${COUNTRIES_CSV:-HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux runner default Countries should include DE/GB/NL/IT"
-  grep -q 'FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux runner default FocusCountries should include SG/HK/JP/KR/DE/GB"
+  grep -q 'FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,US,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner default FocusCountries should include SG/HK/JP/KR/US/DE/GB"
   grep -q '\[string\[\]\]\$Countries = @("HK", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US", "DE", "GB", "NL", "IT")' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner default Countries should include DE/GB/NL/IT"
-  grep -q '\[string\]\$FocusCountries = "SG,HK,JP,KR,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows runner default FocusCountries should include SG/HK/JP/KR/DE/GB"
+  grep -q '\[string\]\$FocusCountries = "SG,HK,JP,KR,US,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner default FocusCountries should include SG/HK/JP/KR/US/DE/GB"
   grep -q 'IPZIP_COUNTRY_SAMPLE_MULTIPLIERS="${IPZIP_COUNTRY_SAMPLE_MULTIPLIERS:-KR=2,US=0.5}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux runner should default to KR and US country sampling multipliers"
   grep -q '\[string\]\$IpZipCountrySampleMultipliers = "KR=2,US=0.5"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
@@ -757,6 +863,8 @@ test_mainland_direct_covers_domestic_ai_model_providers() {
 
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
+test_linux_country_speed_floor_defaults_and_parser
+test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention
 test_linux_runner_samples_large_country_files
 test_linux_runner_applies_country_sample_multipliers
 test_linux_runner_excludes_focus_countries_from_all_scope
