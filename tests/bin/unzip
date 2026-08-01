@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+import pathlib
+import sys
+import zipfile
+
+
+def main() -> int:
+    args = [arg for arg in sys.argv[1:] if arg != "-oq"]
+    if "-d" not in args:
+        return 2
+    destination_index = args.index("-d")
+    archive_path = pathlib.Path(args[destination_index - 1])
+    destination_path = pathlib.Path(args[destination_index + 1])
+    with zipfile.ZipFile(archive_path) as archive:
+        archive.extractall(destination_path)
+    return 0
+
+
+raise SystemExit(main())

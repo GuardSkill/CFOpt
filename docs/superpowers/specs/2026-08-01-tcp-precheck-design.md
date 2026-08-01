@@ -51,4 +51,4 @@ The group cap protects geographic/source diversity. A connected candidate is ord
 
 ## Expected Performance
 
-For a work item with 360 new candidates, 80 retained new candidates, and a small prior-node set, CFST download work drops by about 78%. The precheck adds roughly 1--4 seconds for healthy/failed TCP connections at 128-way concurrency, so work items dominated by CFST download testing should typically complete in 30--45% of their previous time. Items with 120 or fewer candidates do not change.
+For a work item with one region/source group containing 360 new candidates, 80 retained new candidates, and a small prior-node set, the CFST latency/loss candidate workload drops by about 78%. CFST download work does not fall by the same ratio because `-dn` fixes the number of finalists downloaded. The precheck adds roughly 1--4 seconds at 128-way concurrency; total runtime improvement therefore depends on how much of a run is spent in the all-candidate latency phase. Items with 120 or fewer candidates do not change.
