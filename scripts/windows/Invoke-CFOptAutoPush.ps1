@@ -30,7 +30,8 @@ param(
     [int]$TcpPrecheckThreads = 128,
     [int]$TcpPrecheckMaxCandidates = 30,
     [switch]$UseProxyForCfst,
-    [string]$FocusCountries = "SG,HK,JP,KR,DE,GB",
+    [string]$CountryMinSpeedMBPerSec = "JP=10,US=5,KR=3,HK=2",
+    [string]$FocusCountries = "SG,HK,JP,KR,US,DE,GB",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
     [int]$CfBestIpPerCountryLimit = 400,
@@ -282,6 +283,51 @@ function Convert-ToNumber {
     }
 
     return $null
+}
+
+function ConvertFrom-CountryMinSpeedMap {
+    param(
+        [string]$Value,
+        [string[]]$AllowedCountries
+    )
+
+    $floors = [System.Collections.Generic.Dictionary[string, double]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $floors
+    }
+
+    $allowed = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($country in $AllowedCountries) {
+        $countryCode = $country.Trim().ToUpperInvariant()
+        if (-not [string]::IsNullOrWhiteSpace($countryCode)) {
+            [void]$allowed.Add($countryCode)
+        }
+    }
+
+    foreach ($rawPair in $Value.Split(',')) {
+        $pair = $rawPair.Trim()
+        $parts = $pair -split '=', 3
+        if ([string]::IsNullOrWhiteSpace($pair) -or $parts.Count -ne 2) {
+            throw "Invalid country speed floor entry: $rawPair"
+        }
+
+        $countryCode = $parts[0].Trim().ToUpperInvariant()
+        $speedText = $parts[1].Trim()
+        if ($countryCode -notmatch '^[A-Z]{2}$' -or -not $allowed.Contains($countryCode)) {
+            throw "Invalid country speed floor country: $countryCode"
+        }
+
+        $speed = 0.0
+        if (-not [double]::TryParse($speedText, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$speed) -or [double]::IsNaN($speed) -or [double]::IsInfinity($speed) -or $speed -lt 0) {
+            throw "Invalid country speed floor value: $speedText"
+        }
+        if ($floors.ContainsKey($countryCode)) {
+            throw "Duplicate country speed floor: $countryCode"
+        }
+        $floors.Add($countryCode, $speed)
+    }
+
+    return $floors
 }
 
 function Get-CityKeyFromRemark {
@@ -979,6 +1025,14 @@ function Write-MergedFilteredCsv {
 
     $candidateRows = New-Object System.Collections.Generic.List[object]
     $removed = 0
+    $countrySpeedStats = @{}
+    foreach ($countryCode in $countryMinSpeedByCode.Keys) {
+        $countrySpeedStats[$countryCode] = [pscustomobject]@{
+            Evaluated = 0
+            Removed = 0
+            Passed = 0
+        }
+    }
 
     foreach ($item in $WorkItems) {
         if (-not (Test-Path -LiteralPath $item.CsvPath)) {
@@ -1062,6 +1116,15 @@ function Write-MergedFilteredCsv {
                     $city = "CT"
                 }
             }
+            if ($countryMinSpeedByCode.ContainsKey($city)) {
+                $countrySpeedStats[$city].Evaluated++
+                if ($speed -lt $countryMinSpeedByCode[$city]) {
+                    $countrySpeedStats[$city].Removed++
+                    $removed++
+                    continue
+                }
+                $countrySpeedStats[$city].Passed++
+            }
             $source = if ($sourceByIp.ContainsKey($ip)) { $sourceByIp[$ip] } else { "unknown" }
 
             $speedMbps = $speedMbps.ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture)
@@ -1085,6 +1148,12 @@ function Write-MergedFilteredCsv {
                 Source = $source
             })
         }
+    }
+
+    foreach ($countryCode in @($countryMinSpeedByCode.Keys | Sort-Object)) {
+        $floor = $countryMinSpeedByCode[$countryCode].ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)
+        $stats = $countrySpeedStats[$countryCode]
+        Write-Log "Country speed floor $countryCode >= $floor MB/s: evaluated=$($stats.Evaluated) removed=$($stats.Removed) passed=$($stats.Passed)."
     }
 
     $dedupRows = @(
@@ -1253,6 +1322,10 @@ function New-ProxyipBestFile {
     }
     Write-Log "Generated proxyip best list: $proxyipBestPath"
 }
+
+$countryMinSpeedByCode = ConvertFrom-CountryMinSpeedMap `
+    -Value $CountryMinSpeedMBPerSec `
+    -AllowedCountries $Countries
 
 if ($env:CFOPT_SOURCE_ONLY -ne "1") {
 try {

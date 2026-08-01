@@ -28,6 +28,25 @@ try {
 
     $env:CFOPT_SOURCE_ONLY = "1"
     . $runnerPath
+    if ($FocusCountries -ne "SG,HK,JP,KR,US,DE,GB") {
+        throw "US must have a dedicated default focus scope."
+    }
+    $floors = ConvertFrom-CountryMinSpeedMap -Value $CountryMinSpeedMBPerSec -AllowedCountries $Countries
+    if ($floors.Count -ne 4 -or $floors["JP"] -ne 10 -or $floors["US"] -ne 5 -or $floors["KR"] -ne 3 -or $floors["HK"] -ne 2) {
+        throw "Unexpected default country speed floors."
+    }
+    if ((ConvertFrom-CountryMinSpeedMap -Value "" -AllowedCountries $Countries).Count -ne 0) {
+        throw "An empty country speed floor map must disable the feature."
+    }
+    foreach ($bad in @("JP", "JP=x", "JP=-1", "JP=1,JP=2", "ZZ=1")) {
+        try {
+            ConvertFrom-CountryMinSpeedMap -Value $bad -AllowedCountries $Countries | Out-Null
+            throw "Invalid map was accepted: $bad"
+        }
+        catch {
+            if ($_.Exception.Message -eq "Invalid map was accepted: $bad") { throw }
+        }
+    }
     $candidateProfile = @($IpZipSamplePercent, $IpZipCountryMinCandidates, $IpZipCountryMaxCandidates, $CfBestIpPerCountryLimit, $Vps789CtLimit, $TcpPrecheckMaxCandidates) -join ","
     if ($candidateProfile -ne "40,40,320,400,100,30") {
         throw "Expected expanded candidate defaults 40,40,320,400,100,30; got $candidateProfile."
@@ -98,6 +117,42 @@ try {
     }
     if (-not ((Get-Content -LiteralPath $logPath -Raw) -match "Skipping empty TCP precheck work item")) {
         throw "Skipped empty TCP precheck work item was not logged."
+    }
+
+    $mergeMapPath = Join-Path $tempDir "merge-map.csv"
+    $mergeCfstPath = Join-Path $tempDir "merge-cfst.csv"
+    $script:csvPath = Join-Path $tempDir "merged.csv"
+    [System.IO.File]::WriteAllLines($mergeMapPath, @(
+        "203.0.113.9,JP,previous",
+        "203.0.113.10,JP,ip.zip",
+        "203.0.113.11,JP,ip.zip",
+        "203.0.113.12,HK,ip.zip",
+        "203.0.113.20,DE,ip.zip"
+    ), [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllLines($mergeCfstPath, @(
+        "IP,Sent,Received,Loss,Latency,Speed,DataCenter",
+        "203.0.113.9,4,4,0,10,9.99,SFO",
+        "203.0.113.10,4,4,0,10,10.00,SFO",
+        "203.0.113.11,4,4,0,10,11.00,SFO",
+        "203.0.113.12,4,4,0,10,1.99,SFO",
+        "203.0.113.20,4,4,0,10,0.01,SFO"
+    ), [System.Text.Encoding]::ASCII)
+    $script:MinSpeedMbps = 0
+    $previousNodeKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    [void]$previousNodeKeys.Add("203.0.113.9|443|JP")
+    Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath = $mergeMapPath; CsvPath = $mergeCfstPath; Port = 443 }) -PreviousNodeKeys $previousNodeKeys
+
+    $output = Import-Csv -LiteralPath $script:csvPath
+    $ipHeaderName = "IP" + [string]([char]0x5730) + [string]([char]0x5740)
+    $cityHeaderName = [string]([char]0x57CE) + [string]([char]0x5E02)
+    if ($output.$ipHeaderName -contains '203.0.113.9') { throw 'Previous JP row below 10 MB/s bypassed its floor.' }
+    if ($output.$ipHeaderName -notcontains '203.0.113.10') { throw 'JP row exactly at 10 MB/s was removed.' }
+    if ($output.$ipHeaderName -notcontains '203.0.113.11') { throw 'JP row above 10 MB/s was removed.' }
+    if ($output | Where-Object { $_.$cityHeaderName -like 'HK *' }) { throw 'HK must be allowed to produce zero rows.' }
+    if ($output.$ipHeaderName -notcontains '203.0.113.20') { throw 'Unconfigured DE row must retain global-floor behavior.' }
+    $mergeLog = Get-Content -LiteralPath $logPath -Raw
+    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 removed=1 passed=0\.') {
+        throw 'Country speed floor summaries were not logged.'
     }
 
     $equalDuration = foreach ($index in 1..31) {
