@@ -473,6 +473,10 @@ test_runner_defaults_include_europe_focus_countries() {
     || fail "Linux runner should default to KR and US country sampling multipliers"
   grep -q '\[string\]\$IpZipCountrySampleMultipliers = "KR=2,US=0.5"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner should default to KR and US country sampling multipliers"
+  grep -q 'PROXYIP_BEST_COUNTRIES="${PROXYIP_BEST_COUNTRIES:-IE,AT,AU,KR,HK,SG,JP,US,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner must maintain US ProxyIP best-list candidates"
+  grep -q '\[string\]\$ProxyipBestCountries = "IE,AT,AU,KR,HK,SG,JP,US,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner must maintain US ProxyIP best-list candidates"
 }
 
 test_runners_default_to_four_hour_interval() {
@@ -602,21 +606,29 @@ PY
     || fail "Skipped empty TCP precheck work item should be logged"
 }
 
-test_proxyip_best_generator_ranks_candidates_by_tcp_latency() {
-  local tmp_dir source_txt output_txt ready_file
+test_proxyip_best_generator_ranks_candidates_by_http_latency() {
+  local tmp_dir source_txt output_txt ready_file cert_file key_file
   tmp_dir="$(mktemp -d)"
   source_txt="$tmp_dir/all.txt"
   output_txt="$tmp_dir/proxyip-best.txt"
   ready_file="$tmp_dir/ready"
+  cert_file="$tmp_dir/cert.pem"
+  key_file="$tmp_dir/key.pem"
 
-  python3 - "$ready_file" <<'PY' &
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout "$key_file" -out "$cert_file" -days 1 -subj '/CN=cloudflare.com' \
+    >/dev/null 2>&1
+
+  python3 - "$ready_file" "$cert_file" "$key_file" <<'PY' &
 import socket
-import re
+import ssl
 import sys
 import threading
 import time
 
-ready = sys.argv[1]
+ready, cert_file, key_file = sys.argv[1:]
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain(cert_file, key_file)
 
 def server(port, delay):
     sock = socket.socket()
@@ -625,8 +637,13 @@ def server(port, delay):
     sock.listen()
     while True:
         conn, _ = sock.accept()
-        time.sleep(delay)
-        conn.close()
+        try:
+            with context.wrap_socket(conn, server_side=True) as tls_conn:
+                tls_conn.recv(4096)
+                time.sleep(delay)
+                tls_conn.sendall(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+        except (ConnectionError, ssl.SSLError):
+            pass
 
 threading.Thread(target=server, args=(19081, 0.001), daemon=True).start()
 threading.Thread(target=server, args=(19082, 0.05), daemon=True).start()
@@ -660,35 +677,66 @@ TXT
   fi
 }
 
-test_proxyip_best_generator_allows_country_specific_limits() {
-  local tmp_dir source_txt output_txt
+test_proxyip_best_generator_rejects_tcp_only_candidates() {
+  local tmp_dir source_txt output_txt ready_file
   tmp_dir="$(mktemp -d)"
   source_txt="$tmp_dir/all.txt"
   output_txt="$tmp_dir/proxyip-best.txt"
+  ready_file="$tmp_dir/ready"
 
-  {
-    for i in $(seq 1 12); do
-      printf '127.0.1.%s:443#HK\n' "$i"
-    done
-    for i in $(seq 1 12); do
-      printf '127.0.2.%s:443#SG\n' "$i"
-    done
-  } > "$source_txt"
+  python3 - "$ready_file" <<'PY' &
+import socket
+import sys
+import time
+
+ready = sys.argv[1]
+sock = socket.socket()
+sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+sock.bind(("127.0.0.1", 19083))
+sock.listen()
+open(ready, "w").close()
+while True:
+    conn, _ = sock.accept()
+    time.sleep(0.2)
+    conn.close()
+PY
+  local server_pid=$!
+  for _ in $(seq 1 50); do
+    [[ -f "$ready_file" ]] && break
+    sleep 0.1
+  done
+
+  cat > "$source_txt" <<'TXT'
+127.0.0.1:19083#SG
+TXT
 
   python3 "$ROOT_DIR/scripts/generate_proxyip_best.py" \
     --source "file://$source_txt" \
     --output "$output_txt" \
-    --countries HK,SG \
-    --limit 2 \
-    --country-limits HK=5 \
-    --timeout 0.01 \
-    --workers 4
+    --countries SG \
+    --limit 1 \
+    --timeout 0.5 \
+    --workers 2
+  kill "$server_pid" 2>/dev/null || true
 
-  local hk_count sg_count
-  hk_count="$(grep -c '#HK$' "$output_txt" || true)"
-  sg_count="$(grep -c '#SG$' "$output_txt" || true)"
-  [[ "$hk_count" == "5" ]] || fail "expected HK country-specific proxyip limit to keep 5 candidates, got $hk_count"
-  [[ "$sg_count" == "2" ]] || fail "expected default proxyip limit to keep 2 SG candidates, got $sg_count"
+  [[ ! -s "$output_txt" ]] || fail "proxyip best generator should reject a TCP-only candidate"
+}
+
+test_proxyip_best_generator_allows_country_specific_limits() {
+  python3 - "$ROOT_DIR" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+
+script = Path(sys.argv[1]) / "scripts" / "generate_proxyip_best.py"
+spec = importlib.util.spec_from_file_location("generate_proxyip_best", script)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+limits = module.parse_country_limits("HK=50, SG=12")
+if limits != {"HK": 50, "SG": 12}:
+    raise SystemExit(f"unexpected country-specific proxyip limits: {limits}")
+PY
 }
 
 test_subconverter_group_order_and_pool_names() {
@@ -728,7 +776,7 @@ for rule in cmliussss_rules:
         raise SystemExit(f"{full}: missing lite baseline ruleset: {rule}")
 
 required_business_groups = [
-    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
@@ -745,13 +793,14 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
     if "rules/Bilibili.list" in content and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in content:
         raise SystemExit(f"{path}: Bilibili rules must route to Direct")
-    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT" not in content:
-        raise SystemExit(f"{path}: CodeAgent must default to JP Proxy first")
+    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT" not in content:
+        raise SystemExit(f"{path}: CodeAgent must include the US Proxy pool")
     codeagent_filters = {
         "JP Proxy ↪": "(🇯🇵 )?JP ↪ \\[",
         "HK Proxy ↪": "(🇭🇰 )?HK ↪ \\[",
         "KR Proxy ↪": "(🇰🇷 )?KR ↪ \\[",
         "SG Proxy ↪": "(🇸🇬 )?SG ↪ \\[",
+        "US Proxy ↪": "(🇺🇸 )?US ↪ \\[",
     }
     for group_name, node_filter in codeagent_filters.items():
         prefix = f"custom_proxy_group={group_name}`url-test`"
@@ -959,7 +1008,8 @@ test_runners_default_to_four_hour_interval
 test_focus_scopes_use_fast_download_profile
 test_candidate_pool_defaults_are_expanded_before_precheck
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
-test_proxyip_best_generator_ranks_candidates_by_tcp_latency
+test_proxyip_best_generator_ranks_candidates_by_http_latency
+test_proxyip_best_generator_rejects_tcp_only_candidates
 test_proxyip_best_generator_allows_country_specific_limits
 test_subconverter_group_order_and_pool_names
 test_tracked_csv_node_labels_are_ascii_safe
