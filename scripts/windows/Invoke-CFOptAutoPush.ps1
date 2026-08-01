@@ -318,7 +318,7 @@ function ConvertFrom-CountryMinSpeedMap {
         }
 
         $speed = 0.0
-        if (-not [double]::TryParse($speedText, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$speed) -or [double]::IsNaN($speed) -or [double]::IsInfinity($speed) -or $speed -lt 0) {
+        if ($speedText -notmatch '^(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)$' -or -not [double]::TryParse($speedText, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$speed) -or [double]::IsNaN($speed) -or [double]::IsInfinity($speed)) {
             throw "Invalid country speed floor value: $speedText"
         }
         if ($floors.ContainsKey($countryCode)) {

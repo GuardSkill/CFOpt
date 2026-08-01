@@ -813,10 +813,10 @@ build_combined_candidates() {
 }
 
 filter_csv() {
-  local tmp_csv="$CSV_PATH.filtered"
+  local tmp_csv="$CSV_PATH.filtered" filter_status=0
   rm -f "$COUNTRY_SPEED_STATS_PATH"
   [[ -s "$PREVIOUS_NODE_KEYS_PATH" ]] || printf '__none__\n' > "$PREVIOUS_NODE_KEYS_PATH"
-  if ! awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
+  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
     BEGIN {
       floor_count = split(country_speed_floors, floor_entries, ",")
       for (i = 1; i <= floor_count; i++) {
@@ -949,7 +949,15 @@ filter_csv() {
       if (code == "VN") return "🇻🇳"
       return ""
     }
-  ' "$PREVIOUS_NODE_KEYS_PATH" "$COMBINED_CANDIDATES_PATH" > "$tmp_csv"; then
+  ' "$PREVIOUS_NODE_KEYS_PATH" "$COMBINED_CANDIDATES_PATH" > "$tmp_csv" || filter_status=$?
+  if [[ -f "$COUNTRY_SPEED_STATS_PATH" ]]; then
+    local country floor evaluated removed passed
+    while IFS=',' read -r country floor evaluated removed passed; do
+      [[ -n "$country" ]] || continue
+      log "Country speed floor $country >= $floor MB/s: evaluated=$evaluated removed=$removed passed=$passed."
+    done < "$COUNTRY_SPEED_STATS_PATH"
+  fi
+  if ((filter_status != 0)); then
     log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
     rm -f "$tmp_csv"
     return 1
@@ -958,13 +966,6 @@ filter_csv() {
     log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
     rm -f "$tmp_csv"
     return 1
-  fi
-  if [[ -f "$COUNTRY_SPEED_STATS_PATH" ]]; then
-    local country floor evaluated removed passed
-    while IFS=',' read -r country floor evaluated removed passed; do
-      [[ -n "$country" ]] || continue
-      log "Country speed floor $country >= $floor MB/s: evaluated=$evaluated removed=$removed passed=$passed."
-    done < "$COUNTRY_SPEED_STATS_PATH"
   fi
   mv "$tmp_csv" "$CSV_PATH"
   local kept

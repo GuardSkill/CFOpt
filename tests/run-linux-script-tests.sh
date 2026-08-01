@@ -107,18 +107,20 @@ test_linux_country_speed_floor_defaults_and_parser() {
     [[ "$(normalize_country_min_speed_map 'jp=10, US=5' 'HK,JP,US')" == "JP=10,US=5" ]] || fail "country floor normalization failed"
     [[ -z "$(normalize_country_min_speed_map '' 'HK,JP,US')" ]] || fail "empty map must disable floors"
 
-    local invalid_value
-    for invalid_value in JP JP=x JP=-1 JP=1,JP=2 ZZ=1; do
+    local valid_case valid_input expected_value parsed_value
+    for valid_case in 'JP=0|0' 'JP=10|10' 'JP=10.5|10.5' 'JP=.5|.5'; do
+      IFS='|' read -r valid_input expected_value <<< "$valid_case"
+      parsed_value="$(normalize_country_min_speed_map "$valid_input" 'HK,JP,US')"
+      [[ "$parsed_value" == "JP=$expected_value" ]] || fail "valid country floor was not parsed correctly: $valid_input"
+    done
+
+    local invalid_value overflow_speed
+    overflow_speed="$(printf '9%.0s' {1..401})"
+    for invalid_value in JP JP=x JP=-1 JP=1,JP=2 ZZ=1 JP=1e3 JP=1. JP=+1 JP=NaN JP=Infinity "JP=$overflow_speed"; do
       if normalize_country_min_speed_map "$invalid_value" 'HK,JP,US'; then
         fail "invalid country floor map was accepted: $invalid_value"
       fi
     done
-
-    local overflow_speed
-    overflow_speed="$(printf '9%.0s' {1..401})"
-    if normalize_country_min_speed_map "JP=$overflow_speed" 'HK,JP,US'; then
-      fail "overflow country floor value was accepted"
-    fi
   )
 
   local chinese_readme english_readme required_text
@@ -215,6 +217,34 @@ test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retentio
   ! grep -q ',HK \[' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "HK should produce zero rows"
   grep -q '^203\.0\.113\.20,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "DE should retain global behavior"
   grep -q 'Country speed floor JP >= 10 MB/s: evaluated=3 removed=1 passed=2.' "$tmp_dir/work/auto-push.log" || fail "missing JP floor stats"
+}
+
+test_linux_country_speed_floor_stats_are_logged_when_all_rows_are_filtered() {
+  local tmp_dir
+  tmp_dir="$(mktemp -d)"
+
+  (
+    CFOPT_SOURCE_ONLY=1
+    WORK_DIR="$tmp_dir/work"
+    COUNTRIES_CSV=JP,US,KR,HK
+    COUNTRY_MIN_SPEED_MB_PER_SEC='JP=10,US=5,KR=3,HK=2'
+    source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+
+    mkdir -p "$WORK_DIR"
+    printf '443,JP,ip.zip,203.0.113.9,1,1,0.00,100.00,9.99,NRT\n' > "$COMBINED_CANDIDATES_PATH"
+    if filter_csv; then
+      fail "all-filtered country floor fixture must fail"
+    fi
+
+    local expected_summary
+    for expected_summary in \
+      'Country speed floor JP >= 10 MB/s: evaluated=1 removed=1 passed=0.' \
+      'Country speed floor US >= 5 MB/s: evaluated=0 removed=0 passed=0.' \
+      'Country speed floor KR >= 3 MB/s: evaluated=0 removed=0 passed=0.' \
+      'Country speed floor HK >= 2 MB/s: evaluated=0 removed=0 passed=0.'; do
+      grep -Fq "$expected_summary" "$LOG_FILE" || fail "missing all-filtered floor summary: $expected_summary"
+    done
+  )
 }
 
 test_linux_runner_samples_large_country_files() {
@@ -884,6 +914,7 @@ test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_linux_country_speed_floor_defaults_and_parser
 test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention
+test_linux_country_speed_floor_stats_are_logged_when_all_rows_are_filtered
 test_linux_runner_samples_large_country_files
 test_linux_runner_applies_country_sample_multipliers
 test_linux_runner_excludes_focus_countries_from_all_scope

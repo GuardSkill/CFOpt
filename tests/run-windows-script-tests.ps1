@@ -38,7 +38,33 @@ try {
     if ((ConvertFrom-CountryMinSpeedMap -Value "" -AllowedCountries $Countries).Count -ne 0) {
         throw "An empty country speed floor map must disable the feature."
     }
-    foreach ($bad in @("JP", "JP=x", "JP=-1", "JP=1,JP=2", "ZZ=1")) {
+    $validCountryFloors = @(
+        @{ Value = "JP=0"; Expected = 0.0 },
+        @{ Value = "JP=10"; Expected = 10.0 },
+        @{ Value = "JP=10.5"; Expected = 10.5 },
+        @{ Value = "JP=.5"; Expected = 0.5 }
+    )
+    foreach ($case in $validCountryFloors) {
+        $parsed = ConvertFrom-CountryMinSpeedMap -Value $case.Value -AllowedCountries $Countries
+        if ($parsed["JP"] -ne $case.Expected) {
+            throw "Valid country floor was not parsed correctly: $($case.Value)"
+        }
+    }
+    $overflowSpeed = "9" * 401
+    $invalidCountryFloors = @(
+        "JP",
+        "JP=x",
+        "JP=-1",
+        "JP=1,JP=2",
+        "ZZ=1",
+        "JP=1e3",
+        "JP=1.",
+        "JP=+1",
+        "JP=NaN",
+        "JP=Infinity",
+        "JP=$overflowSpeed"
+    )
+    foreach ($bad in $invalidCountryFloors) {
         try {
             ConvertFrom-CountryMinSpeedMap -Value $bad -AllowedCountries $Countries | Out-Null
             throw "Invalid map was accepted: $bad"
