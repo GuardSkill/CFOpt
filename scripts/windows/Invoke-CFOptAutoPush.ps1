@@ -54,7 +54,7 @@ param(
     [switch]$DisableProxyipBest,
     [string]$ProxyipBestSource = "https://zip.cm.edu.kg/all.txt",
     [string]$ProxyipBestTargetPath = "proxyip-best.txt",
-    [string]$ProxyipBestCountries = "IE,AT,AU,KR,HK,SG,JP,DE,GB",
+    [string]$ProxyipBestCountries = "IE,AT,AU,KR,HK,SG,JP,US,DE,GB",
     [int]$ProxyipBestLimit = 10,
     [string]$ProxyipBestCountryLimits = "HK=50",
     [double]$ProxyipBestTimeout = 0.75,

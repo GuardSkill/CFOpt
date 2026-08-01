@@ -284,6 +284,10 @@ test_runner_defaults_include_europe_focus_countries() {
     || fail "Linux runner should default to KR and US country sampling multipliers"
   grep -q '\[string\]\$IpZipCountrySampleMultipliers = "KR=2,US=0.5"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner should default to KR and US country sampling multipliers"
+  grep -q 'PROXYIP_BEST_COUNTRIES="${PROXYIP_BEST_COUNTRIES:-IE,AT,AU,KR,HK,SG,JP,US,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner must maintain US ProxyIP best-list candidates"
+  grep -q '\[string\]\$ProxyipBestCountries = "IE,AT,AU,KR,HK,SG,JP,US,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner must maintain US ProxyIP best-list candidates"
 }
 
 test_runners_default_to_four_hour_interval() {
