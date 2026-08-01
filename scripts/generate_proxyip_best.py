@@ -2,6 +2,7 @@
 import argparse
 import concurrent.futures
 import socket
+import ssl
 import time
 import urllib.request
 from pathlib import Path
@@ -55,26 +56,36 @@ def split_host_port(address):
     return value, default_port
 
 
-def probe_one(address, timeout):
+def probe_one(address, timeout, probe_host):
     host, port = split_host_port(address)
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
     started = time.perf_counter()
     try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return time.perf_counter() - started, address
-    except OSError:
-        return float("inf"), address
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        with socket.create_connection((host, port), timeout=timeout) as connection:
+            connection.settimeout(timeout)
+            with context.wrap_socket(connection, server_hostname=probe_host) as tls_connection:
+                request = f"HEAD / HTTP/1.1\r\nHost: {probe_host}\r\nConnection: close\r\n\r\n"
+                tls_connection.sendall(request.encode("ascii"))
+                response = tls_connection.recv(16)
+                if response.startswith(b"HTTP/"):
+                    return time.perf_counter() - started, address
+    except (OSError, ssl.SSLError):
+        pass
+    return float("inf"), address
 
 
-def rank_pool(addresses, limit, timeout, workers):
+def rank_pool(addresses, limit, timeout, workers, probe_host):
     if not addresses:
         return []
     worker_count = max(1, min(workers, len(addresses)))
     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
-        results = list(executor.map(lambda item: probe_one(item, timeout), addresses))
+        results = list(executor.map(lambda item: probe_one(item, timeout, probe_host), addresses))
     reachable = [item for item in results if item[0] != float("inf")]
-    ranked = sorted(reachable or results, key=lambda item: (item[0], addresses.index(item[1])))
+    ranked = sorted(reachable, key=lambda item: (item[0], addresses.index(item[1])))
     return [address for _latency, address in ranked[:limit]]
 
 
@@ -109,6 +120,7 @@ def main():
     parser.add_argument("--country-limits", default="", help="Comma-separated COUNTRY=LIMIT overrides, for example HK=50.")
     parser.add_argument("--timeout", type=float, default=0.75)
     parser.add_argument("--workers", type=int, default=64)
+    parser.add_argument("--probe-host", default="cloudflare.com", help="SNI and Host header used to validate ProxyIP traffic.")
     args = parser.parse_args()
 
     countries = [item.strip().upper() for item in args.countries.split(",") if item.strip()]
@@ -117,7 +129,7 @@ def main():
     lines = []
     for country in countries:
         country_limit = country_limits.get(country, args.limit)
-        ranked = rank_pool(pools.get(country, []), max(1, country_limit), args.timeout, args.workers)
+        ranked = rank_pool(pools.get(country, []), max(1, country_limit), args.timeout, args.workers, args.probe_host)
         for address in ranked:
             lines.append(f"{address}#{country}")
 
