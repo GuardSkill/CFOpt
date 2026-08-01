@@ -113,6 +113,12 @@ test_linux_country_speed_floor_defaults_and_parser() {
         fail "invalid country floor map was accepted: $invalid_value"
       fi
     done
+
+    local overflow_speed
+    overflow_speed="$(printf '9%.0s' {1..401})"
+    if normalize_country_min_speed_map "JP=$overflow_speed" 'HK,JP,US'; then
+      fail "overflow country floor value was accepted"
+    fi
   )
 }
 

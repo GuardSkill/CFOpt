@@ -118,6 +118,7 @@ normalize_country_min_speed_map() {
         speed = trim(fields[2])
         if (country !~ /^[A-Z][A-Z]$/ || !(country in allowed)) exit 1
         if (speed !~ /^([0-9]+(\.[0-9]+)?|\.[0-9]+)$/) exit 1
+        if ((speed + 0) > 1.7976931348623157e308) exit 1
         if (country in seen) exit 1
 
         seen[country] = 1
