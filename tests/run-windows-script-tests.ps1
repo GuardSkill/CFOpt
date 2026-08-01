@@ -32,6 +32,11 @@ try {
     if ($profile -ne "2,10,4,10,4") {
         throw "Expected fast CFST defaults 2,10,4,10,4; got $profile."
     }
+    $allArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "all"; Port = 443; SelectedIpPath = "all.txt"; CsvPath = "all.csv" })) -join " "
+    $focusArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "focus-DE"; Port = 443; SelectedIpPath = "focus.txt"; CsvPath = "focus.csv" })) -join " "
+    if ($allArgs -notmatch '(?:^| )-t 2 -dn 10 -dt 4(?: |$)' -or $focusArgs -notmatch '(?:^| )-t 2 -dn 10 -dt 4(?: |$)') {
+        throw "Windows all and focus scopes must build the fast CFST argument profile."
+    }
     if ((Get-PositiveTcpPrecheckValue -Value 0 -Fallback 1) -ne 1 -or (Get-PositiveTcpPrecheckValue -Value 32 -Fallback 1) -ne 32) {
         throw "TCP precheck values must be normalized to positive integers."
     }
