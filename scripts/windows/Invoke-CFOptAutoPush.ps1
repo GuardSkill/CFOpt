@@ -28,19 +28,19 @@ param(
     [int]$TcpPrecheckMinCandidates = 120,
     [int]$TcpPrecheckTimeoutMs = 800,
     [int]$TcpPrecheckThreads = 128,
-    [int]$TcpPrecheckMaxCandidates = 80,
+    [int]$TcpPrecheckMaxCandidates = 30,
     [switch]$UseProxyForCfst,
     [string]$FocusCountries = "SG,HK,JP,KR,DE,GB",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
-    [int]$CfBestIpPerCountryLimit = 200,
+    [int]$CfBestIpPerCountryLimit = 400,
     [bool]$IpZipSampleEnabled = $true,
-    [int]$IpZipSamplePercent = 20,
-    [int]$IpZipCountryMinCandidates = 20,
-    [int]$IpZipCountryMaxCandidates = 160,
+    [int]$IpZipSamplePercent = 40,
+    [int]$IpZipCountryMinCandidates = 40,
+    [int]$IpZipCountryMaxCandidates = 320,
     [string]$IpZipCountrySampleMultipliers = "KR=2,US=0.5",
     [double]$RollingReplaceFraction = 0.33,
-    [int]$Vps789CtLimit = 50,
+    [int]$Vps789CtLimit = 100,
     [int]$Vps789MaxDxLatencyMs = 260,
     [double]$Vps789MaxDxLossRate = 5,
     [string]$TokenEnvName = "GITHUB_TOKEN_CFOPT",
@@ -686,7 +686,7 @@ function Invoke-TcpPrecheck {
 
     $effectiveTimeoutMs = Get-PositiveTcpPrecheckValue -Value $TcpPrecheckTimeoutMs -Fallback 800
     $effectiveThreads = Get-PositiveTcpPrecheckValue -Value $TcpPrecheckThreads -Fallback 128
-    $effectiveMaxCandidates = Get-PositiveTcpPrecheckValue -Value $TcpPrecheckMaxCandidates -Fallback 80
+    $effectiveMaxCandidates = Get-PositiveTcpPrecheckValue -Value $TcpPrecheckMaxCandidates -Fallback 30
 
     $timer = [System.Diagnostics.Stopwatch]::StartNew()
     try {

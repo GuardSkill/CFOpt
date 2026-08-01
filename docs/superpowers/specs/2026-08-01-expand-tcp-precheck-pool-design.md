@@ -13,7 +13,7 @@ Apply the following defaults in both the Windows PowerShell runner and the Linux
 | `IpZipSamplePercent` / `IP_ZIP_SAMPLE_PERCENT` | 20 | 40 |
 | `IpZipCountryMinCandidates` / `IP_ZIP_COUNTRY_MIN_CANDIDATES` | 20 | 40 |
 | `IpZipCountryMaxCandidates` / `IP_ZIP_COUNTRY_MAX_CANDIDATES` | 160 | 320 |
-| `CfBestIpPerCountryLimit` / `CF_BESTIP_PER_COUNTRY_LIMIT` | 200 | 400 |
+| `CfBestIpPerCountryLimit` / `CFBESTIP_PER_COUNTRY_LIMIT` | 200 | 400 |
 | `Vps789CtLimit` / `VPS789_CT_LIMIT` | 50 | 100 |
 | `TcpPrecheckMaxCandidates` / `TCP_PRECHECK_MAX_CANDIDATES` | 80 | 30 |
 

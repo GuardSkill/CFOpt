@@ -28,6 +28,10 @@ try {
 
     $env:CFOPT_SOURCE_ONLY = "1"
     . $runnerPath
+    $candidateProfile = @($IpZipSamplePercent, $IpZipCountryMinCandidates, $IpZipCountryMaxCandidates, $CfBestIpPerCountryLimit, $Vps789CtLimit, $TcpPrecheckMaxCandidates) -join ","
+    if ($candidateProfile -ne "40,40,320,400,100,30") {
+        throw "Expected expanded candidate defaults 40,40,320,400,100,30; got $candidateProfile."
+    }
     $profile = @($CfstLatencyTestCount, $CfstDownloadTestCount, $CfstDownloadTestTime, $FocusCfstDownloadTestCount, $FocusCfstDownloadTestTime) -join ","
     if ($profile -ne "2,10,4,10,4") {
         throw "Expected fast CFST defaults 2,10,4,10,4; got $profile."
@@ -46,17 +50,17 @@ try {
     $script:TcpPrecheckMinCandidates = 120
     $script:TcpPrecheckTimeoutMs = 200
     $script:TcpPrecheckThreads = 32
-    $script:TcpPrecheckMaxCandidates = 80
+    $script:TcpPrecheckMaxCandidates = 30
     Invoke-TcpPrecheck -Port $listenerPort -SelectedIpPath $selectedPath -MapPath $mapPath
 
     $result = @(Get-Content -LiteralPath $selectedPath)
-    if ($result.Count -ne 81) {
-        throw "Expected 80 new candidates and one previous candidate, got $($result.Count)."
+    if ($result.Count -ne 31) {
+        throw "Expected 30 new candidates and one previous candidate, got $($result.Count)."
     }
     if (-not ($result -contains "192.0.2.1")) {
         throw "Previous candidate was removed by TCP precheck."
     }
-    if (-not ((Get-Content -LiteralPath $logPath -Raw) -match "TCP precheck input=122 connected=121 kept_new=80 kept_previous=1 elapsed_ms=")) {
+    if (-not ((Get-Content -LiteralPath $logPath -Raw) -match "TCP precheck input=122 connected=121 kept_new=30 kept_previous=1 elapsed_ms=")) {
         throw "TCP precheck metrics were not logged."
     }
 
@@ -96,11 +100,11 @@ try {
         throw "Skipped empty TCP precheck work item was not logged."
     }
 
-    $equalDuration = foreach ($index in 1..81) {
+    $equalDuration = foreach ($index in 1..31) {
         [pscustomobject]@{ Ip = "203.0.113.$index"; City = "DE"; Source = "ip.zip"; ElapsedMs = 5; Ordinal = $index }
     }
-    $equalDurationResult = @(Select-TcpPrecheckCandidates -Successful $equalDuration -MaxCandidates 80)
-    if ($equalDurationResult.Count -ne 80 -or $equalDurationResult[0] -ne "203.0.113.1" -or $equalDurationResult[-1] -ne "203.0.113.80") {
+    $equalDurationResult = @(Select-TcpPrecheckCandidates -Successful $equalDuration -MaxCandidates 30)
+    if ($equalDurationResult.Count -ne 30 -or $equalDurationResult[0] -ne "203.0.113.1" -or $equalDurationResult[-1] -ne "203.0.113.30") {
         throw "Equal-duration TCP candidates must retain input order."
     }
 
