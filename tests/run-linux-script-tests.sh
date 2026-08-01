@@ -120,6 +120,19 @@ test_linux_country_speed_floor_defaults_and_parser() {
       fail "overflow country floor value was accepted"
     fi
   )
+
+  local chinese_readme english_readme required_text
+  chinese_readme="$(sed -n '/^## 中文说明$/,/^## English$/p' "$ROOT_DIR/README.md")"
+  english_readme="$(sed -n '/^## English$/,$p' "$ROOT_DIR/README.md")"
+
+  for required_text in 'JP=10,US=5,KR=3,HK=2' 'COUNTRY_MIN_SPEED_MB_PER_SEC' 'CountryMinSpeedMBPerSec' 'MB/s'; do
+    grep -Fq "$required_text" <<<"$chinese_readme" || fail "Chinese README missing country-floor documentation: $required_text"
+    grep -Fq "$required_text" <<<"$english_readme" || fail "English README missing country-floor documentation: $required_text"
+  done
+
+  grep -Fq '大于等于' <<<"$chinese_readme" || fail "Chinese README must state that equality passes the country speed floor"
+  grep -Fq '符合条件的行数为零，输出行数也为零' <<<"$chinese_readme" || fail "Chinese README must state that zero qualifying rows produce zero output rows"
+  grep -Fq 'greater than or equal' <<<"$english_readme" || fail "English README must state that equality passes the country speed floor"
 }
 
 test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention() {

@@ -252,6 +252,38 @@ GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -f
 
 ---
 
+### 国家下载速度下限
+
+默认的国家下载速度下限为 `JP=10,US=5,KR=3,HK=2`。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。配置国家的行只有下载速度大于等于其下限时才能进入最终 CSV（例如 JP 的 `10.00 MB/s` 会保留）。未配置下限的国家仍只使用全局筛选规则。
+
+默认重点测速范围（focus scope）是 `SG,HK,JP,KR,US,DE,GB`；其中 US 会作为独立重点范围测速。国家下限在去重、滚动保留和每组数量上限之前执行，因此旧节点也不能绕过下限。某个国家允许没有结果：符合条件的行数为零，输出行数也为零。
+
+覆盖 Windows 下限：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec "JP=12,US=6,KR=4,HK=3"
+```
+
+禁用 Windows 国家下限：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec ""
+```
+
+覆盖 Linux 下限：
+
+```bash
+FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='JP=12,US=6,KR=4,HK=3' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+禁用 Linux 国家下限：
+
+```bash
+FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+默认外层 CFST 并发为单进程（`MaxParallelCfst=1` / `MAX_PARALLEL_CFST=1`），避免同时进行的下载测试占满约 `80 MB/s` 的接入链路；如需提高并发，请结合实际带宽谨慎调整。
+
 ## English
 
 CFOpt automatically benchmarks Cloudflare candidate IPs, filters unstable results, generates Edge Tunnel compatible CSV files, and uploads them to GitHub.
@@ -387,3 +419,35 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 ```bash
 FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
+
+### Country Download Speed Floors
+
+The default country download-speed floors are `JP=10,US=5,KR=3,HK=2`. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. A row for a configured country reaches the final CSV only when its download speed is greater than or equal to that country's floor; for example, a JP row at `10.00 MB/s` is retained. Countries without a configured floor continue to use only the global filters.
+
+The default focus scope is `SG,HK,JP,KR,US,DE,GB`; US is benchmarked as its own dedicated focus scope. Country floors run before deduplication, rolling retention, and per-group caps, so an older node cannot bypass its floor. A country may produce no results: zero qualifying rows produces zero output rows.
+
+Override Windows floors:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec "JP=12,US=6,KR=4,HK=3"
+```
+
+Disable Windows country floors:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec ""
+```
+
+Override Linux floors:
+
+```bash
+FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='JP=12,US=6,KR=4,HK=3' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+Disable Linux country floors:
+
+```bash
+FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+```
+
+The default outer CFST concurrency is one process (`MaxParallelCfst=1` / `MAX_PARALLEL_CFST=1`) to avoid saturating an approximately `80 MB/s` access link with simultaneous download tests. Increase it only with appropriate available bandwidth.
