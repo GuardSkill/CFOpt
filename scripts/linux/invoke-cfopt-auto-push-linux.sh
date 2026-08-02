@@ -228,7 +228,7 @@ with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
             rows.append((ip, port, city))
 
 with open(nodes_path, "w", encoding="ascii", newline="") as f:
-    writer = csv.writer(f)
+    writer = csv.writer(f, lineterminator="\n")
     writer.writerows(rows)
 
 with open(keys_path, "w", encoding="ascii", newline="") as f:

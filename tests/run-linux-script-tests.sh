@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATH="$ROOT_DIR/tests/bin:$PATH"
+export TARGET_PATH="tests/fixtures/nonexistent.csv"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -95,6 +96,45 @@ test_linux_defaults_are_not_overly_strict_for_local_runs() {
   if grep -q 'DOWNLOAD_TEST_URL:-https://speed.cloudflare.com/__down?bytes=100000000' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh"; then
     fail "installer should not override the runner download-test URL by default"
   fi
+}
+
+test_previous_csv_nodes_use_shell_safe_line_endings() {
+  (
+    local tmp_dir fixture selected_path map_path
+    tmp_dir="$(mktemp -d)"
+    fixture="$tmp_dir/previous.csv"
+    selected_path="$tmp_dir/selected.txt"
+    map_path="$tmp_dir/map.csv"
+
+    printf 'IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)\r\n' > "$fixture"
+    printf '203.0.113.10,443,HKG,HK [北京测速#01 previous],true,2,2,0,20,10\r\n' >> "$fixture"
+
+    CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+    WORK_DIR="$tmp_dir/work"
+    PREVIOUS_CSV_PATH="$WORK_DIR/previous.csv"
+    PREVIOUS_NODES_PATH="$WORK_DIR/previous-nodes.csv"
+    PREVIOUS_NODE_KEYS_PATH="$WORK_DIR/previous-node-keys.txt"
+    LOG_FILE="$WORK_DIR/test.log"
+    mkdir -p "$WORK_DIR"
+    curl() {
+      local output=""
+      while (($#)); do
+        if [[ "$1" == "-o" ]]; then output="$2"; shift 2; else shift; fi
+      done
+      cp "$fixture" "$output"
+    }
+
+    fetch_previous_csv_nodes
+    if LC_ALL=C grep -q $'\r' "$PREVIOUS_NODES_PATH"; then
+      fail "previous-node intermediate CSV must use LF line endings"
+    fi
+    : > "$selected_path"
+    : > "$map_path"
+    [[ "$(append_previous_for_port 443 HK "$selected_path" "$map_path")" == "1" ]] \
+      || fail "shell-safe previous node should be added for retesting"
+    grep -qx '203.0.113.10,HK,previous' "$map_path" \
+      || fail "previous node should retain its country and source"
+  )
 }
 
 test_linux_country_speed_floor_defaults_and_parser() {
@@ -999,6 +1039,7 @@ test_mainland_direct_covers_domestic_ai_model_providers() {
 
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
+test_previous_csv_nodes_use_shell_safe_line_endings
 test_linux_country_speed_floor_defaults_and_parser
 test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention
 test_linux_country_speed_floor_protects_only_available_row
