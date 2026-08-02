@@ -254,14 +254,14 @@ GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -f
 
 ### 国家下载速度下限
 
-默认的国家下载速度下限为 `JP=10,US=5,KR=3,HK=2`。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。配置国家的行只有下载速度大于等于其下限时才能进入最终 CSV（例如 JP 的 `10.00 MB/s` 会保留）。未配置下限的国家仍只使用全局筛选规则。
+默认的国家下载速度下限为 `JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5`。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。每个配置国家先保留本轮测速最快的两个有效唯一 IP；从第 3 个节点开始，只有下载速度大于等于其下限时才能进入最终 CSV（例如 JP 的 `10.00 MB/s` 会保留）。如果某国家只有 0 或 1 个有效 IP，就有几个输出几个。未配置下限的国家仍只使用全局筛选规则。
 
-默认重点测速范围（focus scope）是 `SG,HK,JP,KR,US,DE,GB`；其中 US 会作为独立重点范围测速。国家下限在去重、滚动保留和每组数量上限之前执行，因此旧节点也不能绕过下限。某个国家允许没有结果：符合条件的行数为零，输出行数也为零。
+默认重点测速范围（focus scope）是 `SG,HK,JP,KR,US,DE,GB`；其中 US 会作为独立重点范围测速。脚本先按国家和 IP 去重并保留本轮速度最高的测量，再保护最快的两个节点，其余节点执行国家下限。新旧节点一视同仁。最终 CSV 的城市栏不再显示来源，而显示一位小数的下载速度，例如 `DE [CD#01 13.1MB/s]`。
 
 覆盖 Windows 下限：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec "JP=12,US=6,KR=4,HK=3"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec "JP=12,US=6,KR=4,HK=3,DE=6,GB=4,SG=6"
 ```
 
 禁用 Windows 国家下限：
@@ -273,7 +273,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 覆盖 Linux 下限：
 
 ```bash
-FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='JP=12,US=6,KR=4,HK=3' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='JP=12,US=6,KR=4,HK=3,DE=6,GB=4,SG=6' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
 禁用 Linux 国家下限：
@@ -422,14 +422,14 @@ FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### Country Download Speed Floors
 
-The default country download-speed floors are `JP=10,US=5,KR=3,HK=2`. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. A row for a configured country reaches the final CSV only when its download speed is greater than or equal to that country's floor; for example, a JP row at `10.00 MB/s` is retained. Countries without a configured floor continue to use only the global filters.
+The default country download-speed floors are `JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5`. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. Each configured country first retains its fastest two otherwise-valid unique IPs from the current run. Starting with the third node, a row reaches the final CSV only when its download speed is greater than or equal to that country's floor; for example, a JP row at `10.00 MB/s` is retained. If only zero or one valid IP is available, the runner emits only what is available. Countries without a configured floor continue to use only the global filters.
 
-The default focus scope is `SG,HK,JP,KR,US,DE,GB`; US is benchmarked as its own dedicated focus scope. Country floors run before deduplication, rolling retention, and per-group caps, so an older node cannot bypass its floor. A country may produce no results: zero qualifying rows produces zero output rows.
+The default focus scope is `SG,HK,JP,KR,US,DE,GB`; US is benchmarked as its own dedicated focus scope. The runner first deduplicates each country/IP to its fastest current measurement, protects the fastest two, and applies the country floor to the remaining rows. Old and new candidates compete equally. The final CSV city field shows one-decimal measured download speed instead of source, for example `DE [CD#01 13.1MB/s]`.
 
 Override Windows floors:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec "JP=12,US=6,KR=4,HK=3"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CountryMinSpeedMBPerSec "JP=12,US=6,KR=4,HK=3,DE=6,GB=4,SG=6"
 ```
 
 Disable Windows country floors:
@@ -441,7 +441,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 Override Linux floors:
 
 ```bash
-FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='JP=12,US=6,KR=4,HK=3' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
+FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='JP=12,US=6,KR=4,HK=3,DE=6,GB=4,SG=6' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
 Disable Linux country floors:
