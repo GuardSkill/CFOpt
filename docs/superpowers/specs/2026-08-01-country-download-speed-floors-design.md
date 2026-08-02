@@ -95,6 +95,23 @@ reintroduced after failing the current measurement.
 - Missing or unparsable CFST speed values continue to be removed.
 - Invalid threshold configuration fails before any CFST work begins.
 
+## Final CSV city label
+
+Every retained row uses its measured CFST download speed in the final CSV
+`city` field instead of exposing the candidate source. The format is:
+
+```text
+DE [CD#01 13.1MB/s]
+```
+
+This applies to every country and every candidate source on Windows and Linux.
+The display value is rounded to one decimal place using the same parsed raw
+CFST `download speed (MB/s)` value that is written to the row's download-speed
+column. The download-speed column retains its existing precision. Source labels
+such as `previous`, `ip.zip`, `cf-bestip`, and `vps789` are not emitted in the
+final city field. Rows with missing, non-finite, or unparsable speed values are
+removed before labeling and therefore cannot produce an empty speed label.
+
 ## Tests
 
 Windows and Linux script tests will cover:
@@ -112,6 +129,8 @@ Windows and Linux script tests will cover:
     single-process execution remaining the default.
 11. The default map includes DE at 5 MB/s, GB at 3 MB/s, and SG at 5 MB/s on
     both platforms.
+12. Every final city label contains the row's speed rounded to one decimal
+    place and no source label, with matching Windows and Linux output.
 
 ## Documentation
 
