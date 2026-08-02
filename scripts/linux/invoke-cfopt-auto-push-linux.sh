@@ -19,7 +19,7 @@ INTERVAL_HOURS="${INTERVAL_HOURS:-4}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
-COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=5,KR=3,HK=2}"
+COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
 ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.33}"
 CFST_THREADS="${CFST_THREADS:-80}"
@@ -853,23 +853,17 @@ filter_csv() {
       datacenter = $10
       speed_mbps = speed * 8
       if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
-        if (city in country_floor) {
-          country_evaluated[city]++
-          if (speed < country_floor[city]) {
-            country_removed[city]++
-            removed++
-            next
-          }
-          country_passed[city]++
-        }
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
         row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s,%s", ip, port, datacenter, remark, sent, received, loss, latency, speed, source)
         key = ip "|" port "|" city
         is_previous = (key in previous) ? 1 : 0
-        dedupe_key = ip "|" port "|" city
-        dedupe_row = sprintf("%s\t%012.6f\t%012.6f\t%d\t%s", city, latency, 999999-speed, is_previous, row)
-        if (!(dedupe_key in best_row) || dedupe_row < best_row[dedupe_key]) {
-          best_row[dedupe_key] = dedupe_row
+        dedupe_key = ip "|" city
+        if (!(dedupe_key in best_row) || speed > best_speed[dedupe_key] || (speed == best_speed[dedupe_key] && latency < best_latency[dedupe_key])) {
+          best_row[dedupe_key] = row
+          best_city[dedupe_key] = city
+          best_speed[dedupe_key] = speed
+          best_latency[dedupe_key] = latency
+          best_previous[dedupe_key] = is_previous
         }
         kept++
       } else {
@@ -877,13 +871,9 @@ filter_csv() {
       }
     }
     END {
-      for (i = 1; i <= country_floor_code_count; i++) {
-        country = country_floor_codes[i]
-        print country "," country_floor_value[country] "," (country_evaluated[country] + 0) "," (country_removed[country] + 0) "," (country_passed[country] + 0) > country_speed_stats_path
+      for (dedupe_key in best_row) {
+        rows[++count] = sprintf("%s\t%020.6f\t%020.6f\t%d\t%s", best_city[dedupe_key], 999999999-best_speed[dedupe_key], best_latency[dedupe_key], best_previous[dedupe_key], best_row[dedupe_key])
       }
-      for (dedupe_key in best_row) rows[++count] = best_row[dedupe_key]
-      if (count < 1) exit 2
-      print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
       for (i = 1; i <= count; i++) {
         for (j = i + 1; j <= count; j++) {
           if (rows[j] < rows[i]) {
@@ -891,24 +881,65 @@ filter_csv() {
           }
         }
       }
-      current_city = ""
-      city_count = 0
-      max_previous_keep = int(max_per_city * (1 - rolling_replace_fraction))
       for (i = 1; i <= count; i++) {
         split(rows[i], parts, "\t")
         city = parts[1]
-        is_previous = parts[4] + 0
-        if (city != current_city) {
-          current_city = city
-          city_count = 0
+        speed = 999999999 - (parts[2] + 0)
+        country_rank[city]++
+        protected = 0
+        if (city in country_floor) {
+          country_evaluated[city]++
+          if (country_rank[city] <= 2) {
+            protected = 1
+            country_protected[city]++
+            country_passed[city]++
+          } else if (speed < country_floor[city]) {
+            country_removed[city]++
+            removed++
+            continue
+          } else {
+            country_passed[city]++
+          }
         }
-        if (city_count < max_per_city && !(is_previous == 1 && previous_city_count[city] >= max_previous_keep)) {
-          city_count++
+        accepted[++accepted_count] = sprintf("%s\t%020.6f\t%020.6f\t%d\t%d\t%s", city, parts[3] + 0, parts[2] + 0, parts[4] + 0, protected, parts[5])
+      }
+      for (i = 1; i <= country_floor_code_count; i++) {
+        country = country_floor_codes[i]
+        print country "," country_floor_value[country] "," (country_evaluated[country] + 0) "," (country_protected[country] + 0) "," (country_removed[country] + 0) "," (country_passed[country] + 0) > country_speed_stats_path
+      }
+      if (accepted_count < 1) exit 2
+      print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
+      for (i = 1; i <= accepted_count; i++) {
+        for (j = i + 1; j <= accepted_count; j++) {
+          if (accepted[j] < accepted[i]) {
+            tmp = accepted[i]; accepted[i] = accepted[j]; accepted[j] = tmp
+          }
+        }
+      }
+      max_previous_keep = int(max_per_city * (1 - rolling_replace_fraction))
+      for (i = 1; i <= accepted_count; i++) {
+        split(accepted[i], parts, "\t")
+        city = parts[1]
+        is_previous = parts[4] + 0
+        protected = parts[5] + 0
+        if (protected == 1 && selected_total[city] < max_per_city) {
           selected_total[city]++
           if (is_previous == 1) previous_city_count[city]++
-          selected[++selected_count] = parts[5]
+          selected[++selected_count] = parts[6]
+        }
+      }
+      for (i = 1; i <= accepted_count; i++) {
+        split(accepted[i], parts, "\t")
+        city = parts[1]
+        is_previous = parts[4] + 0
+        protected = parts[5] + 0
+        if (protected == 1) continue
+        if (selected_total[city] < max_per_city && !(is_previous == 1 && previous_city_count[city] >= max_previous_keep)) {
+          selected_total[city]++
+          if (is_previous == 1) previous_city_count[city]++
+          selected[++selected_count] = parts[6]
         } else if (is_previous == 1) {
-          overflow_old[++overflow_count] = rows[i]
+          overflow_old[++overflow_count] = accepted[i]
         }
       }
       for (i = 1; i <= overflow_count; i++) {
@@ -916,7 +947,7 @@ filter_csv() {
         city = parts[1]
         if (selected_total[city] < max_per_city) {
           selected_total[city]++
-          selected[++selected_count] = parts[5]
+          selected[++selected_count] = parts[6]
         }
       }
       for (i = 1; i <= selected_count; i++) {
@@ -925,9 +956,8 @@ filter_csv() {
           sub(/ .*/, "", city)
           sub(/\[.*/, "", city)
           output_city_count[city]++
-          source = cols[col_count]
-          if (source == "") source = "unknown"
-          numbered_city = city " [" test_location_name "#" sprintf("%02d", output_city_count[city]) " " source "]"
+          speed_label = sprintf("%.1fMB/s", cols[col_count-1] + 0)
+          numbered_city = city " [" test_location_name "#" sprintf("%02d", output_city_count[city]) " " speed_label "]"
           cols[4] = numbered_city
           out = cols[1]
           for (k = 2; k < col_count; k++) {
@@ -961,10 +991,10 @@ filter_csv() {
     }
   ' "$PREVIOUS_NODE_KEYS_PATH" "$COMBINED_CANDIDATES_PATH" > "$tmp_csv" || filter_status=$?
   if [[ -f "$COUNTRY_SPEED_STATS_PATH" ]]; then
-    local country floor evaluated removed passed
-    while IFS=',' read -r country floor evaluated removed passed; do
+    local country floor evaluated protected removed passed
+    while IFS=',' read -r country floor evaluated protected removed passed; do
       [[ -n "$country" ]] || continue
-      log "Country speed floor $country >= $floor MB/s: evaluated=$evaluated removed=$removed passed=$passed."
+      log "Country speed floor $country >= $floor MB/s: evaluated=$evaluated protected=$protected removed=$removed passed=$passed."
     done < "$COUNTRY_SPEED_STATS_PATH"
   fi
   if ((filter_status != 0)); then
