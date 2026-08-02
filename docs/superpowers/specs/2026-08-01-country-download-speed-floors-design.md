@@ -2,8 +2,8 @@
 
 ## Goal
 
-Apply strict, configurable download-speed floors to the JP, US, KR, and HK
-test groups on both Windows and Linux. The comparison uses CFST's raw
+Apply strict, configurable download-speed floors to the JP, US, KR, HK, DE,
+GB, and SG test groups on both Windows and Linux. The comparison uses CFST's raw
 `download speed (MB/s)` CSV value, not the existing global Mbps conversion.
 
 Default floors:
@@ -14,6 +14,9 @@ Default floors:
 | US | 5 MB/s |
 | KR | 3 MB/s |
 | HK | 2 MB/s |
+| DE | 5 MB/s |
+| GB | 3 MB/s |
+| SG | 5 MB/s |
 
 The boundary is inclusive: a result exactly equal to its floor is retained.
 If no result in a configured group reaches its floor, that group contributes
@@ -36,13 +39,13 @@ non-focus countries for the ordinary scope's `-dn 10` slots.
 Windows adds a string parameter:
 
 ```text
-CountryMinSpeedMBPerSec = "JP=10,US=5,KR=3,HK=2"
+CountryMinSpeedMBPerSec = "JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5"
 ```
 
 Linux adds an environment variable:
 
 ```text
-COUNTRY_MIN_SPEED_MB_PER_SEC="JP=10,US=5,KR=3,HK=2"
+COUNTRY_MIN_SPEED_MB_PER_SEC="JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5"
 ```
 
 Keys are normalized to uppercase. Values must be finite, non-negative decimal
@@ -107,6 +110,8 @@ Windows and Linux script tests will cover:
 9. Invalid configuration failing before benchmark execution.
 10. Effective all/focus CFST arguments remaining `-t 2 -dn 10 -dt 4` and
     single-process execution remaining the default.
+11. The default map includes DE at 5 MB/s, GB at 3 MB/s, and SG at 5 MB/s on
+    both platforms.
 
 ## Documentation
 
