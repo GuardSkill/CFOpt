@@ -19,8 +19,11 @@ Default floors:
 | SG | 5 MB/s |
 
 The boundary is inclusive: a result exactly equal to its floor is retained.
-If no result in a configured group reaches its floor, that group contributes
-zero rows to the final CSV. Previous nodes do not bypass the floor.
+For each configured country, the fastest two otherwise-valid unique IPs are
+protected before the floor is applied. The third and later IPs must reach the
+country floor. If a country has only zero or one otherwise-valid unique IP, it
+contributes exactly the available number. Previous and new nodes are treated
+identically and compete only on the current run's measured speed.
 
 ## Scope and group identity
 
@@ -76,20 +79,24 @@ This prevents independent country jobs from competing for the host's roughly
 does not imply 80 simultaneous downloads.
 
 Country-specific floors are applied during final CSV merging, after CFST has
-written raw results and after the IP-to-country map has resolved the test
-group. They are not passed through CFST's global `-sl` option because one
-CFST invocation cannot express different floors for different countries.
+written raw results, after the IP-to-country map has resolved the test group,
+and after duplicate IP measurements have been collapsed to the best valid
+measurement. Within each configured country, rows are ordered by raw download
+speed. The first two rows are protected, and the floor is applied only to the
+remaining rows. Floors are not passed through CFST's global `-sl` option
+because one CFST invocation cannot express different floors for different
+countries.
 
 For each configured country, the merge log reports candidate rows evaluated,
-rows removed by the country floor, and rows retained after that floor. Normal
-deduplication, rolling replacement, and per-country caps run only on rows that
-have passed the floor, so an old or otherwise preferred row can never be
-reintroduced after failing the current measurement.
+rows protected as the fastest available two, rows removed by the country
+floor, and rows retained. Rolling replacement and per-country caps run only on
+the protected-or-passing rows, so source preference cannot reintroduce a slower
+third-or-later row that failed the current measurement.
 
 ## Failure and empty-result behavior
 
-- A configured country with zero qualifying rows is omitted without failing
-  the complete run.
+- A configured country with fewer than two otherwise-valid unique IPs emits
+  only the available rows and does not fail the complete run.
 - The complete run still fails if all countries/groups are filtered out, as it
   does today.
 - Missing or unparsable CFST speed values continue to be removed.
@@ -121,8 +128,9 @@ Windows and Linux script tests will cover:
 3. A speed below the country floor being removed.
 4. A speed exactly equal to the floor being retained.
 5. A speed above the floor being retained.
-6. Previous nodes not bypassing the floor.
-7. A configured country legitimately producing zero final rows.
+6. Previous and new nodes competing equally on current measured speed.
+7. A configured country protecting its fastest two rows even when both are
+   below the floor, while filtering a below-floor third row.
 8. Unconfigured countries retaining the existing global-floor behavior.
 9. Invalid configuration failing before benchmark execution.
 10. Effective all/focus CFST arguments remaining `-t 2 -dn 10 -dt 4` and
@@ -131,9 +139,11 @@ Windows and Linux script tests will cover:
     both platforms.
 12. Every final city label contains the row's speed rounded to one decimal
     place and no source label, with matching Windows and Linux output.
+13. Countries with zero or one otherwise-valid unique IP emit only the rows
+    available without failing the complete run.
 
 ## Documentation
 
 The README's Windows and Linux parameter sections will document the defaults,
-MB/s units, inclusive boundary, strict zero-row behavior, US focus scope, and
-examples for overriding or disabling the map.
+MB/s units, inclusive boundary, fastest-two protection, fewer-than-two
+behavior, US focus scope, and examples for overriding or disabling the map.
