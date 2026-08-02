@@ -32,7 +32,7 @@ try {
         throw "US must have a dedicated default focus scope."
     }
     $floors = ConvertFrom-CountryMinSpeedMap -Value $CountryMinSpeedMBPerSec -AllowedCountries $Countries
-    if ($floors.Count -ne 4 -or $floors["JP"] -ne 10 -or $floors["US"] -ne 5 -or $floors["KR"] -ne 3 -or $floors["HK"] -ne 2) {
+    if ($floors.Count -ne 7 -or $floors["JP"] -ne 10 -or $floors["US"] -ne 5 -or $floors["KR"] -ne 3 -or $floors["HK"] -ne 2 -or $floors["DE"] -ne 5 -or $floors["GB"] -ne 3 -or $floors["SG"] -ne 5) {
         throw "Unexpected default country speed floors."
     }
     if ((ConvertFrom-CountryMinSpeedMap -Value "" -AllowedCountries $Countries).Count -ne 0) {
@@ -153,7 +153,10 @@ try {
         "203.0.113.10,JP,ip.zip",
         "203.0.113.11,JP,ip.zip",
         "203.0.113.12,HK,ip.zip",
-        "203.0.113.20,DE,ip.zip"
+        "203.0.113.20,DE,ip.zip",
+        "203.0.113.30,US,previous",
+        "203.0.113.31,US,ip.zip",
+        "203.0.113.32,US,ip.zip"
     ), [System.Text.Encoding]::ASCII)
     [System.IO.File]::WriteAllLines($mergeCfstPath, @(
         "IP,Sent,Received,Loss,Latency,Speed,DataCenter",
@@ -161,7 +164,10 @@ try {
         "203.0.113.10,4,4,0,10,10.00,SFO",
         "203.0.113.11,4,4,0,10,11.00,SFO",
         "203.0.113.12,4,4,0,10,1.99,SFO",
-        "203.0.113.20,4,4,0,10,0.01,SFO"
+        "203.0.113.20,4,4,0,10,0.01,SFO",
+        "203.0.113.30,4,4,0,10,4.90,LAX",
+        "203.0.113.31,4,4,0,10,4.80,LAX",
+        "203.0.113.32,4,4,0,10,4.70,LAX"
     ), [System.Text.Encoding]::ASCII)
     $script:MinSpeedMbps = 0
     $previousNodeKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -174,10 +180,20 @@ try {
     if ($output.$ipHeaderName -contains '203.0.113.9') { throw 'Previous JP row below 10 MB/s bypassed its floor.' }
     if ($output.$ipHeaderName -notcontains '203.0.113.10') { throw 'JP row exactly at 10 MB/s was removed.' }
     if ($output.$ipHeaderName -notcontains '203.0.113.11') { throw 'JP row above 10 MB/s was removed.' }
-    if ($output | Where-Object { $_.$cityHeaderName -like 'HK *' }) { throw 'HK must be allowed to produce zero rows.' }
-    if ($output.$ipHeaderName -notcontains '203.0.113.20') { throw 'Unconfigured DE row must retain global-floor behavior.' }
+    if ($output.$ipHeaderName -notcontains '203.0.113.12') { throw 'A country with one otherwise-valid row must retain that row below its floor.' }
+    if ($output.$ipHeaderName -notcontains '203.0.113.20') { throw 'The only DE row must be protected below its floor.' }
+    if ($output.$ipHeaderName -notcontains '203.0.113.30' -or $output.$ipHeaderName -notcontains '203.0.113.31') { throw 'The fastest two US rows were not protected below their floor.' }
+    if ($output.$ipHeaderName -contains '203.0.113.32') { throw 'The third US row below its floor was not removed.' }
+    foreach ($row in $output) {
+        if ($row.$cityHeaderName -notmatch '^[A-Z]{2} \[[^]]+#\d{2} \d+\.\dMB/s\]$') {
+            throw "Final city label does not contain one-decimal measured speed: $($row.$cityHeaderName)"
+        }
+        if ($row.$cityHeaderName -match 'previous|ip\.zip|unknown|cf-bestip|vps789') {
+            throw "Final city label leaked candidate source: $($row.$cityHeaderName)"
+        }
+    }
     $mergeLog = Get-Content -LiteralPath $logPath -Raw
-    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 removed=1 passed=0\.') {
+    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=2 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=1 removed=0 passed=1\.' -or $mergeLog -notmatch 'Country speed floor US >= 5 MB/s: evaluated=3 protected=2 removed=1 passed=2\.') {
         throw 'Country speed floor summaries were not logged.'
     }
 
@@ -212,7 +228,7 @@ try {
         }
     }
     $precisionLog = Get-Content -LiteralPath $logPath -Raw
-    if ($precisionLog -notmatch 'Country speed floor JP >= 0\.001 MB/s: evaluated=1 removed=0 passed=1\.') {
+    if ($precisionLog -notmatch 'Country speed floor JP >= 0\.001 MB/s: evaluated=1 protected=1 removed=0 passed=1\.') {
         throw 'Country speed floor log lost three-decimal precision.'
     }
 
