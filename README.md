@@ -248,7 +248,7 @@ Linux 容器：
 GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -fsSL https://raw.githubusercontent.com/GuardSkill/CFOpt/main/scripts/linux/install-and-run-cfopt-linux.sh)"
 ```
 
-默认每天 `04:00` 检查并运行。
+默认每天 `03:30` 检查并运行。
 
 ---
 

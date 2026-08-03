@@ -530,8 +530,10 @@ test_runners_default_to_four_hour_interval() {
     || fail "Linux installer autorun should pass INTERVAL_HOURS=4"
   grep -q '\[int\]\$IntervalHours = 4' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner should default to a 4-hour interval"
-  grep -q -- '-IntervalHours 4' "$ROOT_DIR/scripts/windows/Install-CFOptAutoPushTask.ps1" \
-    || fail "Windows scheduled task should pass -IntervalHours 4"
+  grep -q '\[string\]\$DailyAt = "03:30"' "$ROOT_DIR/scripts/windows/Install-CFOptAutoPushTask.ps1" \
+    || fail "Windows scheduled task should default to a 03:30 daily trigger"
+  ! grep -q 'Repetition\.Interval' "$ROOT_DIR/scripts/windows/Install-CFOptAutoPushTask.ps1" \
+    || fail "Windows task installer must not use unsupported trigger repetition properties"
 }
 
 test_focus_scopes_use_fast_download_profile() {
