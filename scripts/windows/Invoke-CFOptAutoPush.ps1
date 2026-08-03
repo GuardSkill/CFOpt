@@ -41,6 +41,7 @@ param(
     [int]$IpZipCountryMaxCandidates = 320,
     [string]$IpZipCountrySampleMultipliers = "KR=2,US=0.5",
     [double]$RollingReplaceFraction = 0.33,
+    [double]$MinPublishRetentionRatio = 0.6,
     [int]$Vps789CtLimit = 100,
     [int]$Vps789MaxDxLatencyMs = 260,
     [double]$Vps789MaxDxLossRate = 5,
@@ -687,6 +688,58 @@ function New-PortWorkItem {
     }
 }
 
+function New-PreviousPortWorkItem {
+    param(
+        [int]$CurrentPort,
+        [object[]]$PreviousCsvEntries
+    )
+
+    $entries = @($PreviousCsvEntries | Where-Object { $_.Port -eq $CurrentPort })
+    if ($entries.Count -eq 0) {
+        return $null
+    }
+
+    $scopeName = "previous"
+    $selectedIpPath = Join-Path $WorkDir "selected-ip-$CurrentPort-$scopeName.txt"
+    $selectedIpCityMapPath = Join-Path $WorkDir "selected-ip-city-map-$CurrentPort-$scopeName.csv"
+    $portCsvPath = Join-Path $WorkDir "CloudflareSpeedTest-$CurrentPort-$scopeName.csv"
+    foreach ($path in @($selectedIpPath, $selectedIpCityMapPath, $portCsvPath)) {
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Force
+        }
+    }
+
+    $seenIps = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $entries) {
+        $ip = ([string]$entry.Ip).Trim()
+        $city = ([string]$entry.City).Trim()
+        if ([string]::IsNullOrWhiteSpace($ip) -or [string]::IsNullOrWhiteSpace($city)) {
+            continue
+        }
+        if ($seenIps.Add($ip)) {
+            Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
+        }
+        Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$city,previous" -Encoding ASCII
+    }
+
+    if ($seenIps.Count -eq 0) {
+        return $null
+    }
+
+    Write-Log "Prepared $($seenIps.Count) previous nodes for full download retest on port $CurrentPort."
+    return [pscustomobject]@{
+        Port = $CurrentPort
+        Scope = $scopeName
+        SelectedIpPath = $selectedIpPath
+        MapPath = $selectedIpCityMapPath
+        CsvPath = $portCsvPath
+        StdoutPath = Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stdout.log"
+        StderrPath = Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stderr.log"
+        StdinPath = Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stdin.txt"
+        DownloadTestCount = $seenIps.Count
+    }
+}
+
 function Get-PositiveTcpPrecheckValue {
     param(
         [int]$Value,
@@ -867,6 +920,9 @@ function Get-CfstArguments {
     if ([string]$Item.Scope -like "focus-*") {
         $downloadTestCount = $FocusCfstDownloadTestCount
         $downloadTestTime = $FocusCfstDownloadTestTime
+    }
+    if ($Item.PSObject.Properties.Name -contains "DownloadTestCount" -and [int]$Item.DownloadTestCount -gt 0) {
+        $downloadTestCount = [int]$Item.DownloadTestCount
     }
 
     $arguments = @(
@@ -1169,13 +1225,6 @@ function Write-MergedFilteredCsv {
 
             $stats = $countrySpeedStats[$city]
             $stats.Evaluated++
-            if ($rank -lt 2) {
-                $row.IsProtected = $true
-                $stats.Protected++
-                $stats.Passed++
-                $floorFilteredRows.Add($row)
-                continue
-            }
             if ($row.SpeedNumber -lt $countryMinSpeedByCode[$city]) {
                 $stats.Removed++
                 $removed++
@@ -1335,6 +1384,43 @@ function Publish-FileToGitHub {
     } | Out-Null
 }
 
+function Assert-PublicationSafety {
+    param([object[]]$PreviousCsvEntries)
+
+    $previous = @($PreviousCsvEntries)
+    if ($previous.Count -eq 0) {
+        return
+    }
+    $currentLines = @(
+        Get-Content -LiteralPath $csvPath |
+            Select-Object -Skip 1 |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+    $minimumTotal = [math]::Ceiling($previous.Count * $MinPublishRetentionRatio)
+    if ($currentLines.Count -lt $minimumTotal) {
+        throw "Publication safety check blocked upload: current rows $($currentLines.Count) are below $minimumTotal required from $($previous.Count) previous rows."
+    }
+
+    $currentCounts = @{}
+    foreach ($line in $currentLines) {
+        $columns = $line -split ','
+        if ($columns.Count -lt 4) { continue }
+        $city = Get-CityKeyFromRemark -Remark $columns[3]
+        if (-not [string]::IsNullOrWhiteSpace($city)) {
+            $currentCounts[$city] = 1 + [int]($currentCounts[$city])
+        }
+    }
+    foreach ($group in @($previous | Group-Object City)) {
+        $city = [string]$group.Name
+        $minimumCity = [math]::Ceiling($group.Count * $MinPublishRetentionRatio)
+        $currentCity = if ($currentCounts.ContainsKey($city)) { [int]$currentCounts[$city] } else { 0 }
+        if ($currentCity -lt $minimumCity) {
+            throw "Publication safety check blocked upload: $city has $currentCity rows, below $minimumCity required from $($group.Count) previous rows."
+        }
+    }
+    Write-Log "Publication safety check passed: current=$($currentLines.Count) previous=$($previous.Count) retention_ratio=$MinPublishRetentionRatio."
+}
+
 function Publish-ToGitHub {
     Publish-FileToGitHub -LocalPath $csvPath -UploadTargetPath $TargetPath
 }
@@ -1396,12 +1482,13 @@ try {
     $cfBestIpCandidates = @(Get-CfBestIpCandidates)
     $allCountries = @(Get-FocusExcludedCountries)
     $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
+            New-PreviousPortWorkItem -CurrentPort $effectivePort -PreviousCsvEntries $previousCsvEntries
             if ($allCountries.Count -gt 0) {
-                New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries $allCountries -ScopeName "all" -IncludeVps789Ct $true
+                New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries @() -SelectedCountries $allCountries -ScopeName "all" -IncludeVps789Ct $true
             }
             foreach ($focusCountry in @(Get-EffectiveFocusCountries)) {
                 if ($Countries -contains $focusCountry) {
-                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
+                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries @() -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
                 }
             }
         }
@@ -1430,6 +1517,7 @@ try {
     $running = @(Start-CfstProcesses -WorkItems $workItems)
     Wait-CfstProcesses -Running $running
     Write-MergedFilteredCsv -WorkItems $workItems -PreviousNodeKeys $previousNodeKeys
+    Assert-PublicationSafety -PreviousCsvEntries $previousCsvEntries
 
     if ($SkipUpload) {
         Write-Log "SkipUpload enabled. CSV generated but GitHub upload and success-state update were skipped."

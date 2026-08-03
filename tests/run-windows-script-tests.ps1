@@ -86,6 +86,10 @@ try {
     if ($allArgs -notmatch '(?:^| )-t 2 -dn 10 -dt 4(?: |$)' -or $focusArgs -notmatch '(?:^| )-t 2 -dn 10 -dt 4(?: |$)') {
         throw "Windows all and focus scopes must build the fast CFST argument profile."
     }
+    $previousArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "previous"; Port = 443; SelectedIpPath = "previous.txt"; CsvPath = "previous.csv"; DownloadTestCount = 37 })) -join " "
+    if ($previousArgs -notmatch '(?:^| )-dn 37(?: |$)') {
+        throw "Historical-node work items must download-test every selected node."
+    }
     if ((Get-PositiveTcpPrecheckValue -Value 0 -Fallback 1) -ne 1 -or (Get-PositiveTcpPrecheckValue -Value 32 -Fallback 1) -ne 32) {
         throw "TCP precheck values must be normalized to positive integers."
     }
@@ -127,6 +131,13 @@ try {
     $overlapMap = @(Get-Content -LiteralPath $workItem.MapPath)
     if (-not ($overlapMap -contains "198.51.100.10,DE,previous")) {
         throw "Overlapping previous candidate must be marked previous by the work-item builder."
+    }
+    $previousOnlyItem = New-PreviousPortWorkItem -CurrentPort 443 -PreviousCsvEntries @(
+        [pscustomobject]@{ Ip = "198.51.100.10"; Port = 443; City = "DE" },
+        [pscustomobject]@{ Ip = "198.51.100.11"; Port = 443; City = "JP" }
+    )
+    if ($previousOnlyItem.DownloadTestCount -ne 2 -or @((Get-Content -LiteralPath $previousOnlyItem.MapPath)).Count -ne 2) {
+        throw "Historical-node work items must retain every prior node and test them all."
     }
 
     $emptySelectedPath = Join-Path $tempDir "empty-selected.txt"
@@ -180,9 +191,9 @@ try {
     if ($output.$ipHeaderName -contains '203.0.113.9') { throw 'Previous JP row below 10 MB/s bypassed its floor.' }
     if ($output.$ipHeaderName -notcontains '203.0.113.10') { throw 'JP row exactly at 10 MB/s was removed.' }
     if ($output.$ipHeaderName -notcontains '203.0.113.11') { throw 'JP row above 10 MB/s was removed.' }
-    if ($output.$ipHeaderName -notcontains '203.0.113.12') { throw 'A country with one otherwise-valid row must retain that row below its floor.' }
-    if ($output.$ipHeaderName -notcontains '203.0.113.20') { throw 'The only DE row must be protected below its floor.' }
-    if ($output.$ipHeaderName -notcontains '203.0.113.30' -or $output.$ipHeaderName -notcontains '203.0.113.31') { throw 'The fastest two US rows were not protected below their floor.' }
+    if ($output.$ipHeaderName -contains '203.0.113.12') { throw 'A below-floor HK row was published.' }
+    if ($output.$ipHeaderName -contains '203.0.113.20') { throw 'A below-floor DE row was published.' }
+    if ($output.$ipHeaderName -contains '203.0.113.30' -or $output.$ipHeaderName -contains '203.0.113.31') { throw 'Below-floor US rows were published.' }
     if ($output.$ipHeaderName -contains '203.0.113.32') { throw 'The third US row below its floor was not removed.' }
     foreach ($row in $output) {
         if ($row.$cityHeaderName -notmatch '^[A-Z]{2} \[[^]]+#\d{2} \d+\.\dMB/s\]$') {
@@ -192,8 +203,21 @@ try {
             throw "Final city label leaked candidate source: $($row.$cityHeaderName)"
         }
     }
+    try {
+        Assert-PublicationSafety -PreviousCsvEntries @(
+            [pscustomobject]@{ Ip = '203.0.113.1'; Port = 443; City = 'JP' },
+            [pscustomobject]@{ Ip = '203.0.113.2'; Port = 443; City = 'JP' },
+            [pscustomobject]@{ Ip = '203.0.113.3'; Port = 443; City = 'JP' },
+            [pscustomobject]@{ Ip = '203.0.113.4'; Port = 443; City = 'JP' }
+        )
+        throw 'Publication safety check accepted an abnormal result drop.'
+    }
+    catch {
+        if ($_.Exception.Message -eq 'Publication safety check accepted an abnormal result drop.') { throw }
+        if ($_.Exception.Message -notmatch 'Publication safety check blocked') { throw }
+    }
     $mergeLog = Get-Content -LiteralPath $logPath -Raw
-    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=2 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=1 removed=0 passed=1\.' -or $mergeLog -notmatch 'Country speed floor US >= 5 MB/s: evaluated=3 protected=2 removed=1 passed=2\.') {
+    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=0 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=0 removed=1 passed=0\.' -or $mergeLog -notmatch 'Country speed floor US >= 5 MB/s: evaluated=3 protected=0 removed=3 passed=0\.') {
         throw 'Country speed floor summaries were not logged.'
     }
 
@@ -228,7 +252,7 @@ try {
         }
     }
     $precisionLog = Get-Content -LiteralPath $logPath -Raw
-    if ($precisionLog -notmatch 'Country speed floor JP >= 0\.001 MB/s: evaluated=1 protected=1 removed=0 passed=1\.') {
+    if ($precisionLog -notmatch 'Country speed floor JP >= 0\.001 MB/s: evaluated=1 protected=0 removed=0 passed=1\.') {
         throw 'Country speed floor log lost three-decimal precision.'
     }
 
