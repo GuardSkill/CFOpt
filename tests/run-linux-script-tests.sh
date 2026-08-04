@@ -255,10 +255,10 @@ test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retentio
   grep -q '^203\.0\.113\.10,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "JP boundary row must survive"
   grep -q '^203\.0\.113\.11,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "JP above-floor row must survive"
   ! grep -q '^203\.0\.113\.9,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "JP below-floor row survived"
-  grep -q '^203\.0\.113\.12,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "a country with one valid row must protect it below the floor"
+  ! grep -q '^203\.0\.113\.12,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "below-floor HK row survived"
   grep -q '^203\.0\.113\.20,' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "DE should retain global behavior"
-  grep -q 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=2 removed=1 passed=2.' "$tmp_dir/work/auto-push.log" || fail "missing JP floor stats"
-  grep -q 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=1 removed=0 passed=1.' "$tmp_dir/work/auto-push.log" || fail "missing HK protection stats"
+  grep -q 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=0 removed=1 passed=2.' "$tmp_dir/work/auto-push.log" || fail "missing JP floor stats"
+  grep -q 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=0 removed=1 passed=0.' "$tmp_dir/work/auto-push.log" || fail "missing HK floor stats"
   awk -F',' 'NR > 1 && $4 !~ /^[A-Z][A-Z] \[[^]]+#[0-9][0-9] [0-9]+\.[0-9]MB\/s\]$/ { exit 1 }' "$tmp_dir/work/CloudflareSpeedTest.csv" \
     || fail "final city labels must contain one-decimal measured speed"
   ! grep -Eq 'previous|ip\.zip|unknown|cf-bestip|vps789' "$tmp_dir/work/CloudflareSpeedTest.csv" \
@@ -278,16 +278,17 @@ test_linux_country_speed_floor_protects_only_available_row() {
 
     mkdir -p "$WORK_DIR"
     printf '443,JP,ip.zip,203.0.113.9,1,1,0.00,100.00,9.99,NRT\n' > "$COMBINED_CANDIDATES_PATH"
-    filter_csv
-    grep -q '^203\.0\.113\.9,' "$CSV_PATH" || fail "the only valid JP row must be protected below its floor"
+    if filter_csv; then
+      fail "filter_csv accepted a CSV containing only a below-floor JP row"
+    fi
 
     local expected_summary
     for expected_summary in \
-      'Country speed floor JP >= 10 MB/s: evaluated=1 protected=1 removed=0 passed=1.' \
+      'Country speed floor JP >= 10 MB/s: evaluated=1 protected=0 removed=1 passed=0.' \
       'Country speed floor US >= 5 MB/s: evaluated=0 protected=0 removed=0 passed=0.' \
       'Country speed floor KR >= 3 MB/s: evaluated=0 protected=0 removed=0 passed=0.' \
       'Country speed floor HK >= 2 MB/s: evaluated=0 protected=0 removed=0 passed=0.'; do
-      grep -Fq "$expected_summary" "$LOG_FILE" || fail "missing protection summary: $expected_summary"
+      grep -Fq "$expected_summary" "$LOG_FILE" || fail "missing floor summary: $expected_summary"
     done
   )
 }
@@ -320,7 +321,7 @@ test_linux_filter_rejects_invalid_candidate_speeds_at_zero_floors() {
     for invalid_ip in 203.0.113.41 203.0.113.42 203.0.113.43 203.0.113.44; do
       ! grep -q "^${invalid_ip//./\\.}," "$CSV_PATH" || fail "invalid candidate speed reached the final CSV: $invalid_ip"
     done
-    grep -Fq 'Country speed floor JP >= 0.001 MB/s: evaluated=1 protected=1 removed=0 passed=1.' "$LOG_FILE" \
+    grep -Fq 'Country speed floor JP >= 0.001 MB/s: evaluated=1 protected=0 removed=0 passed=1.' "$LOG_FILE" \
       || fail "country speed floor log lost three-decimal precision"
   )
 }

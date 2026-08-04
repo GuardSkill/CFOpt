@@ -22,6 +22,7 @@ MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
 COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
 ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.33}"
+MIN_PUBLISH_RETENTION_RATIO="${MIN_PUBLISH_RETENTION_RATIO:-0.6}"
 CFST_THREADS="${CFST_THREADS:-80}"
 CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-2}"
 CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-10}"
@@ -509,6 +510,7 @@ merge_country_files_for_port() {
   local scope="${2:-all}"
   local countries_csv="${3:-$COUNTRIES_CSV}"
   local include_vps789="${4:-1}"
+  local include_previous="${5:-1}"
   local safe_scope="${scope//[^A-Za-z0-9_-]/_}"
   local port_dir="$EXTRACT_DIR/$port"
   local selected_ip_path="$WORK_DIR/selected-ip-$port-$safe_scope.txt"
@@ -535,8 +537,10 @@ merge_country_files_for_port() {
     found=$((found + 1))
   done
 
-  local previous_added
-  previous_added="$(append_previous_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+  local previous_added=0
+  if [[ "$include_previous" == "1" ]]; then
+    previous_added="$(append_previous_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+  fi
 
   local cfbestip_added
   cfbestip_added="$(append_cfbestip_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
@@ -562,6 +566,26 @@ merge_country_files_for_port() {
 
   log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. previous added: $previous_added. cf-bestip added: $cfbestip_added. vps789 CT added: $vps789_added."
   printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
+}
+
+prepare_previous_work_item() {
+  local port="$1" safe_scope="previous"
+  local selected_ip_path="$WORK_DIR/selected-ip-$port-$safe_scope.txt"
+  local map_path="$WORK_DIR/selected-ip-city-map-$port-$safe_scope.csv"
+  [[ -s "$PREVIOUS_NODES_PATH" ]] || return 0
+  : > "$selected_ip_path"
+  : > "$map_path"
+  awk -F',' -v port="$port" -v ips="$selected_ip_path" -v map="$map_path" '
+    $2 == port && $1 != "" && $3 != "" {
+      if (!seen[$1]++) print $1 >> ips
+      print $1 "," $3 ",previous" >> map
+    }
+  ' "$PREVIOUS_NODES_PATH"
+  local count
+  count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
+  (( count > 0 )) || return 0
+  log "Prepared $count previous nodes for full download retest on port $port."
+  printf '%s,%s,%s,%s\n' "$port" "$safe_scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
 positive_tcp_precheck_value() {
@@ -727,6 +751,9 @@ start_cfst_for_port() {
     download_test_count="$FOCUS_CFST_DOWNLOAD_TEST_COUNT"
     download_test_time="$FOCUS_CFST_DOWNLOAD_TEST_TIME"
   fi
+  if [[ "$scope" == "previous" ]]; then
+    download_test_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
+  fi
   local args=(-f "$selected_ip_path" -o "$csv_path" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$download_test_count" -dt "$download_test_time" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
 
   if [[ "$port" != "443" ]]; then
@@ -889,11 +916,7 @@ filter_csv() {
         protected = 0
         if (city in country_floor) {
           country_evaluated[city]++
-          if (country_rank[city] <= 2) {
-            protected = 1
-            country_protected[city]++
-            country_passed[city]++
-          } else if (speed < country_floor[city]) {
+          if (speed < country_floor[city]) {
             country_removed[city]++
             removed++
             continue
@@ -1088,6 +1111,32 @@ publish_to_github() {
   publish_file_to_github "$CSV_PATH" "$TARGET_PATH" "Update $TARGET_PATH"
 }
 
+assert_publication_safety() {
+  [[ -s "$PREVIOUS_NODES_PATH" ]] || return 0
+  if ! awk -F',' -v ratio="$MIN_PUBLISH_RETENTION_RATIO" '
+    FILENAME == ARGV[1] { previous[$3]++; previous_total++; next }
+    FNR == 1 { next }
+    { city=substr($4, 1, 2); current[city]++; current_total++ }
+    END {
+      required_total = int(previous_total * ratio + 0.999999)
+      if (current_total < required_total) {
+        printf "Publication safety check blocked upload: current rows %d are below %d required from %d previous rows.\n", current_total, required_total, previous_total > "/dev/stderr"
+        exit 1
+      }
+      for (city in previous) {
+        required = int(previous[city] * ratio + 0.999999)
+        if ((current[city] + 0) < required) {
+          printf "Publication safety check blocked upload: %s has %d rows, below %d required from %d previous rows.\n", city, current[city] + 0, required, previous[city] > "/dev/stderr"
+          exit 1
+        }
+      }
+    }
+  ' "$PREVIOUS_NODES_PATH" "$CSV_PATH"; then
+    return 1
+  fi
+  log "Publication safety check passed: retention_ratio=$MIN_PUBLISH_RETENTION_RATIO."
+}
+
 generate_proxyip_best() {
   if [[ "$DISABLE_PROXYIP_BEST" == "1" ]]; then
     log "proxyip-best generation disabled."
@@ -1136,14 +1185,15 @@ main() {
   log "Configured ports: ${ports[*]}"
   all_countries_csv="$(focus_excluded_countries_csv "$COUNTRIES_CSV" "$FOCUS_COUNTRIES_CSV")"
   for port_value in "${ports[@]}"; do
+    prepare_previous_work_item "$port_value"
     if [[ -n "$all_countries_csv" ]]; then
-      merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" || true
+      merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" "0" || true
     fi
     IFS=',' read -r -a focus_countries <<< "$FOCUS_COUNTRIES_CSV"
     for focus_country in "${focus_countries[@]}"; do
       focus_country="$(printf '%s' "$focus_country" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
       [[ -n "$focus_country" ]] || continue
-      merge_country_files_for_port "$port_value" "focus-$focus_country" "$focus_country" "0" || true
+      merge_country_files_for_port "$port_value" "focus-$focus_country" "$focus_country" "0" "0" || true
     done
   done
 
@@ -1210,6 +1260,7 @@ main() {
   fi
   build_combined_candidates
   filter_csv
+  assert_publication_safety
 
   if [[ "$SKIP_UPLOAD" == "1" ]]; then
     log "SkipUpload enabled. CSV generated but GitHub upload and success-state update were skipped."
