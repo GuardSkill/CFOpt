@@ -13,7 +13,7 @@ INSTALL_DAILY_AUTORUN="${INSTALL_DAILY_AUTORUN:-1}"
 DAILY_AT="${DAILY_AT:-04:00}"
 AUTORUN_BACKEND="${AUTORUN_BACKEND:-auto}"
 INTERVAL_HOURS="${INTERVAL_HOURS:-4}"
-FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,DE,GB}"
+FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,TW,JP,KR,DE,GB}"
 IPZIP_COUNTRY_SAMPLE_MULTIPLIERS="${IPZIP_COUNTRY_SAMPLE_MULTIPLIERS:-KR=2,US=0.5}"
 
 mkdir -p "$WORK_DIR"
@@ -101,7 +101,7 @@ EOF
 
   if [[ "$AUTORUN_BACKEND" != "systemd" ]] && command -v crontab >/dev/null 2>&1; then
     local cron_line
-    cron_line="$minute */$INTERVAL_HOURS * * * GITHUB_TOKEN_CFOPT=\"${GITHUB_TOKEN_CFOPT:-}\" WORK_DIR=\"$WORK_DIR\" CFST_PATH=\"$WORK_DIR/cfst\" INTERVAL_HOURS=4 FOCUS_COUNTRIES_CSV=\"SG,HK,JP,KR,DE,GB\" IPZIP_COUNTRY_SAMPLE_MULTIPLIERS=\"KR=2,US=0.5\" \"$runner\" >> \"$WORK_DIR/cron.log\" 2>&1"
+    cron_line="$minute */$INTERVAL_HOURS * * * GITHUB_TOKEN_CFOPT=\"${GITHUB_TOKEN_CFOPT:-}\" WORK_DIR=\"$WORK_DIR\" CFST_PATH=\"$WORK_DIR/cfst\" INTERVAL_HOURS=4 FOCUS_COUNTRIES_CSV=\"SG,HK,TW,JP,KR,DE,GB\" IPZIP_COUNTRY_SAMPLE_MULTIPLIERS=\"KR=2,US=0.5\" \"$runner\" >> \"$WORK_DIR/cron.log\" 2>&1"
     (crontab -l 2>/dev/null | grep -v 'cfopt-auto-push-linux.sh'; echo "$cron_line") | crontab -
     echo "Installed crontab job every $INTERVAL_HOURS hours at minute $minute."
     return 0

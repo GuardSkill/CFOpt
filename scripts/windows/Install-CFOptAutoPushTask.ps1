@@ -91,7 +91,7 @@ if (-not (Test-Path -LiteralPath $CfstPath)) {
 }
 
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`" -FocusCountries `"SG,HK,JP,KR,DE,GB`" -IpZipCountrySampleMultipliers `"KR=2,US=0.5`""
+$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`" -FocusCountries `"SG,HK,TW,JP,KR,DE,GB`" -IpZipCountrySampleMultipliers `"KR=2,US=0.5`""
 
 $action = New-ScheduledTaskAction -Execute $powershell -Argument $argument -WorkingDirectory $repoRoot
 $dailyTrigger = New-ScheduledTaskTrigger -Once -At ([datetime]::Parse($DailyAt))

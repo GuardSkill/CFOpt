@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 
-DEFAULT_COUNTRIES = ("IE", "AT", "AU", "KR", "HK", "SG", "JP", "DE", "GB")
+DEFAULT_COUNTRIES = ("IE", "AT", "AU", "KR", "HK", "TW", "SG", "JP", "DE", "GB")
 
 
 def load_text(source):

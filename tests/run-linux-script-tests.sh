@@ -142,8 +142,8 @@ test_linux_country_speed_floor_defaults_and_parser() {
     unset COUNTRY_MIN_SPEED_MB_PER_SEC FOCUS_COUNTRIES_CSV
     CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
 
-    [[ "$FOCUS_COUNTRIES_CSV" == "SG,HK,JP,KR,US,DE,GB" ]] || fail "US must be a default focus country"
-    [[ "$COUNTRY_MIN_SPEED_MB_PER_SEC" == "JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5" ]] || fail "unexpected country floors"
+    [[ "$FOCUS_COUNTRIES_CSV" == "SG,HK,TW,JP,KR,US,DE,GB" ]] || fail "TW and US must be default focus countries"
+    [[ "$COUNTRY_MIN_SPEED_MB_PER_SEC" == "JP=10,US=5,KR=3,HK=2,TW=3,DE=5,GB=3,SG=5" ]] || fail "unexpected country floors"
     [[ "$(normalize_country_min_speed_map 'jp=10, US=5' 'HK,JP,US')" == "JP=10,US=5" ]] || fail "country floor normalization failed"
     [[ -z "$(normalize_country_min_speed_map '' 'HK,JP,US')" ]] || fail "empty map must disable floors"
 
@@ -167,15 +167,15 @@ test_linux_country_speed_floor_defaults_and_parser() {
   chinese_readme="$(sed -n '/^## 中文说明$/,/^## English$/p' "$ROOT_DIR/README.md")"
   english_readme="$(sed -n '/^## English$/,$p' "$ROOT_DIR/README.md")"
 
-  for required_text in 'JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5' 'COUNTRY_MIN_SPEED_MB_PER_SEC' 'CountryMinSpeedMBPerSec' '13.1MB/s'; do
+  for required_text in 'JP=10,US=5,KR=3,HK=2,TW=3,DE=5,GB=3,SG=5' 'COUNTRY_MIN_SPEED_MB_PER_SEC' 'CountryMinSpeedMBPerSec' '13.1MB/s'; do
     grep -Fq "$required_text" <<<"$chinese_readme" || fail "Chinese README missing country-floor documentation: $required_text"
     grep -Fq "$required_text" <<<"$english_readme" || fail "English README missing country-floor documentation: $required_text"
   done
 
   grep -Fq '大于等于' <<<"$chinese_readme" || fail "Chinese README must state that equality passes the country speed floor"
-  grep -Fq '最快的两个' <<<"$chinese_readme" || fail "Chinese README must document fastest-two protection"
+  grep -Fq '严格执行' <<<"$chinese_readme" || fail "Chinese README must document strict Windows country floors"
   grep -Fq 'greater than or equal' <<<"$english_readme" || fail "English README must state that equality passes the country speed floor"
-  grep -Fq 'fastest two' <<<"$english_readme" || fail "English README must document fastest-two protection"
+  grep -Fq 'strictly applies' <<<"$english_readme" || fail "English README must document strict Windows country floors"
 }
 
 test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention() {
@@ -506,22 +506,28 @@ SH
 }
 
 test_runner_defaults_include_europe_focus_countries() {
-  grep -q 'COUNTRIES_CSV="${COUNTRIES_CSV:-HK,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux runner default Countries should include DE/GB/NL/IT"
-  grep -q 'FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,JP,KR,US,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux runner default FocusCountries should include SG/HK/JP/KR/US/DE/GB"
-  grep -q '\[string\[\]\]\$Countries = @("HK", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US", "DE", "GB", "NL", "IT")' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows runner default Countries should include DE/GB/NL/IT"
-  grep -q '\[string\]\$FocusCountries = "SG,HK,JP,KR,US,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows runner default FocusCountries should include SG/HK/JP/KR/US/DE/GB"
+  grep -q 'COUNTRIES_CSV="${COUNTRIES_CSV:-HK,TW,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner default Countries should include TW"
+  grep -q 'FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,TW,JP,KR,US,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner default FocusCountries should include TW"
+  grep -q '\[string\[\]\]\$Countries = @("HK", "TW", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US", "DE", "GB", "NL", "IT")' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner default Countries should include TW"
+  grep -q '\[string\]\$FocusCountries = "SG,HK,TW,JP,KR,US,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner default FocusCountries should include TW"
   grep -q 'IPZIP_COUNTRY_SAMPLE_MULTIPLIERS="${IPZIP_COUNTRY_SAMPLE_MULTIPLIERS:-KR=2,US=0.5}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux runner should default to KR and US country sampling multipliers"
   grep -q '\[string\]\$IpZipCountrySampleMultipliers = "KR=2,US=0.5"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner should default to KR and US country sampling multipliers"
-  grep -q 'PROXYIP_BEST_COUNTRIES="${PROXYIP_BEST_COUNTRIES:-IE,AT,AU,KR,HK,SG,JP,US,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux runner must maintain US ProxyIP best-list candidates"
-  grep -q '\[string\]\$ProxyipBestCountries = "IE,AT,AU,KR,HK,SG,JP,US,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows runner must maintain US ProxyIP best-list candidates"
+  grep -q 'PROXYIP_BEST_COUNTRIES="${PROXYIP_BEST_COUNTRIES:-IE,AT,AU,KR,HK,TW,SG,JP,US,DE,GB}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner must maintain TW ProxyIP best-list candidates"
+  grep -q '\[string\]\$ProxyipBestCountries = "IE,AT,AU,KR,HK,TW,SG,JP,US,DE,GB"' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner must maintain TW ProxyIP best-list candidates"
+  grep -q 'DEFAULT_COUNTRIES = ("IE", "AT", "AU", "KR", "HK", "TW", "SG", "JP", "DE", "GB")' "$ROOT_DIR/scripts/generate_proxyip_best.py" \
+    || fail "ProxyIP generator must default to TW candidates"
+  for config in CFOpt_Subconverter.ini CFOpt_Subconverter_lite.ini CFOpt_Subconverter_lite_cmliussss.ini; do
+    grep -q 'TW Pool' "$ROOT_DIR/$config" || fail "$config must expose a TW Pool"
+    grep -q 'TW Proxy' "$ROOT_DIR/$config" || fail "$config must expose a TW Proxy group"
+  done
 }
 
 test_runners_default_to_four_hour_interval() {
@@ -823,11 +829,11 @@ for rule in cmliussss_rules:
         raise SystemExit(f"{full}: missing lite baseline ruleset: {rule}")
 
 required_business_groups = [
-    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
-    "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
-    "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT",
+    "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
+    "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
 ]
 full_text = text(full)
 for group in required_business_groups:
@@ -840,11 +846,12 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
     if "rules/Bilibili.list" in content and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in content:
         raise SystemExit(f"{path}: Bilibili rules must route to Direct")
-    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT" not in content:
-        raise SystemExit(f"{path}: CodeAgent must include the US Proxy pool")
+    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT" not in content:
+        raise SystemExit(f"{path}: CodeAgent must include the TW and US Proxy pools")
     codeagent_filters = {
         "JP Proxy ↪": "(🇯🇵 )?JP ↪ \\[",
         "HK Proxy ↪": "(🇭🇰 )?HK ↪ \\[",
+        "TW Proxy ↪": "(🇹🇼 )?TW ↪ \\[",
         "KR Proxy ↪": "(🇰🇷 )?KR ↪ \\[",
         "SG Proxy ↪": "(🇸🇬 )?SG ↪ \\[",
         "US Proxy ↪": "(🇺🇸 )?US ↪ \\[",
@@ -858,7 +865,7 @@ for path in [full, lite, cmliussss]:
             raise SystemExit(f"{path}: {group_name} must probe the Codex backend: {matches[0]}")
     if "ruleset=Steam,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Steam.list" not in content:
         raise SystemExit(f"{path}: missing Steam ruleset")
-    if "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]Auto`[]DIRECT" not in content:
+    if "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT" not in content:
         raise SystemExit(f"{path}: Steam must use plain country pools like Twitter")
     steam_group = next((line for line in lines(path, "custom_proxy_group=Steam`select`")), "")
     if "Proxy ↪" in steam_group or "[]Proxy" in steam_group:
