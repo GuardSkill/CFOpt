@@ -13,3 +13,7 @@ Existing coverage already includes Feishu/Lark, QQ/QQ Mail, Youdao, and Baidu. A
 ## Validation
 
 Extend the existing Linux script test to assert every requested service suffix is present in `rules/MainlandDirect.list`, and retain the existing assertion that every Subconverter configuration references that list as `Direct`.
+
+## Taiwan benchmark exception
+
+TW remains a candidate and dedicated focus country in both runners, but has no country download-speed floor. Remove `TW=3` from the Windows and Linux default floor strings and update their tests and documentation. Other country floors remain unchanged.

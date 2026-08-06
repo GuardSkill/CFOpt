@@ -32,7 +32,7 @@ try {
         throw "TW and US must have dedicated default focus scopes."
     }
     $floors = ConvertFrom-CountryMinSpeedMap -Value $CountryMinSpeedMBPerSec -AllowedCountries $Countries
-    if ($floors.Count -ne 8 -or $floors["JP"] -ne 10 -or $floors["US"] -ne 5 -or $floors["KR"] -ne 3 -or $floors["HK"] -ne 2 -or $floors["TW"] -ne 3 -or $floors["DE"] -ne 5 -or $floors["GB"] -ne 3 -or $floors["SG"] -ne 5) {
+    if ($floors.Count -ne 7 -or $floors["JP"] -ne 10 -or $floors["US"] -ne 5 -or $floors["KR"] -ne 3 -or $floors["HK"] -ne 2 -or $floors.ContainsKey("TW") -or $floors["DE"] -ne 5 -or $floors["GB"] -ne 3 -or $floors["SG"] -ne 5) {
         throw "Unexpected default country speed floors."
     }
     if ((ConvertFrom-CountryMinSpeedMap -Value "" -AllowedCountries $Countries).Count -ne 0) {

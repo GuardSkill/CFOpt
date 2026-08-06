@@ -30,7 +30,7 @@ param(
     [int]$TcpPrecheckThreads = 128,
     [int]$TcpPrecheckMaxCandidates = 30,
     [switch]$UseProxyForCfst,
-    [string]$CountryMinSpeedMBPerSec = "JP=10,US=5,KR=3,HK=2,TW=3,DE=5,GB=3,SG=5",
+    [string]$CountryMinSpeedMBPerSec = "JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5",
     [string]$FocusCountries = "SG,HK,TW,JP,KR,US,DE,GB",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",

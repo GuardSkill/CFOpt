@@ -97,6 +97,15 @@ DOMAIN-SUFFIX,youdaocdn.com
 DOMAIN-SUFFIX,qijiayoudao.net
 DOMAIN,note.youdao.com
 DOMAIN,docs.youdao.com
+DOMAIN-SUFFIX,yuque.com
+DOMAIN-SUFFIX,yuque.com.cn
+DOMAIN-SUFFIX,yuqueapp.com
+DOMAIN-SUFFIX,yuqueapp.cn
+DOMAIN-SUFFIX,yuqueusercontent.com
+DOMAIN-SUFFIX,zhihu.com
+DOMAIN-SUFFIX,zhihu.cn
+DOMAIN-SUFFIX,zhimg.com
+DOMAIN-SUFFIX,zhihuishu.com
 DOMAIN-SUFFIX,deepseek.com
 DOMAIN-SUFFIX,moonshot.cn
 DOMAIN-SUFFIX,moonshot.ai

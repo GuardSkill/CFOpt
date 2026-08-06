@@ -254,7 +254,7 @@ GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -f
 
 ### 国家下载速度下限
 
-默认的国家下载速度下限为 `JP=10,US=5,KR=3,HK=2,TW=3,DE=5,GB=3,SG=5`。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。Windows 严格执行此门槛：发布节点的下载速度必须大于等于对应国家的下限。
+默认的国家下载速度下限为 `JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5`。TW 默认不设国家下载速度下限。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。Windows 严格执行此门槛：发布节点的下载速度必须大于等于对应国家的下限。
 
 默认重点测速范围（focus scope）是 `SG,HK,TW,JP,KR,US,DE,GB`；其中 US 与 TW 会作为独立重点范围测速。脚本先按国家和 IP 去重并保留本轮速度最高的测量，再执行国家下限。新旧节点一视同仁。最终 CSV 的城市栏不再显示来源，而显示一位小数的下载速度，例如 `DE [CD#01 13.1MB/s]`。
 
@@ -422,7 +422,7 @@ FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### Country Download Speed Floors
 
-The default country download-speed floors are `JP=10,US=5,KR=3,HK=2,TW=3,DE=5,GB=3,SG=5`. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. Windows strictly applies each floor: published nodes must be greater than or equal to the corresponding country floor.
+The default country download-speed floors are `JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5`. TW has no country speed floor by default. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. Windows strictly applies each floor: published nodes must be greater than or equal to the corresponding country floor.
 
 The default focus scope is `SG,HK,TW,JP,KR,US,DE,GB`; TW and US are benchmarked as dedicated focus scopes. The runner first deduplicates each country/IP to its fastest current measurement, then applies the country floor. Old and new candidates compete equally. The final CSV city field shows one-decimal measured speed instead of source, for example `DE [CD#01 13.1MB/s]`.
 
