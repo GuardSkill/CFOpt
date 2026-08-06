@@ -28,6 +28,25 @@ try {
 
     $env:CFOPT_SOURCE_ONLY = "1"
     . $runnerPath
+    $waitProbeCsvPath = Join-Path $tempDir "wait-probe.csv"
+    Set-Content -LiteralPath $waitProbeCsvPath -Value "IP,Sent" -Encoding ASCII
+    $script:waitProbePollCount = 0
+    $completedProcess = [pscustomobject]@{ ExitCode = 0 }
+    $completedProcess | Add-Member -MemberType ScriptProperty -Name HasExited -Value {
+        $script:waitProbePollCount++
+        return $script:waitProbePollCount -ge 2
+    }
+    $completedProcess | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { throw "WaitForExit must not be called; completion must be polled." }
+    Wait-CfstProcesses -Running @([pscustomobject]@{
+        Process = $completedProcess
+        Item = [pscustomobject]@{
+            Port = 443
+            Scope = "completed-test"
+            StdoutPath = (Join-Path $tempDir "wait-probe-stdout.log")
+            StderrPath = (Join-Path $tempDir "wait-probe-stderr.log")
+            CsvPath = $waitProbeCsvPath
+        }
+    })
     if ($FocusCountries -ne "SG,HK,TW,JP,KR,US,DE,GB") {
         throw "TW and US must have dedicated default focus scopes."
     }

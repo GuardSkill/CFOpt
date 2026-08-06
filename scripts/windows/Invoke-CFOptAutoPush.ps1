@@ -1033,7 +1033,9 @@ function Wait-CfstProcesses {
     foreach ($entry in $Running) {
         $process = $entry.Process
         $item = $entry.Item
-        $process.WaitForExit()
+        while (-not $process.HasExited) {
+            Start-Sleep -Milliseconds 250
+        }
 
         if (Test-Path -LiteralPath $item.StdoutPath) {
             Get-Content -LiteralPath $item.StdoutPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
