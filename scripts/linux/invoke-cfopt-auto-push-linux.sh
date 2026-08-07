@@ -21,7 +21,7 @@ MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
 COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
-ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.33}"
+ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.20}"
 MIN_PUBLISH_RETENTION_RATIO="${MIN_PUBLISH_RETENTION_RATIO:-0.6}"
 CFST_THREADS="${CFST_THREADS:-80}"
 CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-2}"
@@ -51,6 +51,15 @@ ENABLE_GSLEGE_CLOUDFLAREIP="${ENABLE_GSLEGE_CLOUDFLAREIP:-1}"
 GSLEGE_RAW_BASE_URL="${GSLEGE_RAW_BASE_URL:-https://raw.githubusercontent.com/gslege/CloudflareIP/main}"
 GSLEGE_COUNTRIES_CSV="${GSLEGE_COUNTRIES_CSV:-JP,SG,US,DE,NL}"
 GSLEGE_PER_COUNTRY_LIMIT="${GSLEGE_PER_COUNTRY_LIMIT:-20}"
+ENABLE_HOT_PREFIX_MINING="${ENABLE_HOT_PREFIX_MINING:-1}"
+HOT_PREFIX_SAMPLES="${HOT_PREFIX_SAMPLES:-4}"
+HOT_PREFIX_MAX_PREFIXES_PER_COUNTRY_PORT="${HOT_PREFIX_MAX_PREFIXES_PER_COUNTRY_PORT:-4}"
+HOT_PREFIX_COUNTRY_MULTIPLIERS="${HOT_PREFIX_COUNTRY_MULTIPLIERS:-DE=3,HK=2,KR=3}"
+ENABLE_CT_ENTRY_POOL="${ENABLE_CT_ENTRY_POOL:-1}"
+CT_ENTRY_CIDRS="${CT_ENTRY_CIDRS:-104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,162.159.192.0/24,162.159.193.0/24,162.159.195.0/24,198.41.192.0/24,198.41.200.0/24,141.101.115.0/24}"
+CT_ENTRY_SAMPLES_PER_CIDR="${CT_ENTRY_SAMPLES_PER_CIDR:-32}"
+CANDIDATE_POOL_MODE="${CANDIDATE_POOL_MODE:-adaptive}"
+ADAPTIVE_MIN_CANDIDATES_PER_WORK_ITEM="${ADAPTIVE_MIN_CANDIDATES_PER_WORK_ITEM:-20}"
 IPZIP_SAMPLE_ENABLED="${IPZIP_SAMPLE_ENABLED:-1}"
 IPZIP_SAMPLE_PERCENT="${IPZIP_SAMPLE_PERCENT:-40}"
 IPZIP_COUNTRY_MIN_CANDIDATES="${IPZIP_COUNTRY_MIN_CANDIDATES:-40}"
@@ -89,6 +98,9 @@ VPS789_CT_IP_PATH="$WORK_DIR/vps789-ct-ip.txt"
 VPS789_CT_CSV_PATH="$WORK_DIR/VPS789_CF_CT_Candidates.csv"
 IP164746_PATH="$WORK_DIR/ip164746.txt"
 GSLEGE_PATH="$WORK_DIR/gslege-candidates.csv"
+HOT_MINE_PATH="$WORK_DIR/hot-mine-candidates.csv"
+CT_ENTRY_PATH="$WORK_DIR/ct-entry-candidates.csv"
+ADAPTIVE_POOL_SCRIPT="${ADAPTIVE_POOL_SCRIPT:-$ROOT_DIR/scripts/adaptive_pool.py}"
 STATE_FILE="$WORK_DIR/last-success.txt"
 LOG_FILE="$WORK_DIR/auto-push.log"
 
@@ -221,6 +233,13 @@ import sys
 
 csv_path, nodes_path, keys_path = sys.argv[1:4]
 city_re = re.compile(r"\b([A-Za-z]{2})\b")
+colo_country = {}
+for codes, country in [
+    ("NRT KIX FUK OKA","JP"),("SIN","SG"),("HKG","HK"),("ICN","KR"),("TPE KHH","TW"),
+    ("MNL CEB","PH"),("SGN HAN","VN"),("KUL PEN","MY"),("ALA NQZ","KZ"),("ULN","MN"),("DUB","IE"),
+    ("FRA TXL BER MUC DUS HAM","DE"),("LHR MAN EDI","GB"),("AMS","NL"),("MXP FCO","IT"),
+    ("LAX SJC SEA PDX PHX DEN DFW ORD ATL MIA IAD EWR JFK BOS","US")]:
+    for code in codes.split(): colo_country[code]=country
 rows = []
 
 with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
@@ -236,6 +255,8 @@ with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
         if not match:
             continue
         city = match.group(1).upper()
+        if len(row) > 2 and row[2].strip().upper() in colo_country:
+            city = colo_country[row[2].strip().upper()]
         if re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", ip) and port.isdigit():
             rows.append((ip, port, city))
 
@@ -437,6 +458,40 @@ append_gslege_for_port() {
     printf '%s,%s,gslege\n' "$ip" "$country" >> "$map_path"
   done < "$GSLEGE_PATH"
   printf '%s\n' "$added"
+}
+
+generate_adaptive_pools() {
+  : > "$HOT_MINE_PATH"; : > "$CT_ENTRY_PATH"
+  [[ -f "$ADAPTIVE_POOL_SCRIPT" ]] || { log "WARN: Adaptive pool helper not found: $ADAPTIVE_POOL_SCRIPT"; return 0; }
+  python3 "$ADAPTIVE_POOL_SCRIPT" generate \
+    --previous-nodes "$PREVIOUS_NODES_PATH" --gslege "$GSLEGE_PATH" --ports "$(IFS=,; echo "${ports[*]}")" \
+    --ct-cidrs "$CT_ENTRY_CIDRS" --hot-output "$HOT_MINE_PATH" --ct-output "$CT_ENTRY_PATH" \
+    --multipliers "$HOT_PREFIX_COUNTRY_MULTIPLIERS" --samples "$HOT_PREFIX_SAMPLES" \
+    --max-prefixes "$HOT_PREFIX_MAX_PREFIXES_PER_COUNTRY_PORT" --ct-samples "$CT_ENTRY_SAMPLES_PER_CIDR"
+  log "Generated $(wc -l < "$HOT_MINE_PATH" | tr -d ' ') hot-mine and $(wc -l < "$CT_ENTRY_PATH" | tr -d ' ') CT entry candidates."
+}
+
+append_hot_mine_for_port() {
+  local port="$1" countries_csv="$2" selected_ip_path="$3" map_path="$4" added=0 ip candidate_port country
+  [[ "$ENABLE_HOT_PREFIX_MINING" == "1" && "$CANDIDATE_POOL_MODE" != "legacy" && -s "$HOT_MINE_PATH" ]] || { printf '0\n'; return; }
+  while IFS=',' read -r ip candidate_port country; do
+    [[ "$candidate_port" == "$port" ]] || continue
+    tr ',' '\n' <<< "$countries_csv" | tr '[:lower:]' '[:upper:]' | sed 's/^ *//;s/ *$//' | grep -Fxq "$country" || continue
+    if ! grep -Fxq "$ip" "$selected_ip_path"; then printf '%s\n' "$ip" >> "$selected_ip_path"; added=$((added+1)); fi
+    printf '%s,%s,hot-mine\n' "$ip" "$country" >> "$map_path"
+  done < "$HOT_MINE_PATH"
+  printf '%s\n' "$added"
+}
+
+prepare_ct_entry_work_item() {
+  local port="$1" scope="ct-entry" selected="$WORK_DIR/selected-ip-$port-ct-entry.txt" map="$WORK_DIR/selected-ip-city-map-$port-ct-entry.csv"
+  [[ "$ENABLE_CT_ENTRY_POOL" == "1" && -s "$CT_ENTRY_PATH" ]] || return 0
+  : > "$selected"
+  : > "$map"
+  awk -F',' -v port="$port" -v selected="$selected" -v map="$map" '$2==port&&!seen[$1]++ {print $1 > selected; print $1 ",CT-SEED,ct-pool" > map}' "$CT_ENTRY_PATH"
+  [[ -s "$selected" ]] || return 0
+  log "Prepared $(wc -l < "$selected" | tr -d ' ') dedicated CT entry candidates for port $port."
+  printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected" "$map" >> "$WORK_DIR/port-work-items.csv"
 }
 
 append_cfbestip_for_port() {
@@ -641,7 +696,9 @@ merge_country_files_for_port() {
       log "WARN: Country file not found in extracted zip: ${country}.txt. Skipping $country on port $port."
       continue
     fi
-    append_ipzip_country_file "$country" "$file" "$selected_ip_path" "$map_path"
+    if [[ "$CANDIDATE_POOL_MODE" != "adaptive" ]]; then
+      append_ipzip_country_file "$country" "$file" "$selected_ip_path" "$map_path"
+    fi
     found=$((found + 1))
   done
 
@@ -650,14 +707,23 @@ merge_country_files_for_port() {
     previous_added="$(append_previous_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
   fi
 
-  local cfbestip_added
-  cfbestip_added="$(append_cfbestip_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+  local cfbestip_added=0 ip164746_added=0 gslege_added=0 hot_mine_added=0
+  if [[ "$CANDIDATE_POOL_MODE" != "legacy" ]]; then
+    cfbestip_added="$(append_cfbestip_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+    ip164746_added="$(append_ip164746_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+    gslege_added="$(append_gslege_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+    hot_mine_added="$(append_hot_mine_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+  fi
 
-  local ip164746_added
-  ip164746_added="$(append_ip164746_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
-
-  local gslege_added
-  gslege_added="$(append_gslege_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+  local adaptive_count
+  adaptive_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
+  if [[ "$CANDIDATE_POOL_MODE" == "adaptive" && "$adaptive_count" -lt "$ADAPTIVE_MIN_CANDIDATES_PER_WORK_ITEM" ]]; then
+    log "Adaptive pool has only $adaptive_count candidates for port $port scope $scope; falling back to ip.zip."
+    for country in "${countries[@]}"; do
+      local fallback_file="$port_dir/${country}.txt"
+      [[ -f "$fallback_file" ]] && append_ipzip_country_file "$country" "$fallback_file" "$selected_ip_path" "$map_path"
+    done
+  fi
 
   local vps789_added=0
   if [[ "$include_vps789" == "1" && -s "$VPS789_CT_IP_PATH" ]]; then
@@ -678,7 +744,7 @@ merge_country_files_for_port() {
     return 1
   fi
 
-  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. previous added: $previous_added. cf-bestip added: $cfbestip_added. ip164746 added: $ip164746_added. gslege added: $gslege_added. vps789 CT added: $vps789_added."
+  log "Merged $line_count IP lines for port $port scope $scope mode $CANDIDATE_POOL_MODE into $selected_ip_path. previous added: $previous_added. cf-bestip added: $cfbestip_added. ip164746 added: $ip164746_added. gslege added: $gslege_added. hot-mine added: $hot_mine_added. vps789 CT added: $vps789_added."
   printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
@@ -960,6 +1026,13 @@ filter_csv() {
   rm -f "$COUNTRY_SPEED_STATS_PATH"
   [[ -s "$PREVIOUS_NODE_KEYS_PATH" ]] || printf '__none__\n' > "$PREVIOUS_NODE_KEYS_PATH"
   awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
+    function colo_country(c) {
+      if (c ~ /^(NRT|KIX|FUK|OKA)$/) return "JP"; if (c=="SIN") return "SG"; if (c=="HKG") return "HK"; if (c=="ICN") return "KR"
+      if (c ~ /^(TPE|KHH)$/) return "TW"; if (c ~ /^(MNL|CEB)$/) return "PH"; if (c ~ /^(SGN|HAN)$/) return "VN"; if (c ~ /^(KUL|PEN)$/) return "MY"
+      if (c ~ /^(ALA|NQZ)$/) return "KZ"; if (c=="ULN") return "MN"; if (c=="DUB") return "IE"
+      if (c ~ /^(FRA|TXL|BER|MUC|DUS|HAM)$/) return "DE"; if (c ~ /^(LHR|MAN|EDI)$/) return "GB"; if (c=="AMS") return "NL"; if (c ~ /^(MXP|FCO)$/) return "IT"
+      if (c ~ /^(LAX|SJC|SEA|PDX|PHX|DEN|DFW|ORD|ATL|MIA|IAD|EWR|JFK|BOS)$/) return "US"; return ""
+    }
     BEGIN {
       floor_count = split(country_speed_floors, floor_entries, ",")
       for (i = 1; i <= floor_count; i++) {
@@ -994,6 +1067,8 @@ filter_csv() {
         next
       }
       datacenter = $10
+      actual_country = colo_country(datacenter)
+      if (actual_country != "") city = actual_country
       speed_mbps = speed * 8
       if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
@@ -1289,7 +1364,7 @@ main() {
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
-  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
+  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$HOT_MINE_PATH" "$CT_ENTRY_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
 
   update_zip_cache
   fetch_previous_csv_nodes
@@ -1301,8 +1376,10 @@ main() {
 
   mapfile -t ports < <(effective_ports)
   log "Configured ports: ${ports[*]}"
+  generate_adaptive_pools
   all_countries_csv="$(focus_excluded_countries_csv "$COUNTRIES_CSV" "$FOCUS_COUNTRIES_CSV")"
   for port_value in "${ports[@]}"; do
+    prepare_ct_entry_work_item "$port_value"
     if [[ -n "$all_countries_csv" ]]; then
       merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" "1" || true
     fi
@@ -1377,6 +1454,12 @@ main() {
   fi
   build_combined_candidates
   filter_csv
+  if [[ -s "$PREVIOUS_CSV_PATH" && -f "$ADAPTIVE_POOL_SCRIPT" ]]; then
+    python3 "$ADAPTIVE_POOL_SCRIPT" rolling --previous "$PREVIOUS_CSV_PATH" --current "$CSV_PATH" --output "$CSV_PATH.rolling" --location "$TEST_LOCATION_NAME" --max-per-city "$MAX_PER_CITY" --replace-fraction "$ROLLING_REPLACE_FRACTION"
+    mv "$CSV_PATH.rolling" "$CSV_PATH"
+  else
+    log "No previous publication is available; publishing the current qualified result without a rolling merge."
+  fi
   assert_publication_safety
 
   if [[ "$SKIP_UPLOAD" == "1" ]]; then

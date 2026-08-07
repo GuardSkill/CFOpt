@@ -1081,6 +1081,17 @@ test_mainland_direct_covers_domestic_ai_model_providers() {
   done
 }
 
+test_adaptive_pool_helper_generates_multiport_candidates() {
+  local tmp_dir; tmp_dir="$(mktemp -d)"
+  printf '%s\n' '108.162.198.19,443,JP' '45.131.71.183,8443,DE' > "$tmp_dir/previous.csv"
+  printf '%s\n' '108.162.192.1,SG' > "$tmp_dir/gslege.csv"
+  python3 "$ROOT_DIR/scripts/adaptive_pool.py" generate --previous-nodes "$tmp_dir/previous.csv" --gslege "$tmp_dir/gslege.csv" \
+    --ports 443,8443 --ct-cidrs 104.16.0.0/30 --hot-output "$tmp_dir/hot.csv" --ct-output "$tmp_dir/ct.csv" \
+    --multipliers DE=3,HK=2,KR=3 --samples 4 --max-prefixes 4 --ct-samples 2
+  [[ "$(wc -l < "$tmp_dir/hot.csv" | tr -d ' ')" == 20 ]] || fail "adaptive hot pool count mismatch"
+  [[ "$(wc -l < "$tmp_dir/ct.csv" | tr -d ' ')" == 4 ]] || fail "CT pool must cover every configured port"
+}
+
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
 test_previous_csv_nodes_use_shell_safe_line_endings
@@ -1097,6 +1108,7 @@ test_runners_default_to_four_hour_interval
 test_focus_scopes_use_fast_download_profile
 test_candidate_pool_defaults_are_expanded_before_precheck
 test_ip164746_source_defaults_and_parser
+test_adaptive_pool_helper_generates_multiport_candidates
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_http_latency
 test_proxyip_best_generator_rejects_tcp_only_candidates

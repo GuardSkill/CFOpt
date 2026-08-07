@@ -83,13 +83,13 @@ https://zoroaaa.github.io/cf-bestip/ip_*.txt
 
 默认还会读取 `gslege/CloudflareIP` 的 `JP/SG/US/DE/NL.txt`，每个地区最多取前 20 个种子，仅加入 `443` 端口并由本机重新测速，来源标记为 `gslege`。Windows 可用 `-EnableGslegeCloudflareIp:$false`，Linux 可用 `ENABLE_GSLEGE_CLOUDFLAREIP=0` 关闭。
 
-Windows 成都流程还会对所有地区进行独立热前缀挖掘：从上一轮优胜节点、`cf-bestip`、`gslege` 和 `ip164746` 种子中，按“地区+端口”学习活跃 `/24`；每池最多使用 4 个前缀，每个前缀按日期轮换生成 4 个新地址，再进入本机 TCP 粗筛和 CFST。它不是重复使用成品 IP，而是在优胜网段内持续探索新地址，来源标记为 `hot-mine`。通过 `EnableHotPrefixMining`、`HotPrefixSamples` 和 `HotPrefixMaxPrefixesPerCountryPort` 配置。
+Windows 和 Linux 流程都会对所有地区进行独立热前缀挖掘：从上一轮优胜节点、`cf-bestip`、`gslege` 和 `ip164746` 种子中，按“地区+端口”学习活跃 `/24`；每池最多使用 4 个前缀，每个前缀按日期轮换生成 4 个新地址，再进入本机 TCP 粗筛和 CFST。它不是重复使用成品 IP，而是在优胜网段内持续探索新地址，来源标记为 `hot-mine`。Windows 使用 `EnableHotPrefixMining` 等参数，Linux 使用对应的 `ENABLE_HOT_PREFIX_MINING`、`HOT_PREFIX_SAMPLES` 和 `HOT_PREFIX_MAX_PREFIXES_PER_COUNTRY_PORT` 环境变量。
 
-成都流程还会从电信入口候选段分层抽样，默认包括 `104.16.0.0/13`、`104.24.0.0/14`、`172.64.0.0/13` 以及 WARP/Tunnel/合作段中指定的 `/24`。每段默认轮换抽取 32 个 IPv4，并在 `443/2053/2083/2087/2096/8443` 每个已配置端口测试一次；不按 focus 重复，来源为 `ct-pool`。这只验证其作为 CF TLS/下载入口的实际表现，不启用 IPv6 或 7844 专用协议测试。通过 `EnableCtEntryPool`、`CtEntryCidrs` 和 `CtEntrySamplesPerCidr` 配置。
+Windows 和 Linux 流程还会从电信入口候选段分层抽样，默认包括 `104.16.0.0/13`、`104.24.0.0/14`、`172.64.0.0/13` 以及 WARP/Tunnel/合作段中指定的 `/24`。每段默认轮换抽取 32 个 IPv4，并在 `443/2053/2083/2087/2096/8443` 每个已配置端口测试一次；不按 focus 重复，来源为 `ct-pool`。这只验证其作为 CF TLS/下载入口的实际表现，不启用 IPv6 或 7844 专用协议测试。通过 `EnableCtEntryPool`、`CtEntryCidrs` 和 `CtEntrySamplesPerCidr` 配置。
 
-默认候选模式为 `CandidatePoolMode=adaptive`：地区工作项优先使用 `previous + cf-bestip + gslege + ip164746 + hot-mine`，不再默认灌入大批 `ip.zip` 地址；当某个地区/端口不足 20 个候选时自动用 `ip.zip` 补齐，避免冷门地区断档。`hybrid` 保留新旧全部来源，`legacy` 用于回归对照。成都 443 等量 A/B（各 320 个输入、各下载测试 40 个）中，旧池没有节点达到 5 MB/s，自适应池有 11 个达到 5 MB/s，最高 NRT 127.61 MB/s、SIN 38.46 MB/s。
+Windows 的 `CandidatePoolMode=adaptive` 与 Linux 的 `CANDIDATE_POOL_MODE=adaptive` 默认启用：地区工作项优先使用 `previous + cf-bestip + gslege + ip164746 + hot-mine`，不再默认灌入大批 `ip.zip` 地址；当某个地区/端口不足 20 个候选时自动用 `ip.zip` 补齐，避免冷门地区断档。`hybrid` 保留新旧全部来源，`legacy` 用于回归对照。成都 443 等量 A/B（各 320 个输入、各下载测试 40 个）中，旧池没有节点达到 5 MB/s，自适应池有 11 个达到 5 MB/s，最高 NRT 127.61 MB/s、SIN 38.46 MB/s。
 
-最终地区以 CFST 返回的 Cloudflare Colo 为准，例如 `NRT/KIX→JP`、`SIN→SG`、`HKG→HK`、`ICN→KR`、`FRA/TXL→DE`、`LHR→GB`、`AMS→NL`、`LAX/SJC/SEA→US`。上一轮节点也按 Colo 重新归类后参与热前缀学习和发布保护，避免把 `SIN` 节点沿用为 `JP/GB`。DE、HK、KR 默认分别使用 3、2、3 倍热前缀探索预算，可通过 `HotPrefixCountryMultipliers` 调整。
+最终地区以 CFST 返回的 Cloudflare Colo 为准，例如 `NRT/KIX→JP`、`SIN→SG`、`HKG→HK`、`ICN→KR`、`FRA/TXL→DE`、`LHR→GB`、`AMS→NL`、`LAX/SJC/SEA→US`。上一轮节点也按 Colo 重新归类后参与热前缀学习和发布保护，避免把 `SIN` 节点沿用为 `JP/GB`。DE、HK、KR 默认分别使用 3、2、3 倍热前缀探索预算，Windows 可通过 `HotPrefixCountryMultipliers`、Linux 可通过 `HOT_PREFIX_COUNTRY_MULTIPLIERS` 调整。
 
 `vps789` 的 `cfIpApi.data.CT` 当前返回的电信候选很少，所以默认关闭。需要时手动开启：
 
@@ -203,8 +203,8 @@ IntervalDays=1
 每次运行会先下载 GitHub 上当前目标 CSV，把旧节点重新加入 CFST 输入进行复测。最终每个地区执行滚动保鲜：
 
 - 本轮不达标的旧节点会被淘汰。
-- 每个地区最多保留约 2/3 旧节点。
-- 至少约 1/3 位置优先由本轮新测出的最佳候选补入。
+- 每个已有地区默认保留约 80% 的优质旧节点。
+- 最多约 20% 的位置由本轮新测出的最佳候选替换；新地区直接追加。
 - 如果新候选不足，才继续用达标旧节点补满。
 
 默认替换比例：
@@ -410,7 +410,7 @@ Possible sources are `ip.zip`, `cf-bestip`, `ip164746`, `gslege`, `vps789`, `pre
 
 ### Rolling Retest
 
-Each run fetches the current published CSV, retests old nodes, removes failing nodes, keeps at most about two thirds old nodes per group, and fills the rest with the best newly tested candidates. The default replacement fraction is `0.33`.
+Each run fetches the current published CSV, retests old nodes, removes failing nodes, keeps about 80% of the best old nodes in existing groups, and fills the rest with the best newly tested candidates. The default replacement fraction is `0.20`.
 
 ### TCP Precheck
 

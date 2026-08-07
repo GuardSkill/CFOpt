@@ -59,7 +59,7 @@ param(
     [int]$IpZipCountryMinCandidates = 40,
     [int]$IpZipCountryMaxCandidates = 320,
     [string]$IpZipCountrySampleMultipliers = "KR=2,US=0.5",
-    [double]$RollingReplaceFraction = 0.33,
+    [double]$RollingReplaceFraction = 0.20,
     [double]$MinPublishRetentionRatio = 0.6,
     [int]$Vps789CtLimit = 100,
     [int]$Vps789MaxDxLatencyMs = 260,
