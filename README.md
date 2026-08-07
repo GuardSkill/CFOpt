@@ -79,6 +79,18 @@ https://zoroaaa.github.io/cf-bestip/ip_*.txt
 
 `cf-bestip` 会按地区提供候选，例如 `ip_HK.txt`、`ip_JP.txt`、`ip_SG.txt`、`ip_US.txt`。脚本会按当前端口筛选 `IP:端口#地区-score`，再交给本地 CFST 实测。
 
+默认还会从 `https://ip.164746.xyz/ipTop10.html` 获取由 `cf-speed-dns` 预筛的 Top 10 候选。该来源只加入 `443` 端口的 `JP` 重点范围，进入本地 TCP 粗筛和 CFST 后才可能发布，来源标记为 `ip164746`。Windows 可用 `-EnableIp164746:$false` 关闭，Linux 可用 `ENABLE_IP164746=0` 关闭；URL、数量和归属范围可分别通过 `Ip164746Url` / `IP164746_URL`、`Ip164746Limit` / `IP164746_LIMIT`、`Ip164746Country` / `IP164746_COUNTRY` 覆盖。
+
+默认还会读取 `gslege/CloudflareIP` 的 `JP/SG/US/DE/NL.txt`，每个地区最多取前 20 个种子，仅加入 `443` 端口并由本机重新测速，来源标记为 `gslege`。Windows 可用 `-EnableGslegeCloudflareIp:$false`，Linux 可用 `ENABLE_GSLEGE_CLOUDFLAREIP=0` 关闭。
+
+Windows 成都流程还会对所有地区进行独立热前缀挖掘：从上一轮优胜节点、`cf-bestip`、`gslege` 和 `ip164746` 种子中，按“地区+端口”学习活跃 `/24`；每池最多使用 4 个前缀，每个前缀按日期轮换生成 4 个新地址，再进入本机 TCP 粗筛和 CFST。它不是重复使用成品 IP，而是在优胜网段内持续探索新地址，来源标记为 `hot-mine`。通过 `EnableHotPrefixMining`、`HotPrefixSamples` 和 `HotPrefixMaxPrefixesPerCountryPort` 配置。
+
+成都流程还会从电信入口候选段分层抽样，默认包括 `104.16.0.0/13`、`104.24.0.0/14`、`172.64.0.0/13` 以及 WARP/Tunnel/合作段中指定的 `/24`。每段默认轮换抽取 32 个 IPv4，并在 `443/2053/2083/2087/2096/8443` 每个已配置端口测试一次；不按 focus 重复，来源为 `ct-pool`。这只验证其作为 CF TLS/下载入口的实际表现，不启用 IPv6 或 7844 专用协议测试。通过 `EnableCtEntryPool`、`CtEntryCidrs` 和 `CtEntrySamplesPerCidr` 配置。
+
+默认候选模式为 `CandidatePoolMode=adaptive`：地区工作项优先使用 `previous + cf-bestip + gslege + ip164746 + hot-mine`，不再默认灌入大批 `ip.zip` 地址；当某个地区/端口不足 20 个候选时自动用 `ip.zip` 补齐，避免冷门地区断档。`hybrid` 保留新旧全部来源，`legacy` 用于回归对照。成都 443 等量 A/B（各 320 个输入、各下载测试 40 个）中，旧池没有节点达到 5 MB/s，自适应池有 11 个达到 5 MB/s，最高 NRT 127.61 MB/s、SIN 38.46 MB/s。
+
+最终地区以 CFST 返回的 Cloudflare Colo 为准，例如 `NRT/KIX→JP`、`SIN→SG`、`HKG→HK`、`ICN→KR`、`FRA/TXL→DE`、`LHR→GB`、`AMS→NL`、`LAX/SJC/SEA→US`。上一轮节点也按 Colo 重新归类后参与热前缀学习和发布保护，避免把 `SIN` 节点沿用为 `JP/GB`。DE、HK、KR 默认分别使用 3、2、3 倍热前缀探索预算，可通过 `HotPrefixCountryMultipliers` 调整。
+
 `vps789` 的 `cfIpApi.data.CT` 当前返回的电信候选很少，所以默认关闭。需要时手动开启：
 
 ```powershell
@@ -175,6 +187,10 @@ Linux / 北京测速：
 - `vps789`
 - `previous`：从上一轮已发布 CSV 带回并复测的旧节点。
 - `unknown`：历史数据或异常情况下无法识别来源。
+- `ip164746`：`ip.164746.xyz/ipTop10.html` 的预筛候选，仅用于 JP/443。
+- `gslege`：`gslege/CloudflareIP` 的地区预筛种子，仅用于 443。
+- `hot-mine`：按地区和端口从优胜 `/24` 中轮换生成、由成都本机发现的新候选。
+- `ct-pool`：从电信入口候选 CIDR 分层抽样并进行多端口 TLS/下载验证。
 
 ### 每日滚动复测
 
@@ -199,7 +215,7 @@ IntervalDays=1
 
 ### 调参
 
-Windows 和 Linux 默认会在 CFST 深度测速前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 80 个新候选。上一轮已发布的 `previous` 节点始终绕过粗筛并进入 CFST。TCP 连通仅用于减少候选，最终仍由 CFST 的延迟、丢包和下载测试决定是否发布。
+Windows 和 Linux 默认会在 CFST 深度测速前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 30 个新候选。上一轮节点会合并到对应的 `all/focus` 工作项，不再额外创建一次全量 `previous` 下载任务，因此同一轮不会先发现后再整批重复测速。默认不向 CFST 传入 `-sl`，让 `-dn` 成为固定下载测试上限，速度门槛仍在 CSV 合并阶段执行；需要旧行为时可设置 `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`。
 
 临时关闭粗筛或调整参数：
 
@@ -342,6 +358,10 @@ Extra source enabled by default:
 https://zoroaaa.github.io/cf-bestip/ip_*.txt
 ```
 
+The runners also fetch the pre-ranked Top 10 list from `https://ip.164746.xyz/ipTop10.html`. These candidates are injected only into the `JP` focus scope on port `443`, tagged as `ip164746`, and must still pass the local TCP precheck and CFST benchmark. Disable the source with `-EnableIp164746:$false` on Windows or `ENABLE_IP164746=0` on Linux. The URL, limit, and assigned focus country are configurable through `Ip164746Url` / `IP164746_URL`, `Ip164746Limit` / `IP164746_LIMIT`, and `Ip164746Country` / `IP164746_COUNTRY`.
+
+The runners also load the first 20 seeds per country from `gslege/CloudflareIP` for `JP/SG/US/DE/NL`. They are injected only on port `443`, tagged as `gslege`, and re-benchmarked locally. Disable with `-EnableGslegeCloudflareIp:$false` or `ENABLE_GSLEGE_CLOUDFLAREIP=0`.
+
 `vps789` CT candidates are disabled by default because the API currently returns very few usable entries. Enable it manually with `-EnableVps789Ct` on Windows or `ENABLE_VPS789_CT=1` on Linux.
 
 ### Ports and Filters
@@ -386,7 +406,7 @@ The city column includes the country flag, region, location index, and source:
 🇭🇰 HK [成都测速#04 previous]
 ```
 
-Possible sources are `ip.zip`, `cf-bestip`, `vps789`, `previous`, and `unknown`.
+Possible sources are `ip.zip`, `cf-bestip`, `ip164746`, `gslege`, `vps789`, `previous`, and `unknown`.
 
 ### Rolling Retest
 
@@ -394,7 +414,7 @@ Each run fetches the current published CSV, retests old nodes, removes failing n
 
 ### TCP Precheck
 
-Windows and Linux perform a local TCP precheck before CFST deep testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 80 new candidates per region/source group. Published `previous` nodes always bypass the precheck and enter CFST. TCP connectivity only reduces the candidate set; CFST latency, loss, and download tests remain the final publication criteria.
+Windows and Linux perform a local TCP precheck before CFST deep testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 30 new candidates per region/source group. Previous nodes are merged into their matching `all/focus` item instead of being download-tested again in a separate full-history job. By default CFST does not receive `-sl`, so `-dn` is a hard download-test cap; the speed floor is still applied during CSV merging. Restore the old replacement-queue behavior with `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`.
 
 Disable it for one run:
 

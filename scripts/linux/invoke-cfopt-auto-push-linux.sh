@@ -30,6 +30,7 @@ CFST_DOWNLOAD_TEST_TIME="${CFST_DOWNLOAD_TEST_TIME:-4}"
 FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-10}"
 FOCUS_CFST_DOWNLOAD_TEST_TIME="${FOCUS_CFST_DOWNLOAD_TEST_TIME:-4}"
 CFST_LOSS_RATE_LIMIT="${CFST_LOSS_RATE_LIMIT:-0}"
+CFST_ENFORCE_SPEED_LIMIT="${CFST_ENFORCE_SPEED_LIMIT:-0}"
 MAX_PARALLEL_CFST="${MAX_PARALLEL_CFST:-1}"
 TCP_PRECHECK_ENABLED="${TCP_PRECHECK_ENABLED:-1}"
 TCP_PRECHECK_MIN_CANDIDATES="${TCP_PRECHECK_MIN_CANDIDATES:-120}"
@@ -42,6 +43,14 @@ TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
 ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
 CFBESTIP_BASE_URL="${CFBESTIP_BASE_URL:-https://zoroaaa.github.io/cf-bestip}"
 CFBESTIP_PER_COUNTRY_LIMIT="${CFBESTIP_PER_COUNTRY_LIMIT:-400}"
+ENABLE_IP164746="${ENABLE_IP164746:-1}"
+IP164746_URL="${IP164746_URL:-https://ip.164746.xyz/ipTop10.html}"
+IP164746_LIMIT="${IP164746_LIMIT:-10}"
+IP164746_COUNTRY="${IP164746_COUNTRY:-JP}"
+ENABLE_GSLEGE_CLOUDFLAREIP="${ENABLE_GSLEGE_CLOUDFLAREIP:-1}"
+GSLEGE_RAW_BASE_URL="${GSLEGE_RAW_BASE_URL:-https://raw.githubusercontent.com/gslege/CloudflareIP/main}"
+GSLEGE_COUNTRIES_CSV="${GSLEGE_COUNTRIES_CSV:-JP,SG,US,DE,NL}"
+GSLEGE_PER_COUNTRY_LIMIT="${GSLEGE_PER_COUNTRY_LIMIT:-20}"
 IPZIP_SAMPLE_ENABLED="${IPZIP_SAMPLE_ENABLED:-1}"
 IPZIP_SAMPLE_PERCENT="${IPZIP_SAMPLE_PERCENT:-40}"
 IPZIP_COUNTRY_MIN_CANDIDATES="${IPZIP_COUNTRY_MIN_CANDIDATES:-40}"
@@ -78,6 +87,8 @@ PREVIOUS_NODE_KEYS_PATH="$WORK_DIR/previous-node-keys.txt"
 COUNTRY_SPEED_STATS_PATH="$WORK_DIR/country-speed-floor-stats.csv"
 VPS789_CT_IP_PATH="$WORK_DIR/vps789-ct-ip.txt"
 VPS789_CT_CSV_PATH="$WORK_DIR/VPS789_CF_CT_Candidates.csv"
+IP164746_PATH="$WORK_DIR/ip164746.txt"
+GSLEGE_PATH="$WORK_DIR/gslege-candidates.csv"
 STATE_FILE="$WORK_DIR/last-success.txt"
 LOG_FILE="$WORK_DIR/auto-push.log"
 
@@ -331,6 +342,103 @@ PY
   log "Fetched $count vps789 CT candidates. Exported $VPS789_CT_CSV_PATH."
 }
 
+fetch_ip164746_candidates() {
+  : > "$IP164746_PATH"
+  if [[ "$ENABLE_IP164746" != "1" ]]; then
+    log "ip.164746.xyz candidate source disabled."
+    return 0
+  fi
+  if [[ ! "$IP164746_LIMIT" =~ ^[0-9]+$ ]] || (( IP164746_LIMIT <= 0 )); then
+    log "WARN: Invalid IP164746_LIMIT=$IP164746_LIMIT; source skipped."
+    return 0
+  fi
+  local country
+  country="$(printf '%s' "$IP164746_COUNTRY" | tr '[:lower:]' '[:upper:]')"
+  if [[ ! "$country" =~ ^[A-Z]{2}$ ]]; then
+    log "WARN: Invalid IP164746_COUNTRY=$IP164746_COUNTRY; source skipped."
+    return 0
+  fi
+  local raw_path="$WORK_DIR/ip164746.raw"
+  if ! curl -fsSL --retry 2 --connect-timeout 20 --max-time 30 -o "$raw_path" "$IP164746_URL"; then
+    log "WARN: Failed to fetch ip.164746.xyz candidates: $IP164746_URL"
+    return 0
+  fi
+  grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' "$raw_path" |
+    awk -v limit="$IP164746_LIMIT" '
+      function valid(ip, parts, i) {
+        if (split(ip, parts, ".") != 4) return 0
+        for (i = 1; i <= 4; i++) if (parts[i] !~ /^[0-9]+$/ || parts[i] + 0 > 255) return 0
+        return 1
+      }
+      valid($0) && !seen[$0]++ && count < limit { print; count++ }
+    ' > "$IP164746_PATH"
+  local count
+  count="$(grep -c . "$IP164746_PATH" || true)"
+  log "Fetched $count ip.164746.xyz candidates for $country on port 443."
+}
+
+append_ip164746_for_port() {
+  local port="$1"
+  local countries_csv="$2"
+  local selected_ip_path="$3"
+  local map_path="$4"
+  local country
+  country="$(printf '%s' "$IP164746_COUNTRY" | tr '[:lower:]' '[:upper:]')"
+  if [[ "$ENABLE_IP164746" != "1" || "$port" != "443" || ! -s "$IP164746_PATH" ]]; then
+    printf '0\n'
+    return 0
+  fi
+  if ! tr ',' '\n' <<< "$countries_csv" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]' | grep -Fxq "$country"; then
+    printf '0\n'
+    return 0
+  fi
+  local added=0 ip
+  while IFS= read -r ip; do
+    [[ -n "$ip" ]] || continue
+    if ! grep -Fxq "$ip" "$selected_ip_path"; then
+      printf '%s\n' "$ip" >> "$selected_ip_path"
+      added=$((added + 1))
+    fi
+    printf '%s,%s,ip164746\n' "$ip" "$country" >> "$map_path"
+  done < "$IP164746_PATH"
+  printf '%s\n' "$added"
+}
+
+fetch_gslege_candidates() {
+  : > "$GSLEGE_PATH"
+  [[ "$ENABLE_GSLEGE_CLOUDFLAREIP" == "1" ]] || { log "gslege/CloudflareIP candidate source disabled."; return 0; }
+  local country url raw_path
+  IFS=',' read -r -a gslege_countries <<< "$GSLEGE_COUNTRIES_CSV"
+  for country in "${gslege_countries[@]}"; do
+    country="$(printf '%s' "$country" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
+    [[ "$country" =~ ^[A-Z]{2}$ ]] || continue
+    url="${GSLEGE_RAW_BASE_URL%/}/$country.txt"
+    raw_path="$WORK_DIR/gslege-$country.raw"
+    if ! curl -fsSL --retry 2 --connect-timeout 20 --max-time 30 -o "$raw_path" "$url"; then
+      log "WARN: Failed to fetch gslege/CloudflareIP $country candidates: $url"
+      continue
+    fi
+    grep -Eo '^([[:space:]]*)?([0-9]{1,3}\.){3}[0-9]{1,3}' "$raw_path" | tr -d '[:space:]' |
+      awk -v country="$country" -v limit="$GSLEGE_PER_COUNTRY_LIMIT" '
+        function valid(ip, p, i) { if (split(ip,p,".") != 4) return 0; for(i=1;i<=4;i++) if(p[i]+0>255) return 0; return 1 }
+        valid($0) && !seen[$0]++ && count++ < limit { print $0 "," country }
+      ' >> "$GSLEGE_PATH"
+  done
+  log "Fetched $(grep -c . "$GSLEGE_PATH" || true) gslege/CloudflareIP candidates across $GSLEGE_COUNTRIES_CSV on port 443."
+}
+
+append_gslege_for_port() {
+  local port="$1" countries_csv="$2" selected_ip_path="$3" map_path="$4"
+  [[ "$ENABLE_GSLEGE_CLOUDFLAREIP" == "1" && "$port" == "443" && -s "$GSLEGE_PATH" ]] || { printf '0\n'; return 0; }
+  local added=0 ip country
+  while IFS=',' read -r ip country; do
+    tr ',' '\n' <<< "$countries_csv" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]' | grep -Fxq "$country" || continue
+    if ! grep -Fxq "$ip" "$selected_ip_path"; then printf '%s\n' "$ip" >> "$selected_ip_path"; added=$((added+1)); fi
+    printf '%s,%s,gslege\n' "$ip" "$country" >> "$map_path"
+  done < "$GSLEGE_PATH"
+  printf '%s\n' "$added"
+}
+
 append_cfbestip_for_port() {
   local port="$1"
   local countries_csv="$2"
@@ -545,6 +653,12 @@ merge_country_files_for_port() {
   local cfbestip_added
   cfbestip_added="$(append_cfbestip_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
 
+  local ip164746_added
+  ip164746_added="$(append_ip164746_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+
+  local gslege_added
+  gslege_added="$(append_gslege_for_port "$port" "$countries_csv" "$selected_ip_path" "$map_path")"
+
   local vps789_added=0
   if [[ "$include_vps789" == "1" && -s "$VPS789_CT_IP_PATH" ]]; then
     while IFS= read -r ip; do
@@ -564,7 +678,7 @@ merge_country_files_for_port() {
     return 1
   fi
 
-  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. previous added: $previous_added. cf-bestip added: $cfbestip_added. vps789 CT added: $vps789_added."
+  log "Merged $line_count IP lines for port $port scope $scope into $selected_ip_path. previous added: $previous_added. cf-bestip added: $cfbestip_added. ip164746 added: $ip164746_added. gslege added: $gslege_added. vps789 CT added: $vps789_added."
   printf '%s,%s,%s,%s\n' "$port" "$scope" "$selected_ip_path" "$map_path" >> "$WORK_DIR/port-work-items.csv"
 }
 
@@ -762,7 +876,9 @@ start_cfst_for_port() {
   if [[ -n "$DOWNLOAD_TEST_URL" ]]; then
     args+=(-url "$DOWNLOAD_TEST_URL")
   fi
-  if awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
+  # Without -sl, -dn is a hard download-test cap. The merged CSV filter below
+  # still applies MIN_SPEED_MBPS, avoiding CFST's unbounded replacement queue.
+  if [[ "$CFST_ENFORCE_SPEED_LIMIT" == "1" ]] && awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
     args+=(-sl "$MIN_SPEED_MBPS")
   fi
   if [[ "$CFST_DEBUG" == "1" ]]; then
@@ -1173,11 +1289,13 @@ main() {
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
-  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
+  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
 
   update_zip_cache
   fetch_previous_csv_nodes
   fetch_vps789_ct_ips
+  fetch_ip164746_candidates
+  fetch_gslege_candidates
   log "Extracting $ZIP_PATH"
   unzip -oq "$ZIP_PATH" -d "$EXTRACT_DIR"
 
@@ -1185,15 +1303,14 @@ main() {
   log "Configured ports: ${ports[*]}"
   all_countries_csv="$(focus_excluded_countries_csv "$COUNTRIES_CSV" "$FOCUS_COUNTRIES_CSV")"
   for port_value in "${ports[@]}"; do
-    prepare_previous_work_item "$port_value"
     if [[ -n "$all_countries_csv" ]]; then
-      merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" "0" || true
+      merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" "1" || true
     fi
     IFS=',' read -r -a focus_countries <<< "$FOCUS_COUNTRIES_CSV"
     for focus_country in "${focus_countries[@]}"; do
       focus_country="$(printf '%s' "$focus_country" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
       [[ -n "$focus_country" ]] || continue
-      merge_country_files_for_port "$port_value" "focus-$focus_country" "$focus_country" "0" "0" || true
+      merge_country_files_for_port "$port_value" "focus-$focus_country" "$focus_country" "0" "1" || true
     done
   done
 
@@ -1224,7 +1341,7 @@ main() {
       args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value-$safe_scope.csv" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$download_test_count" -dt "$download_test_time" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
       [[ "$port_value" != "443" ]] && args+=(-tp "$port_value")
       [[ -n "$DOWNLOAD_TEST_URL" ]] && args+=(-url "$DOWNLOAD_TEST_URL")
-      if awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
+      if [[ "$CFST_ENFORCE_SPEED_LIMIT" == "1" ]] && awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
         args+=(-sl "$MIN_SPEED_MBPS")
       fi
       [[ "$CFST_DEBUG" == "1" ]] && args+=(-debug)

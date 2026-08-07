@@ -23,6 +23,7 @@ param(
     [int]$FocusCfstDownloadTestCount = 10,
     [int]$FocusCfstDownloadTestTime = 4,
     [double]$CfstLossRateLimit = 0,
+    [bool]$CfstEnforceSpeedLimit = $false,
     [int]$MaxParallelCfst = 1,
     [bool]$TcpPrecheckEnabled = $true,
     [int]$TcpPrecheckMinCandidates = 120,
@@ -35,6 +36,24 @@ param(
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
     [int]$CfBestIpPerCountryLimit = 400,
+    [bool]$EnableIp164746 = $true,
+    [string]$Ip164746Url = "https://ip.164746.xyz/ipTop10.html",
+    [int]$Ip164746Limit = 10,
+    [string]$Ip164746Country = "JP",
+    [bool]$EnableHotPrefixMining = $true,
+    [int]$HotPrefixSamples = 4,
+    [int]$HotPrefixMaxPrefixesPerCountryPort = 4,
+    [string]$HotPrefixCountryMultipliers = "DE=3,HK=2,KR=3",
+    [bool]$EnableCtEntryPool = $true,
+    [string]$CtEntryCidrs = "104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,162.159.192.0/24,162.159.193.0/24,162.159.195.0/24,198.41.192.0/24,198.41.200.0/24,141.101.115.0/24",
+    [int]$CtEntrySamplesPerCidr = 32,
+    [ValidateSet('adaptive','hybrid','legacy')]
+    [string]$CandidatePoolMode = 'adaptive',
+    [int]$AdaptiveMinCandidatesPerWorkItem = 20,
+    [bool]$EnableGslegeCloudflareIp = $true,
+    [string]$GslegeRawBaseUrl = "https://raw.githubusercontent.com/gslege/CloudflareIP/main",
+    [string]$GslegeCountries = "JP,SG,US,DE,NL",
+    [int]$GslegePerCountryLimit = 20,
     [bool]$IpZipSampleEnabled = $true,
     [int]$IpZipSamplePercent = 40,
     [int]$IpZipCountryMinCandidates = 40,
@@ -346,6 +365,22 @@ function Get-CityKeyFromRemark {
     return ""
 }
 
+function Get-CountryFromColo {
+    param([string]$Colo)
+    $code = $Colo.Trim().ToUpperInvariant()
+    $map = @{
+        NRT='JP'; KIX='JP'; FUK='JP'; OKA='JP'
+        SIN='SG'; HKG='HK'; ICN='KR'; TPE='TW'; KHH='TW'
+        MNL='PH'; CEB='PH'; SGN='VN'; HAN='VN'; KUL='MY'; PEN='MY'
+        ALA='KZ'; NQZ='KZ'; ULN='MN'; DUB='IE'
+        FRA='DE'; TXL='DE'; BER='DE'; MUC='DE'; DUS='DE'; HAM='DE'
+        LHR='GB'; MAN='GB'; EDI='GB'; AMS='NL'; MXP='IT'; FCO='IT'
+        LAX='US'; SJC='US'; SEA='US'; PDX='US'; PHX='US'; DEN='US'; DFW='US'; ORD='US'; ATL='US'; MIA='US'; IAD='US'; EWR='US'; JFK='US'; BOS='US'
+    }
+    if ($map.ContainsKey($code)) { return $map[$code] }
+    return ''
+}
+
 function Get-CountryFlag {
     param([string]$Code)
 
@@ -389,12 +424,22 @@ function Get-PreviousCsvEntries {
             $ip = $columns[0].Trim()
             $portText = $columns[1].Trim()
             $cityKey = Get-CityKeyFromRemark -Remark $columns[3]
+            $dataCenter = if ($columns.Count -gt 2) { $columns[2].Trim() } else { '' }
+            $coloCountry = Get-CountryFromColo -Colo $dataCenter
+            if (-not [string]::IsNullOrWhiteSpace($coloCountry)) { $cityKey = $coloCountry }
             $portValue = 0
             if ($ip -match '^(?:\d{1,3}\.){3}\d{1,3}$' -and [int]::TryParse($portText, [ref]$portValue) -and -not [string]::IsNullOrWhiteSpace($cityKey)) {
                 $entries.Add([pscustomobject]@{
                     Ip = $ip
                     Port = $portValue
                     City = $cityKey
+                    DataCenter = $dataCenter
+                    Tls = if ($columns.Count -gt 4) { $columns[4].Trim() } else { 'true' }
+                    Sent = if ($columns.Count -gt 5) { $columns[5].Trim() } else { '2' }
+                    Received = if ($columns.Count -gt 6) { $columns[6].Trim() } else { '2' }
+                    Loss = if ($columns.Count -gt 7) { $columns[7].Trim() } else { '0.00' }
+                    Latency = if ($columns.Count -gt 8) { $columns[8].Trim() } else { '999' }
+                    Speed = if ($columns.Count -gt 9) { $columns[9].Trim() } else { '0' }
                 }) | Out-Null
             }
         }
@@ -548,11 +593,195 @@ function Get-CfBestIpCandidates {
     return $candidates.ToArray()
 }
 
+function Test-StrictIpv4 {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$') {
+        return $false
+    }
+    foreach ($part in $Value.Split('.')) {
+        $octet = 0
+        if (-not [int]::TryParse($part, [ref]$octet) -or $octet -lt 0 -or $octet -gt 255) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function ConvertFrom-Ip164746Text {
+    param(
+        [string]$Text,
+        [int]$Limit = $Ip164746Limit,
+        [string]$Country = $Ip164746Country
+    )
+
+    if ($Limit -le 0) {
+        return @()
+    }
+    $countryCode = $Country.Trim().ToUpperInvariant()
+    if ($countryCode -notmatch '^[A-Z]{2}$') {
+        throw "Invalid ip.164746.xyz country code: $Country"
+    }
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $candidates = New-Object System.Collections.Generic.List[object]
+    foreach ($token in @($Text -split '[,;\s]+')) {
+        $ip = $token.Trim()
+        if (-not (Test-StrictIpv4 -Value $ip) -or -not $seen.Add($ip)) {
+            continue
+        }
+        $candidates.Add([pscustomobject]@{ Ip = $ip; Port = 443; City = $countryCode }) | Out-Null
+        if ($candidates.Count -ge $Limit) {
+            break
+        }
+    }
+    return $candidates.ToArray()
+}
+
+function Get-Ip164746Candidates {
+    if (-not $EnableIp164746) {
+        Write-Log "ip.164746.xyz candidate source disabled."
+        return @()
+    }
+    try {
+        Write-Log "Fetching ip.164746.xyz candidates: $Ip164746Url"
+        $text = (Invoke-WebRequest -Uri $Ip164746Url -UseBasicParsing -TimeoutSec 30).Content
+        $candidates = @(ConvertFrom-Ip164746Text -Text $text -Limit $Ip164746Limit -Country $Ip164746Country)
+        Write-Log "Fetched $($candidates.Count) ip.164746.xyz candidates for $($Ip164746Country.Trim().ToUpperInvariant()) on port 443."
+        return $candidates
+    }
+    catch {
+        Write-Log "WARN: Failed to fetch ip.164746.xyz candidates: $($_.Exception.Message)"
+        return @()
+    }
+}
+
+function ConvertFrom-GslegeCountryText {
+    param([string]$Text, [string]$Country, [int]$Limit = 20)
+    $result = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($line in @($Text -split "`r?`n")) {
+        if ($line -notmatch '^\s*((?:\d{1,3}\.){3}\d{1,3})') { continue }
+        $ip = $Matches[1]
+        if ((Test-StrictIpv4 -Value $ip) -and $seen.Add($ip)) {
+            $result.Add([pscustomobject]@{ Ip = $ip; Port = 443; City = $Country.Trim().ToUpperInvariant() }) | Out-Null
+            if ($result.Count -ge [math]::Max(1, $Limit)) { break }
+        }
+    }
+    return $result.ToArray()
+}
+
+function Get-GslegeCloudflareIpCandidates {
+    if (-not $EnableGslegeCloudflareIp) {
+        Write-Log "gslege/CloudflareIP candidate source disabled."
+        return @()
+    }
+    $result = [System.Collections.Generic.List[object]]::new()
+    foreach ($country in @($GslegeCountries -split '[,\s]+' | Where-Object { $_ })) {
+        $code = $country.Trim().ToUpperInvariant()
+        try {
+            $url = "$($GslegeRawBaseUrl.TrimEnd('/'))/$code.txt"
+            $text = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 20).Content
+            foreach ($candidate in @(ConvertFrom-GslegeCountryText -Text $text -Country $code -Limit $GslegePerCountryLimit)) {
+                $result.Add($candidate) | Out-Null
+            }
+        }
+        catch { Write-Log "WARN: Failed to fetch gslege/CloudflareIP $code candidates: $($_.Exception.Message)" }
+    }
+    Write-Log "Fetched $($result.Count) gslege/CloudflareIP candidates across $GslegeCountries on port 443."
+    return $result.ToArray()
+}
+
+function Get-HotPrefixMiningCandidates {
+    param([object[]]$SeedCandidates = @())
+    if (-not $EnableHotPrefixMining) { return @() }
+    $prefixesByPool = @{}
+    foreach ($seed in @($SeedCandidates)) {
+        $ip = [string]$seed.Ip
+        $city = ([string]$seed.City).Trim().ToUpperInvariant()
+        $seedPort = if ($null -ne $seed.Port) { [int]$seed.Port } else { 443 }
+        if (-not (Test-StrictIpv4 -Value $ip) -or [string]::IsNullOrWhiteSpace($city)) { continue }
+        $poolKey = "$city|$seedPort"
+        if (-not $prefixesByPool.ContainsKey($poolKey)) { $prefixesByPool[$poolKey] = [System.Collections.Generic.List[string]]::new() }
+        $prefix = $ip -replace '\d+$', ''
+        $multiplier = 1
+        foreach ($entry in @($HotPrefixCountryMultipliers -split '[,\s]+' | Where-Object { $_ })) {
+            if ($entry -match '^([A-Za-z]{2})=(\d+)$' -and $Matches[1].ToUpperInvariant() -eq $city) { $multiplier = [math]::Max(1,[int]$Matches[2]); break }
+        }
+        if (-not $prefixesByPool[$poolKey].Contains($prefix) -and $prefixesByPool[$poolKey].Count -lt ([math]::Max(1, $HotPrefixMaxPrefixesPerCountryPort) * $multiplier)) {
+            $prefixesByPool[$poolKey].Add($prefix)
+        }
+    }
+    $result = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $count = [math]::Min(254, [math]::Max(1, $HotPrefixSamples))
+    $rotation = (Get-Date).DayOfYear % 254
+    foreach ($poolKey in @($prefixesByPool.Keys | Sort-Object)) {
+        $poolParts = $poolKey -split '\|'
+        $poolMultiplier = 1
+        foreach ($entry in @($HotPrefixCountryMultipliers -split '[,\s]+' | Where-Object { $_ })) {
+            if ($entry -match '^([A-Za-z]{2})=(\d+)$' -and $Matches[1].ToUpperInvariant() -eq $poolParts[0]) { $poolMultiplier = [math]::Max(1,[int]$Matches[2]); break }
+        }
+        foreach ($prefix in $prefixesByPool[$poolKey]) {
+            $poolCount = [math]::Min(254, $count * $poolMultiplier)
+            for ($index = 0; $index -lt $poolCount; $index++) {
+                $hostPart = (($rotation + [math]::Floor($index * 254 / $poolCount)) % 254) + 1
+                $ip = "$prefix$hostPart"
+                $uniqueKey = "$ip|$($poolParts[1])|$($poolParts[0])"
+                if ($seen.Add($uniqueKey)) { $result.Add([pscustomobject]@{ Ip = $ip; Port = [int]$poolParts[1]; City = $poolParts[0] }) | Out-Null }
+            }
+        }
+    }
+    return $result.ToArray()
+}
+
+function ConvertTo-Ipv4UInt32 {
+    param([string]$Ip)
+    if (-not (Test-StrictIpv4 -Value $Ip)) { throw "Invalid IPv4 address: $Ip" }
+    $parts = @($Ip -split '\.' | ForEach-Object { [uint64][int]$_ })
+    return [uint64](($parts[0] * 16777216) + ($parts[1] * 65536) + ($parts[2] * 256) + $parts[3])
+}
+
+function ConvertFrom-Ipv4UInt32 {
+    param([uint64]$Value)
+    return "$(($Value -shr 24) -band 255).$(($Value -shr 16) -band 255).$(($Value -shr 8) -band 255).$($Value -band 255)"
+}
+
+function Get-CtEntryPoolCandidates {
+    param([int[]]$SelectedPorts)
+    if (-not $EnableCtEntryPool) { return @() }
+    $ips = [System.Collections.Generic.List[string]]::new()
+    $seenIps = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $sampleCount = [math]::Max(1, $CtEntrySamplesPerCidr)
+    $rotation = (Get-Date).DayOfYear
+    foreach ($cidr in @($CtEntryCidrs -split '[,\s]+' | Where-Object { $_ })) {
+        if ($cidr -notmatch '^((?:\d{1,3}\.){3}\d{1,3})/(\d|[12]\d|3[0-2])$') { throw "Invalid CT entry CIDR: $cidr" }
+        $base = ConvertTo-Ipv4UInt32 -Ip $Matches[1]
+        $prefixLength = [int]$Matches[2]
+        $size = [uint64][math]::Pow(2, 32 - $prefixLength)
+        $network = [uint64]([math]::Floor($base / $size) * $size)
+        $usable = if ($size -gt 2) { $size - 2 } else { $size }
+        for ($index = 0; $index -lt $sampleCount; $index++) {
+            $offset = if ($size -gt 2) { 1 + (($rotation + [uint64][math]::Floor($index * $usable / $sampleCount)) % $usable) } else { ($rotation + $index) % $size }
+            $ip = ConvertFrom-Ipv4UInt32 -Value ($network + $offset)
+            if ($seenIps.Add($ip)) { $ips.Add($ip) }
+        }
+    }
+    $result = [System.Collections.Generic.List[object]]::new()
+    foreach ($portValue in $SelectedPorts) {
+        foreach ($ip in $ips) { $result.Add([pscustomobject]@{ Ip = $ip; Port = $portValue; City = 'CT-SEED' }) | Out-Null }
+    }
+    return $result.ToArray()
+}
+
 function New-PortWorkItem {
     param(
         [int]$CurrentPort,
         [object[]]$Vps789CtIps,
         [object[]]$CfBestIpCandidates,
+        [object[]]$Ip164746Candidates = @(),
+        [object[]]$GslegeCandidates = @(),
+        [object[]]$HotPrefixMiningCandidates = @(),
+        [object[]]$CtEntryPoolCandidates = @(),
         [object[]]$PreviousCsvEntries,
         [string[]]$SelectedCountries = $Countries,
         [string]$ScopeName = "all",
@@ -597,16 +826,22 @@ function New-PortWorkItem {
     }
 
     $seenIps = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($file in $selectedFiles) {
-        $city = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
-        $sampledLines = @(Get-SampledIpZipLines -Lines @(Get-Content -LiteralPath $file.FullName) -Country $city)
-        $ipLines = @($sampledLines | Where-Object { $seenIps.Add($_) })
-
-        $ipLines | Add-Content -LiteralPath $selectedIpPath -Encoding ASCII
-        foreach ($ipLine in $ipLines) {
-            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ipLine,$city,ip.zip" -Encoding ASCII
+    $ipZipAdded = 0
+    function Add-IpZipCandidates {
+        foreach ($file in $selectedFiles) {
+            $city = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+            $sampledLines = @(Get-SampledIpZipLines -Lines @(Get-Content -LiteralPath $file.FullName) -Country $city)
+            foreach ($ipLine in $sampledLines) {
+                if ($seenIps.Add($ipLine)) {
+                    Add-Content -LiteralPath $selectedIpPath -Value $ipLine -Encoding ASCII
+                    Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ipLine,$city,ip.zip" -Encoding ASCII
+                    $script:__cfoptIpZipAdded++
+                }
+            }
         }
     }
+    $script:__cfoptIpZipAdded = 0
+    if ($CandidatePoolMode -in @('legacy','hybrid')) { Add-IpZipCandidates }
 
     $selectedCountrySet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($country in $SelectedCountries) {
@@ -634,7 +869,7 @@ function New-PortWorkItem {
     }
 
     $cfBestIpAdded = 0
-    foreach ($candidate in @($CfBestIpCandidates)) {
+    foreach ($candidate in $(if ($CandidatePoolMode -ne 'legacy') { @($CfBestIpCandidates) } else { @() })) {
         if ($candidate.Port -ne $CurrentPort) {
             continue
         }
@@ -652,6 +887,61 @@ function New-PortWorkItem {
         }
         Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($candidate.City),cf-bestip" -Encoding ASCII
     }
+
+    $ip164746Added = 0
+    foreach ($candidate in $(if ($CandidatePoolMode -ne 'legacy') { @($Ip164746Candidates) } else { @() })) {
+        if ($candidate.Port -ne $CurrentPort -or -not $selectedCountrySet.Contains([string]$candidate.City)) {
+            continue
+        }
+        $ip = [string]$candidate.Ip
+        if (-not (Test-StrictIpv4 -Value $ip)) {
+            continue
+        }
+        if ($seenIps.Add($ip)) {
+            Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
+            $ip164746Added++
+        }
+        Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($candidate.City),ip164746" -Encoding ASCII
+    }
+
+    $gslegeAdded = 0
+    foreach ($candidate in $(if ($CandidatePoolMode -ne 'legacy') { @($GslegeCandidates) } else { @() })) {
+        if ($candidate.Port -ne $CurrentPort -or -not $selectedCountrySet.Contains([string]$candidate.City)) { continue }
+        $ip = [string]$candidate.Ip
+        if (-not (Test-StrictIpv4 -Value $ip)) { continue }
+        if ($seenIps.Add($ip)) {
+            Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII
+            $gslegeAdded++
+        }
+        Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($candidate.City),gslege" -Encoding ASCII
+    }
+
+    $hotMineAdded = 0
+    foreach ($candidate in $(if ($CandidatePoolMode -ne 'legacy') { @($HotPrefixMiningCandidates) } else { @() })) {
+        if ($candidate.Port -ne $CurrentPort -or -not $selectedCountrySet.Contains([string]$candidate.City)) { continue }
+        $ip = [string]$candidate.Ip
+        if (-not (Test-StrictIpv4 -Value $ip)) { continue }
+        if ($seenIps.Add($ip)) { Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII; $hotMineAdded++ }
+        Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,$($candidate.City),hot-mine" -Encoding ASCII
+    }
+
+    $ctEntryAdded = 0
+    if ($ScopeName -eq 'all') {
+        foreach ($candidate in @($CtEntryPoolCandidates)) {
+            if ($candidate.Port -ne $CurrentPort) { continue }
+            $ip = [string]$candidate.Ip
+            if (-not (Test-StrictIpv4 -Value $ip)) { continue }
+            if ($seenIps.Add($ip)) { Add-Content -LiteralPath $selectedIpPath -Value $ip -Encoding ASCII; $ctEntryAdded++ }
+            Add-Content -LiteralPath $selectedIpCityMapPath -Value "$ip,CT-SEED,ct-pool" -Encoding ASCII
+        }
+    }
+
+    if ($CandidatePoolMode -eq 'adaptive' -and $seenIps.Count -lt [math]::Max(1, $AdaptiveMinCandidatesPerWorkItem)) {
+        Write-Log "Adaptive pool has only $($seenIps.Count) candidates for port $CurrentPort scope $ScopeName; falling back to ip.zip."
+        Add-IpZipCandidates
+    }
+    $ipZipAdded = $script:__cfoptIpZipAdded
+    Remove-Variable -Name __cfoptIpZipAdded -Scope Script -ErrorAction SilentlyContinue
 
     $vps789Added = 0
     foreach ($candidate in $(if ($IncludeVps789Ct) { @($Vps789CtIps) } else { @() })) {
@@ -675,7 +965,7 @@ function New-PortWorkItem {
         return $null
     }
 
-    Write-Log "Merged $lineCount IP lines for port $CurrentPort scope $ScopeName into $selectedIpPath. previous added: $previousAdded. cf-bestip added: $cfBestIpAdded. vps789 CT added: $vps789Added."
+    Write-Log "Merged $lineCount IP lines for port $CurrentPort scope $ScopeName mode $CandidatePoolMode into $selectedIpPath. ip.zip added: $ipZipAdded. previous added: $previousAdded. cf-bestip added: $cfBestIpAdded. ip164746 added: $ip164746Added. gslege added: $gslegeAdded. hot-mine added: $hotMineAdded. ct-pool added: $ctEntryAdded. vps789 CT added: $vps789Added."
     return [pscustomobject]@{
         Port = $CurrentPort
         Scope = $ScopeName
@@ -737,6 +1027,33 @@ function New-PreviousPortWorkItem {
         StderrPath = Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stderr.log"
         StdinPath = Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stdin.txt"
         DownloadTestCount = $seenIps.Count
+    }
+}
+
+function New-CtEntryPortWorkItem {
+    param([int]$CurrentPort, [object[]]$Candidates)
+    $entries = @($Candidates | Where-Object { $_.Port -eq $CurrentPort })
+    if ($entries.Count -eq 0) { return $null }
+    $scopeName = 'ct-entry'
+    $selectedIpPath = Join-Path $WorkDir "selected-ip-$CurrentPort-$scopeName.txt"
+    $mapPath = Join-Path $WorkDir "selected-ip-city-map-$CurrentPort-$scopeName.csv"
+    $csvPathForPort = Join-Path $WorkDir "CloudflareSpeedTest-$CurrentPort-$scopeName.csv"
+    foreach ($path in @($selectedIpPath,$mapPath,$csvPathForPort)) { if (Test-Path $path) { Remove-Item $path -Force } }
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $entries) {
+        $ip = [string]$entry.Ip
+        if ((Test-StrictIpv4 $ip) -and $seen.Add($ip)) {
+            Add-Content $selectedIpPath $ip -Encoding ASCII
+            Add-Content $mapPath "$ip,CT-SEED,ct-pool" -Encoding ASCII
+        }
+    }
+    if ($seen.Count -eq 0) { return $null }
+    Write-Log "Prepared $($seen.Count) dedicated CT entry candidates for port $CurrentPort."
+    return [pscustomobject]@{
+        Port=$CurrentPort; Scope=$scopeName; SelectedIpPath=$selectedIpPath; MapPath=$mapPath; CsvPath=$csvPathForPort
+        StdoutPath=Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stdout.log"
+        StderrPath=Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stderr.log"
+        StdinPath=Join-Path $WorkDir "cfst-$CurrentPort-$scopeName-stdin.txt"
     }
 }
 
@@ -942,7 +1259,10 @@ function Get-CfstArguments {
     if (-not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
         $arguments += @("-url", $DownloadTestUrl)
     }
-    if ($MinSpeedMbps -gt 0) {
+    # CFST keeps extending the download queue when -sl is set until -dn rows
+    # pass the floor. Apply the same floor after CSV merge instead so -dn is a
+    # hard upper bound for each work item.
+    if ($CfstEnforceSpeedLimit -and $MinSpeedMbps -gt 0) {
         $arguments += @("-sl", $MinSpeedMbps.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture))
     }
     if ($CfstDebug) {
@@ -1168,6 +1488,10 @@ function Write-MergedFilteredCsv {
                 $city = $cityByIp[$ip]
             }
             $dataCenter = if ($columns.Count -gt 6) { $columns[6].Trim() } else { "" }
+            $coloCountry = Get-CountryFromColo -Colo $dataCenter
+            if (-not [string]::IsNullOrWhiteSpace($coloCountry)) {
+                $city = $coloCountry
+            }
             if ($city -eq "VPS789CT") {
                 if (-not [string]::IsNullOrWhiteSpace($dataCenter) -and $dataCenter -ne "N/A") {
                     $city = $dataCenter
@@ -1423,6 +1747,62 @@ function Assert-PublicationSafety {
     Write-Log "Publication safety check passed: current=$($currentLines.Count) previous=$($previous.Count) retention_ratio=$MinPublishRetentionRatio."
 }
 
+function Merge-RollingPublicationCsv {
+    param([object[]]$PreviousCsvEntries)
+    $previous = @($PreviousCsvEntries)
+    if ($previous.Count -eq 0 -or -not (Test-Path $csvPath)) { return }
+    $header = (Get-Content $csvPath -TotalCount 1)
+    $currentRows = [System.Collections.Generic.List[object]]::new()
+    foreach ($line in @(Get-Content $csvPath | Select-Object -Skip 1)) {
+        $c = $line -split ','
+        if ($c.Count -lt 10) { continue }
+        $city = Get-CityKeyFromRemark $c[3]
+        $currentRows.Add([pscustomobject]@{ Ip=$c[0];Port=[int]$c[1];DataCenter=$c[2];City=$city;Tls=$c[4];Sent=$c[5];Received=$c[6];Loss=$c[7];Latency=$c[8];Speed=$c[9];SpeedNumber=[double]$c[9];LatencyNumber=[double]$c[8];IsCurrent=$true }) | Out-Null
+    }
+    $oldRows = @($previous | ForEach-Object {
+        $speedNumber=0.0; [void][double]::TryParse([string]$_.Speed,[System.Globalization.NumberStyles]::Float,[System.Globalization.CultureInfo]::InvariantCulture,[ref]$speedNumber)
+        $latencyNumber=999.0; [void][double]::TryParse([string]$_.Latency,[System.Globalization.NumberStyles]::Float,[System.Globalization.CultureInfo]::InvariantCulture,[ref]$latencyNumber)
+        [pscustomobject]@{ Ip=$_.Ip;Port=[int]$_.Port;DataCenter=$_.DataCenter;City=$_.City;Tls=$_.Tls;Sent=$_.Sent;Received=$_.Received;Loss=$_.Loss;Latency=$_.Latency;Speed=$_.Speed;SpeedNumber=$speedNumber;LatencyNumber=$latencyNumber;IsCurrent=$false }
+    })
+    $allCities = @($oldRows.City + $currentRows.City | Where-Object { $_ } | Sort-Object -Unique)
+    $selected = [System.Collections.Generic.List[object]]::new()
+    foreach ($city in $allCities) {
+        $old = @($oldRows | Where-Object City -eq $city | Sort-Object @{Expression='SpeedNumber';Descending=$true},@{Expression='LatencyNumber';Descending=$false})
+        $cur = @($currentRows | Where-Object City -eq $city | Sort-Object @{Expression='SpeedNumber';Descending=$true},@{Expression='LatencyNumber';Descending=$false})
+        if ($old.Count -eq 0) {
+            foreach ($row in @($cur | Select-Object -First $MaxPerCity)) { $selected.Add($row) | Out-Null }
+            continue
+        }
+        $targetCount = [math]::Min($MaxPerCity,$old.Count)
+        $replaceSlots = [math]::Max(1,[math]::Ceiling($targetCount * $RollingReplaceFraction))
+        $keepCount = [math]::Max(0,$targetCount-$replaceSlots)
+        $chosen = [System.Collections.Generic.List[object]]::new()
+        $keys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($oldRow in @($old | Select-Object -First $keepCount)) {
+            $fresh = $cur | Where-Object { $_.Ip -eq $oldRow.Ip -and $_.Port -eq $oldRow.Port } | Select-Object -First 1
+            $row = if ($null -ne $fresh) { $fresh } else { $oldRow }
+            if ($keys.Add("$($row.Ip)|$($row.Port)")) { $chosen.Add($row) | Out-Null }
+        }
+        $remaining = @($cur + $old | Sort-Object @{Expression='SpeedNumber';Descending=$true},@{Expression='LatencyNumber';Descending=$false})
+        foreach ($row in $remaining) {
+            if ($chosen.Count -ge $targetCount) { break }
+            if ($keys.Add("$($row.Ip)|$($row.Port)")) { $chosen.Add($row) | Out-Null }
+        }
+        foreach ($row in $chosen) { $selected.Add($row) | Out-Null }
+        Write-Log "Rolling merge ${city}: previous=$($old.Count) current=$($cur.Count) output=$($chosen.Count) replacement_slots=$replaceSlots."
+    }
+    $lines = [System.Collections.Generic.List[string]]::new(); $lines.Add($header) | Out-Null
+    foreach ($group in @($selected | Group-Object City | Sort-Object Name)) {
+        $index=0
+        foreach ($row in @($group.Group | Sort-Object @{Expression='LatencyNumber';Descending=$false},@{Expression='SpeedNumber';Descending=$true})) {
+            $index++; $label="$($row.City) [$TestLocationName#$($index.ToString('00')) $(([double]$row.Speed).ToString('0.0',[System.Globalization.CultureInfo]::InvariantCulture))MB/s]"
+            $lines.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$label,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)") | Out-Null
+        }
+    }
+    [System.IO.File]::WriteAllLines($csvPath,$lines,(New-Object System.Text.UTF8Encoding($false)))
+    Write-Log "Rolling publication merge completed: previous=$($previous.Count) current=$($currentRows.Count) output=$($selected.Count)."
+}
+
 function Publish-ToGitHub {
     Publish-FileToGitHub -LocalPath $csvPath -UploadTargetPath $TargetPath
 }
@@ -1482,15 +1862,21 @@ try {
 
     $vps789CtIps = @(Get-Vps789CtIps)
     $cfBestIpCandidates = @(Get-CfBestIpCandidates)
+    $ip164746Candidates = @(Get-Ip164746Candidates)
+    $gslegeCandidates = @(Get-GslegeCloudflareIpCandidates)
+    $hotPrefixMiningCandidates = @(Get-HotPrefixMiningCandidates -SeedCandidates @($ip164746Candidates + $gslegeCandidates + $cfBestIpCandidates + $previousCsvEntries))
+    Write-Log "Generated $($hotPrefixMiningCandidates.Count) rotating hot-prefix candidates for all available country/port pools."
+    $ctEntryPoolCandidates = @(Get-CtEntryPoolCandidates -SelectedPorts $effectivePorts)
+    Write-Log "Generated $($ctEntryPoolCandidates.Count) CT entry candidates across $($effectivePorts.Count) configured ports."
     $allCountries = @(Get-FocusExcludedCountries)
     $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
-            New-PreviousPortWorkItem -CurrentPort $effectivePort -PreviousCsvEntries $previousCsvEntries
+            New-CtEntryPortWorkItem -CurrentPort $effectivePort -Candidates $ctEntryPoolCandidates
             if ($allCountries.Count -gt 0) {
-                New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries @() -SelectedCountries $allCountries -ScopeName "all" -IncludeVps789Ct $true
+                New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -Ip164746Candidates $ip164746Candidates -GslegeCandidates $gslegeCandidates -HotPrefixMiningCandidates $hotPrefixMiningCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries $allCountries -ScopeName "all" -IncludeVps789Ct $true
             }
             foreach ($focusCountry in @(Get-EffectiveFocusCountries)) {
                 if ($Countries -contains $focusCountry) {
-                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -PreviousCsvEntries @() -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
+                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -Ip164746Candidates $ip164746Candidates -GslegeCandidates $gslegeCandidates -HotPrefixMiningCandidates $hotPrefixMiningCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
                 }
             }
         }
@@ -1519,6 +1905,7 @@ try {
     $running = @(Start-CfstProcesses -WorkItems $workItems)
     Wait-CfstProcesses -Running $running
     Write-MergedFilteredCsv -WorkItems $workItems -PreviousNodeKeys $previousNodeKeys
+    Merge-RollingPublicationCsv -PreviousCsvEntries $previousCsvEntries
     Assert-PublicationSafety -PreviousCsvEntries $previousCsvEntries
 
     if ($SkipUpload) {

@@ -96,6 +96,45 @@ try {
     if ($candidateProfile -ne "40,40,320,400,100,30") {
         throw "Expected expanded candidate defaults 40,40,320,400,100,30; got $candidateProfile."
     }
+    if (-not $EnableIp164746 -or $Ip164746Url -ne "https://ip.164746.xyz/ipTop10.html" -or $Ip164746Limit -ne 10 -or $Ip164746Country -ne "JP") {
+        throw "Unexpected ip.164746.xyz candidate-source defaults."
+    }
+    if (-not $EnableGslegeCloudflareIp -or $GslegeCountries -ne "JP,SG,US,DE,NL" -or $GslegePerCountryLimit -ne 20) {
+        throw "Unexpected gslege/CloudflareIP defaults."
+    }
+    if ($CandidatePoolMode -ne 'adaptive' -or $AdaptiveMinCandidatesPerWorkItem -ne 20) {
+        throw "Adaptive candidate pool with ip.zip fallback must be the default."
+    }
+    if ((Get-CountryFromColo NRT) -ne 'JP' -or (Get-CountryFromColo SIN) -ne 'SG' -or (Get-CountryFromColo TXL) -ne 'DE' -or (Get-CountryFromColo LAX) -ne 'US') {
+        throw "Core Cloudflare Colo codes must map to their real countries."
+    }
+    if ((Get-CountryFromColo 'N/A') -ne '') { throw "Unknown Colo codes must not invent a country." }
+    $gslegeCandidates = @(ConvertFrom-GslegeCountryText -Text "108.162.198.18#jp`ninvalid`n108.162.198.18#dup`n999.1.1.1#bad`n108.162.198.19#jp" -Country JP -Limit 20)
+    if ($gslegeCandidates.Count -ne 2 -or $gslegeCandidates[1].Ip -ne '108.162.198.19') {
+        throw "gslege parser must validate and deduplicate IPv4 candidates."
+    }
+    $script:HotPrefixSamples = 4
+    $script:HotPrefixMaxPrefixesPerCountryPort = 4
+    $mined = @(Get-HotPrefixMiningCandidates -SeedCandidates @(
+        [pscustomobject]@{ Ip='162.159.45.218'; City='JP'; Port=443 },
+        [pscustomobject]@{ Ip='108.162.192.8'; City='SG'; Port=2053 }
+    ))
+    if ($mined.Count -ne 8 -or @($mined | Where-Object { $_.City -notin @('JP','SG') }).Count -ne 0) {
+        throw "Hot-prefix mining must generate rotating candidates independently per country and port."
+    }
+    $script:CtEntryCidrs = '104.16.0.0/30,162.159.192.0/30'
+    $script:CtEntrySamplesPerCidr = 2
+    $ctPool = @(Get-CtEntryPoolCandidates -SelectedPorts @(443, 8443))
+    if ($ctPool.Count -ne 8 -or @($ctPool | Where-Object { $_.City -ne 'CT-SEED' -or $_.Port -notin @(443,8443) }).Count -ne 0) {
+        throw "CT entry pool must sample every configured CIDR on every selected port."
+    }
+    $ip164746Candidates = @(ConvertFrom-Ip164746Text -Text "162.159.45.218, bad, 172.64.52.209`n162.159.45.218 104.16.45.704" -Limit 10 -Country "JP")
+    if ($ip164746Candidates.Count -ne 2 -or $ip164746Candidates[0].Ip -ne "162.159.45.218" -or $ip164746Candidates[1].Ip -ne "172.64.52.209") {
+        throw "ip.164746.xyz parser must validate, deduplicate, and preserve candidate order."
+    }
+    if ($ip164746Candidates | Where-Object { $_.Port -ne 443 -or $_.City -ne "JP" }) {
+        throw "ip.164746.xyz candidates must default to the JP 443 pool."
+    }
     $profile = @($CfstLatencyTestCount, $CfstDownloadTestCount, $CfstDownloadTestTime, $FocusCfstDownloadTestCount, $FocusCfstDownloadTestTime) -join ","
     if ($profile -ne "2,10,4,10,4") {
         throw "Expected fast CFST defaults 2,10,4,10,4; got $profile."
@@ -145,11 +184,39 @@ try {
     $portDir = Join-Path $script:extractDir "443"
     New-Item -ItemType Directory -Force -Path $portDir | Out-Null
     [System.IO.File]::WriteAllLines((Join-Path $portDir "DE.txt"), @("198.51.100.10"), [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllLines((Join-Path $portDir "JP.txt"), @("198.51.100.20"), [System.Text.Encoding]::ASCII)
+    $otherPortDir = Join-Path $script:extractDir "2053"
+    New-Item -ItemType Directory -Force -Path $otherPortDir | Out-Null
+    [System.IO.File]::WriteAllLines((Join-Path $otherPortDir "JP.txt"), @("198.51.100.21"), [System.Text.Encoding]::ASCII)
     $previousEntry = [pscustomobject]@{ Ip = "198.51.100.10"; Port = 443; City = "DE" }
     $workItem = New-PortWorkItem -CurrentPort 443 -Vps789CtIps @() -CfBestIpCandidates @() -PreviousCsvEntries @($previousEntry) -SelectedCountries @("DE") -ScopeName "overlap" -IncludeVps789Ct $false
     $overlapMap = @(Get-Content -LiteralPath $workItem.MapPath)
     if (-not ($overlapMap -contains "198.51.100.10,DE,previous")) {
         throw "Overlapping previous candidate must be marked previous by the work-item builder."
+    }
+    if ($CfstEnforceSpeedLimit -or $allArgs -match '(?:^| )-sl(?: |$)') {
+        throw "CFST speed-limit queue expansion must be disabled by default; post-filtering applies the floor."
+    }
+    $ip164746WorkItem = New-PortWorkItem -CurrentPort 443 -Vps789CtIps @() -CfBestIpCandidates @() -Ip164746Candidates $ip164746Candidates -PreviousCsvEntries @() -SelectedCountries @("JP") -ScopeName "ip164746" -IncludeVps789Ct $false
+    $ip164746Map = @(Get-Content -LiteralPath $ip164746WorkItem.MapPath)
+    if (-not ($ip164746Map -contains "162.159.45.218,JP,ip164746") -or -not ($ip164746Map -contains "172.64.52.209,JP,ip164746")) {
+        throw "443 JP work items must include ip.164746.xyz candidates with a distinct source label."
+    }
+    $ip164746OtherPortItem = New-PortWorkItem -CurrentPort 2053 -Vps789CtIps @() -CfBestIpCandidates @() -Ip164746Candidates $ip164746Candidates -PreviousCsvEntries @() -SelectedCountries @("JP") -ScopeName "ip164746-other-port" -IncludeVps789Ct $false
+    if ($null -ne $ip164746OtherPortItem -and (Get-Content -LiteralPath $ip164746OtherPortItem.MapPath) -match 'ip164746') {
+        throw "ip.164746.xyz candidates must not be injected into non-443 work items."
+    }
+    $gslegeWorkItem = New-PortWorkItem -CurrentPort 443 -Vps789CtIps @() -CfBestIpCandidates @() -GslegeCandidates $gslegeCandidates -PreviousCsvEntries @() -SelectedCountries @('JP') -ScopeName 'gslege' -IncludeVps789Ct $false
+    if (-not ((Get-Content $gslegeWorkItem.MapPath) -contains '108.162.198.18,JP,gslege')) {
+        throw "443 work items must include matching gslege seeds."
+    }
+    $hotMineWorkItem = New-PortWorkItem -CurrentPort 443 -Vps789CtIps @() -CfBestIpCandidates @() -HotPrefixMiningCandidates $mined -PreviousCsvEntries @() -SelectedCountries @('JP') -ScopeName 'hot-mine' -IncludeVps789Ct $false
+    if (-not ((Get-Content $hotMineWorkItem.MapPath) -match ',JP,hot-mine$')) { throw "Mined candidates must carry the hot-mine source." }
+    $ctPoolWorkItem = New-PortWorkItem -CurrentPort 443 -Vps789CtIps @() -CfBestIpCandidates @() -CtEntryPoolCandidates $ctPool -PreviousCsvEntries @() -SelectedCountries @('DE') -ScopeName 'all' -IncludeVps789Ct $false
+    if (-not ((Get-Content $ctPoolWorkItem.MapPath) -match ',CT-SEED,ct-pool$')) { throw "CT entry candidates must be added once to the all scope." }
+    $ctDedicatedItem = New-CtEntryPortWorkItem -CurrentPort 443 -Candidates $ctPool
+    if ($ctDedicatedItem.Scope -ne 'ct-entry' -or @((Get-Content $ctDedicatedItem.SelectedIpPath)).Count -ne 4) {
+        throw "CT entry candidates must have one dedicated work item per configured port."
     }
     $previousOnlyItem = New-PreviousPortWorkItem -CurrentPort 443 -PreviousCsvEntries @(
         [pscustomobject]@{ Ip = "198.51.100.10"; Port = 443; City = "DE" },
@@ -218,7 +285,7 @@ try {
         if ($row.$cityHeaderName -notmatch '^[A-Z]{2} \[[^]]+#\d{2} \d+\.\dMB/s\]$') {
             throw "Final city label does not contain one-decimal measured speed: $($row.$cityHeaderName)"
         }
-        if ($row.$cityHeaderName -match 'previous|ip\.zip|unknown|cf-bestip|vps789') {
+        if ($row.$cityHeaderName -match 'previous|ip\.zip|unknown|cf-bestip|ip164746|gslege|hot-mine|ct-pool|vps789') {
             throw "Final city label leaked candidate source: $($row.$cityHeaderName)"
         }
     }

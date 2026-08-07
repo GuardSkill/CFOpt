@@ -264,7 +264,7 @@ test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retentio
   grep -q 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=0 removed=1 passed=0.' "$tmp_dir/work/auto-push.log" || fail "missing HK floor stats"
   awk -F',' 'NR > 1 && $4 !~ /^[A-Z][A-Z] \[[^]]+#[0-9][0-9] [0-9]+\.[0-9]MB\/s\]$/ { exit 1 }' "$tmp_dir/work/CloudflareSpeedTest.csv" \
     || fail "final city labels must contain one-decimal measured speed"
-  ! grep -Eq 'previous|ip\.zip|unknown|cf-bestip|vps789' "$tmp_dir/work/CloudflareSpeedTest.csv" \
+  ! grep -Eq 'previous|ip\.zip|unknown|cf-bestip|ip164746|gslege|hot-mine|vps789' "$tmp_dir/work/CloudflareSpeedTest.csv" \
     || fail "final city labels leaked candidate source"
 }
 
@@ -570,6 +570,28 @@ test_candidate_pool_defaults_are_expanded_before_precheck() {
     || fail "Linux runner should collect up to 100 VPS789 CT candidates"
   grep -q 'TCP_PRECHECK_MAX_CANDIDATES="${TCP_PRECHECK_MAX_CANDIDATES:-30}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux runner should retain 30 new candidates per country and source"
+}
+
+test_ip164746_source_defaults_and_parser() {
+  local tmp_dir selected_path map_path added
+  tmp_dir="$(mktemp -d)"
+  selected_path="$tmp_dir/selected.txt"
+  map_path="$tmp_dir/map.csv"
+  : > "$selected_path"
+  : > "$map_path"
+
+  CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+  [[ "$ENABLE_IP164746" == "1" ]] || fail "ip.164746.xyz source should be enabled by default"
+  [[ "$IP164746_URL" == "https://ip.164746.xyz/ipTop10.html" ]] || fail "unexpected ip.164746.xyz URL"
+  [[ "$IP164746_LIMIT" == "10" && "$IP164746_COUNTRY" == "JP" ]] || fail "unexpected ip.164746.xyz pool defaults"
+
+  IP164746_PATH="$tmp_dir/ip164746.txt"
+  printf '%s\n' '162.159.45.218' '172.64.52.209' > "$IP164746_PATH"
+  added="$(append_ip164746_for_port 443 'JP' "$selected_path" "$map_path")"
+  [[ "$added" == "2" ]] || fail "expected two ip.164746.xyz candidates on JP/443"
+  grep -qx '162.159.45.218,JP,ip164746' "$map_path" || fail "missing ip164746 source label"
+  [[ "$(append_ip164746_for_port 2053 'JP' "$selected_path" "$map_path")" == "0" ]] || fail "ip164746 must be limited to port 443"
+  [[ "$(append_ip164746_for_port 443 'DE' "$selected_path" "$map_path")" == "0" ]] || fail "ip164746 must be limited to its configured country pool"
 }
 
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous() {
@@ -1074,6 +1096,7 @@ test_runner_defaults_include_europe_focus_countries
 test_runners_default_to_four_hour_interval
 test_focus_scopes_use_fast_download_profile
 test_candidate_pool_defaults_are_expanded_before_precheck
+test_ip164746_source_defaults_and_parser
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_http_latency
 test_proxyip_best_generator_rejects_tcp_only_candidates
