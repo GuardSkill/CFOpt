@@ -1122,7 +1122,7 @@ filter_csv() {
         print country "," country_floor_value[country] "," (country_evaluated[country] + 0) "," (country_protected[country] + 0) "," (country_removed[country] + 0) "," (country_passed[country] + 0) > country_speed_stats_path
       }
       if (accepted_count < 1) exit 2
-      print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
+      print "IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps"
       for (i = 1; i <= accepted_count; i++) {
         for (j = i + 1; j <= accepted_count; j++) {
           if (accepted[j] < accepted[i]) {

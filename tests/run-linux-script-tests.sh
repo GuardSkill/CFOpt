@@ -940,6 +940,8 @@ PY
 
 test_tracked_csv_node_labels_are_ascii_safe() {
   for csv in "$ROOT_DIR/CloudflareSpeedTest_BJ.csv" "$ROOT_DIR/CloudflareSpeedTest_CD.csv"; do
+    [[ "$(head -n 1 "$csv" | tr -d '\r')" == "IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps" ]] \
+      || fail "tracked CSV header is not canonical UTF-8/ASCII: $csv"
     if grep -Eq '馃|北京测速|成都测速' "$csv"; then
       fail "tracked CSV contains mojibake or old location labels: $csv"
     fi

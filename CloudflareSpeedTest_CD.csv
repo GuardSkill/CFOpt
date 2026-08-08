@@ -1,4 +1,4 @@
-IP鍦板潃,绔彛,鏁版嵁涓績,鍩庡競,TLS,宸插彂閫?宸叉帴鏀?涓㈠寘鐜?骞冲潎寤惰繜,涓嬭浇閫熷害(MB/s)
+IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps
 45.131.71.183,8443,TXL,DE [CD#01 53.1MB/s],true,2,2,0.00,146.78,53.13
 104.25.181.19,8443,FRA,DE [CD#02 23.7MB/s],true,2,2,0.00,208.75,23.65
 104.25.146.43,443,FRA,DE [CD#03 18.5MB/s],true,2,2,0.00,209.28,18.54
