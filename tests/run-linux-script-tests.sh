@@ -854,7 +854,7 @@ for rule in cmliussss_rules:
         raise SystemExit(f"{full}: missing lite baseline ruleset: {rule}")
 
 required_business_groups = [
-    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=CodeAgent`select`[]DE Pool`[]JP Pool`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Polymarket`select`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Polymarket GB + IE Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
@@ -871,8 +871,8 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
     if "rules/Bilibili.list" in content and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in content:
         raise SystemExit(f"{path}: Bilibili rules must route to Direct")
-    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT" not in content:
-        raise SystemExit(f"{path}: CodeAgent must include the TW and US Proxy pools")
+    if "custom_proxy_group=CodeAgent`select`[]DE Pool`[]JP Pool`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT" not in content:
+        raise SystemExit(f"{path}: CodeAgent must include DE Pool, JP Pool, TW Proxy, and US Proxy")
     codeagent_filters = {
         "JP Proxy ↪": "(🇯🇵 )?JP ↪ \\[",
         "HK Proxy ↪": "(🇭🇰 )?HK ↪ \\[",
@@ -914,6 +914,7 @@ for path in [full, lite, cmliussss]:
         "JP Pool": ["🇯🇵 JP [BJ#01 ip.zip]", "🇯🇵 JP ↪ [BJ#01 ip.zip]"],
         "KR Pool": ["🇰🇷 KR [BJ#01 ip.zip]", "🇰🇷 KR ↪ [BJ#01 ip.zip]"],
         "SG Pool": ["🇸🇬 SG [BJ#01 ip.zip]", "🇸🇬 SG ↪ [BJ#01 ip.zip]"],
+        "DE Pool": ["🇩🇪 DE [BJ#01 ip.zip]", "🇩🇪 DE ↪ [BJ#01 ip.zip]"],
     }
     groups = {}
     for line in lines(path, "custom_proxy_group="):
