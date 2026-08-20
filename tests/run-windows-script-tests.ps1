@@ -271,6 +271,10 @@ try {
     [void]$previousNodeKeys.Add("203.0.113.9|443|JP")
     Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath = $mergeMapPath; CsvPath = $mergeCfstPath; Port = 443 }) -PreviousNodeKeys $previousNodeKeys
 
+    $csvBytes = [System.IO.File]::ReadAllBytes($script:csvPath)
+    if ($csvBytes.Length -lt 3 -or $csvBytes[0] -ne 0xEF -or $csvBytes[1] -ne 0xBB -or $csvBytes[2] -ne 0xBF) {
+        throw 'Published CSV must use UTF-8 with BOM for Windows spreadsheet compatibility.'
+    }
     $output = Import-Csv -LiteralPath $script:csvPath
     $ipHeaderName = "IP" + [string]([char]0x5730) + [string]([char]0x5740)
     $cityHeaderName = [string]([char]0x57CE) + [string]([char]0x5E02)

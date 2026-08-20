@@ -1622,7 +1622,7 @@ function Write-MergedFilteredCsv {
         throw "Filtering removed all CSV rows. Check MaxLatencyMs=$MaxLatencyMs, MinReceived=$MinReceived, and MinSpeedMbps=$MinSpeedMbps. If cfst reports 0.00 MB/s, rerun with -CfstDebug."
     }
 
-    [System.IO.File]::WriteAllLines($csvPath, $kept.ToArray(), $utf8NoBom)
+    [System.IO.File]::WriteAllLines($csvPath, $kept.ToArray(), (New-Object System.Text.UTF8Encoding($true)))
     Write-Log "Merged and filtered CSV rows across ports. Kept $($kept.Count - 1), removed $removed. Top $MaxPerCity per country/group. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms, speed >= $MinSpeedMbps Mbps."
 }
 
@@ -1799,7 +1799,7 @@ function Merge-RollingPublicationCsv {
             $lines.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$label,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)") | Out-Null
         }
     }
-    [System.IO.File]::WriteAllLines($csvPath,$lines,(New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllLines($csvPath,$lines,(New-Object System.Text.UTF8Encoding($true)))
     Write-Log "Rolling publication merge completed: previous=$($previous.Count) current=$($currentRows.Count) output=$($selected.Count)."
 }
 
