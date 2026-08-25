@@ -522,13 +522,17 @@ append_cfbestip_for_port() {
     if (( curl_status != 0 )); then
       rm -f "$tmp_path"
       local all_url="${CFBESTIP_BASE_URL%/}/ip_all.txt"
+      local all_path="$WORK_DIR/cfbestip-all.txt"
       curl_status=0
-      curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$all_url" 2>/dev/null || curl_status=$?
+      if [[ ! -s "$all_path" ]]; then
+        curl -fsSL --retry 2 --connect-timeout 20 -o "$all_path" "$all_url" 2>/dev/null || curl_status=$?
+      fi
       if (( curl_status != 0 )); then
-        rm -f "$tmp_path"
+        rm -f "$all_path"
         log "Optional cf-bestip source unavailable for $country (curl=$curl_status); continuing without it: $url" >/dev/null
         continue
       fi
+      cp "$all_path" "$tmp_path"
       filter_country=1
       log "cf-bestip has no per-country file for $country; using $all_url and filtering #$country-score entries." >/dev/null
     fi
@@ -1384,7 +1388,7 @@ main() {
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
-  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$HOT_MINE_PATH" "$CT_ENTRY_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
+  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$HOT_MINE_PATH" "$CT_ENTRY_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$WORK_DIR/cfbestip-all.txt" "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
 
   update_zip_cache
   fetch_previous_csv_nodes

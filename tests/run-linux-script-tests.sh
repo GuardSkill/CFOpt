@@ -581,6 +581,8 @@ test_missing_cfbestip_country_is_optional() {
     || fail "cf-bestip missing-country path must fall back to the combined list"
   grep -q 'filter_country' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "cf-bestip combined-list fallback must filter the requested country"
+  grep -q 'cfbestip-all.txt' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "cf-bestip combined-list fallback must cache ip_all.txt instead of downloading it for every country"
 }
 
 test_ip164746_source_defaults_and_parser() {

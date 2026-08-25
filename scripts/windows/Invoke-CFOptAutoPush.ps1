@@ -546,6 +546,7 @@ function Get-CfBestIpCandidates {
         [void]$effectivePortSet.Add([int]$portValue)
     }
     $candidates = New-Object System.Collections.Generic.List[object]
+    $allCfBestIpText = $null
     foreach ($country in $Countries) {
         $countryCode = $country.Trim().ToUpperInvariant()
         if ([string]::IsNullOrWhiteSpace($countryCode)) {
@@ -562,7 +563,10 @@ function Get-CfBestIpCandidates {
             catch {
                 $allUrl = "{0}/ip_all.txt" -f $CfBestIpBaseUrl.TrimEnd("/")
                 Write-Log "cf-bestip has no per-country file for $countryCode; falling back to $allUrl."
-                $text = (Invoke-WebRequest -Uri $allUrl -UseBasicParsing -TimeoutSec 30).Content
+                if ($null -eq $allCfBestIpText) {
+                    $allCfBestIpText = (Invoke-WebRequest -Uri $allUrl -UseBasicParsing -TimeoutSec 30).Content
+                }
+                $text = $allCfBestIpText
                 $filterCountry = $true
             }
             $countsByPort = @{}
