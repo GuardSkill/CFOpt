@@ -513,8 +513,14 @@ append_cfbestip_for_port() {
 
     local url="${CFBESTIP_BASE_URL%/}/ip_${country}.txt"
     local tmp_path="$WORK_DIR/cfbestip-${country}.txt"
-    if ! curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$url" 2>/dev/null; then
-      log "WARN: Failed to fetch cf-bestip candidates for $country: $url" >/dev/null
+    # cf-bestip does not publish every country on every run (KR can be absent).
+    # Keep this source strictly optional: a 404/network failure must not inherit
+    # curl's non-zero status through `set -e` or the caller's command substitution.
+    local curl_status=0
+    curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$url" 2>/dev/null || curl_status=$?
+    if (( curl_status != 0 )); then
+      rm -f "$tmp_path"
+      log "Optional cf-bestip source unavailable for $country (curl=$curl_status); continuing without it: $url" >/dev/null
       continue
     fi
 
@@ -532,6 +538,7 @@ append_cfbestip_for_port() {
   done
 
   printf '%s\n' "$added"
+  return 0
 }
 
 append_previous_for_port() {

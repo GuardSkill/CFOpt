@@ -572,6 +572,13 @@ test_candidate_pool_defaults_are_expanded_before_precheck() {
     || fail "Linux runner should retain 30 new candidates per country and source"
 }
 
+test_missing_cfbestip_country_is_optional() {
+  grep -q 'curl .*|| curl_status=\$?' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "cf-bestip fetch must capture curl failures instead of exiting under set -e"
+  grep -q 'Optional cf-bestip source unavailable' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "cf-bestip missing-country path must be explicitly optional"
+}
+
 test_ip164746_source_defaults_and_parser() {
   local tmp_dir selected_path map_path added
   tmp_dir="$(mktemp -d)"
@@ -1110,6 +1117,7 @@ test_runner_defaults_include_europe_focus_countries
 test_runners_default_to_four_hour_interval
 test_focus_scopes_use_fast_download_profile
 test_candidate_pool_defaults_are_expanded_before_precheck
+test_missing_cfbestip_country_is_optional
 test_ip164746_source_defaults_and_parser
 test_adaptive_pool_helper_generates_multiport_candidates
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
