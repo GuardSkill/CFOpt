@@ -513,6 +513,7 @@ append_cfbestip_for_port() {
 
     local url="${CFBESTIP_BASE_URL%/}/ip_${country}.txt"
     local tmp_path="$WORK_DIR/cfbestip-${country}.txt"
+    local filter_country=0
     # cf-bestip does not publish every country on every run (KR can be absent).
     # Keep this source strictly optional: a 404/network failure must not inherit
     # curl's non-zero status through `set -e` or the caller's command substitution.
@@ -520,10 +521,22 @@ append_cfbestip_for_port() {
     curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$url" 2>/dev/null || curl_status=$?
     if (( curl_status != 0 )); then
       rm -f "$tmp_path"
-      log "Optional cf-bestip source unavailable for $country (curl=$curl_status); continuing without it: $url" >/dev/null
-      continue
+      local all_url="${CFBESTIP_BASE_URL%/}/ip_all.txt"
+      curl_status=0
+      curl -fsSL --retry 2 --connect-timeout 20 -o "$tmp_path" "$all_url" 2>/dev/null || curl_status=$?
+      if (( curl_status != 0 )); then
+        rm -f "$tmp_path"
+        log "Optional cf-bestip source unavailable for $country (curl=$curl_status); continuing without it: $url" >/dev/null
+        continue
+      fi
+      filter_country=1
+      log "cf-bestip has no per-country file for $country; using $all_url and filtering #$country-score entries." >/dev/null
     fi
 
+    [[ -s "$tmp_path" ]] || {
+      log "Optional cf-bestip source produced no data for $country; continuing without it." >/dev/null
+      continue
+    }
     local count_for_country=0
     while IFS= read -r ip; do
       [[ -n "$ip" ]] || continue
@@ -533,7 +546,7 @@ append_cfbestip_for_port() {
         count_for_country=$((count_for_country + 1))
       fi
       printf '%s,%s,cf-bestip\n' "$ip" "$country" >> "$map_path"
-    done < <(awk -F'[:#]' -v port="$port" -v limit="$CFBESTIP_PER_COUNTRY_LIMIT" 'NF >= 3 && $2 == port && count < limit { print $1; count++ }' "$tmp_path")
+    done < <(awk -F'[:#-]' -v port="$port" -v country="$country" -v filter_country="$filter_country" -v limit="$CFBESTIP_PER_COUNTRY_LIMIT" 'NF >= 3 && $2 == port && (!filter_country || toupper($3) == country) && count < limit { print $1; count++ }' "$tmp_path")
     log "Fetched $count_for_country cf-bestip candidates for $country on port $port." >/dev/null
   done
 

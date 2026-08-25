@@ -577,6 +577,10 @@ test_missing_cfbestip_country_is_optional() {
     || fail "cf-bestip fetch must capture curl failures instead of exiting under set -e"
   grep -q 'Optional cf-bestip source unavailable' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "cf-bestip missing-country path must be explicitly optional"
+  grep -q 'ip_all.txt' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "cf-bestip missing-country path must fall back to the combined list"
+  grep -q 'filter_country' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "cf-bestip combined-list fallback must filter the requested country"
 }
 
 test_ip164746_source_defaults_and_parser() {

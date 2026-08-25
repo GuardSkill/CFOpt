@@ -555,11 +555,23 @@ function Get-CfBestIpCandidates {
         $url = "{0}/ip_{1}.txt" -f $CfBestIpBaseUrl.TrimEnd("/"), $countryCode
         try {
             Write-Log "Fetching cf-bestip candidates: $url"
-            $text = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30).Content
+            $filterCountry = $false
+            try {
+                $text = (Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 30).Content
+            }
+            catch {
+                $allUrl = "{0}/ip_all.txt" -f $CfBestIpBaseUrl.TrimEnd("/")
+                Write-Log "cf-bestip has no per-country file for $countryCode; falling back to $allUrl."
+                $text = (Invoke-WebRequest -Uri $allUrl -UseBasicParsing -TimeoutSec 30).Content
+                $filterCountry = $true
+            }
             $countsByPort = @{}
             foreach ($line in ($text -split "`r?`n")) {
                 $trimmed = $line.Trim()
                 if ($trimmed -match '^(?<ip>(?:\d{1,3}\.){3}\d{1,3}):(?<port>\d+)#(?<region>[A-Za-z0-9_-]+)') {
+                    if ($filterCountry -and $Matches.region.ToUpperInvariant() -ne $countryCode) {
+                        continue
+                    }
                     $candidatePort = [int]$Matches.port
                     if (-not $effectivePortSet.Contains($candidatePort)) {
                         continue
