@@ -115,7 +115,10 @@ DOMAIN-SUFFIX,dashscope.aliyuncs.com
 DOMAIN-SUFFIX,maas.aliyuncs.com
 DOMAIN-SUFFIX,steamserver.net
 DOMAIN-SUFFIX,steamcontent.com
+DOMAIN-SUFFIX,cm.steampowered.com
 DOMAIN,steamconnecttest.com
+DOMAIN,steamcdn-a.akamaihd.net
+DOMAIN,steampipe.akamaized.net
 DOMAIN-SUFFIX,clngaa.com
 DOMAIN-SUFFIX,eccdnx.com
 DOMAIN-SUFFIX,pphimalayanrt.com

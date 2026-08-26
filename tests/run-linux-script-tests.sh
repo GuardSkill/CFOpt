@@ -1040,10 +1040,10 @@ test_steam_rules_cover_core_store_and_community_domains() {
     "DOMAIN-SUFFIX,steampowered.com"
     "DOMAIN-SUFFIX,steamcommunity.com"
     "DOMAIN-SUFFIX,steam-chat.com"
+    "DOMAIN-SUFFIX,chat.steamcontent.com"
     "DOMAIN-SUFFIX,steamstatic.com"
     "DOMAIN-SUFFIX,steamusercontent.com"
     "DOMAIN-SUFFIX,valvesoftware.com"
-    "DOMAIN,steamcdn-a.akamaihd.net"
     "DOMAIN,steamcommunity-a.akamaihd.net"
     "DOMAIN,steamstore-a.akamaihd.net"
     "DOMAIN,steamusercontent-a.akamaihd.net"
@@ -1060,7 +1060,10 @@ test_steam_download_domains_are_routed_direct() {
   local required_rules=(
     "DOMAIN-SUFFIX,steamserver.net"
     "DOMAIN-SUFFIX,steamcontent.com"
+    "DOMAIN-SUFFIX,cm.steampowered.com"
     "DOMAIN,steamconnecttest.com"
+    "DOMAIN,steamcdn-a.akamaihd.net"
+    "DOMAIN,steampipe.akamaized.net"
     "DOMAIN-SUFFIX,clngaa.com"
     "DOMAIN-SUFFIX,eccdnx.com"
     "DOMAIN-SUFFIX,pphimalayanrt.com"
@@ -1073,6 +1076,8 @@ test_steam_download_domains_are_routed_direct() {
 
   ! grep -qxF "DOMAIN-SUFFIX,steamserver.net" "$steam_rules_file" || fail "Steam download domain must not remain in Steam rules: steamserver.net"
   ! grep -qxF "DOMAIN-SUFFIX,steamcontent.com" "$steam_rules_file" || fail "Steam download domain must not remain in Steam rules: steamcontent.com"
+  ! grep -qxF "DOMAIN,steamcdn-a.akamaihd.net" "$steam_rules_file" || fail "Steam download domain must not remain in Steam rules: steamcdn-a.akamaihd.net"
+  ! grep -qxF "DOMAIN,steampipe.akamaized.net" "$steam_rules_file" || fail "Steam download domain must not remain in Steam rules: steampipe.akamaized.net"
   grep -qxF "DOMAIN-SUFFIX,steampowered.com" "$steam_rules_file" || fail "Steam rules must retain steampowered.com for API/store traffic"
   ! grep -qxF "DOMAIN,api.steampowered.com" "$direct_rules_file" || fail "api.steampowered.com should remain in the Steam group"
 }
@@ -1080,9 +1085,20 @@ test_steam_download_domains_are_routed_direct() {
 test_steam_rules_are_referenced_in_subconverter_configs() {
   local config
   local rule="ruleset=Steam,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Steam.list"
+  local chat_override="ruleset=Steam,[]DOMAIN-SUFFIX,chat.steamcontent.com"
+  local cm_override="ruleset=Direct,[]DOMAIN-SUFFIX,cm.steampowered.com"
+  local mainland_direct="ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/MainlandDirect.list"
 
   for config in "$ROOT_DIR/CFOpt_Subconverter.ini" "$ROOT_DIR/CFOpt_Subconverter_lite.ini" "$ROOT_DIR/CFOpt_Subconverter_lite_cmliussss.ini"; do
     grep -qxF "$rule" "$config" || fail "$config missing Steam ruleset: $rule"
+    grep -qxF "$chat_override" "$config" || fail "$config missing Steam chat priority override"
+    grep -qxF "$cm_override" "$config" || fail "$config missing direct Steam CM priority override"
+    local chat_line cm_line direct_line
+    chat_line="$(grep -nF "$chat_override" "$config" | cut -d: -f1)"
+    cm_line="$(grep -nF "$cm_override" "$config" | cut -d: -f1)"
+    direct_line="$(grep -nF "$mainland_direct" "$config" | cut -d: -f1)"
+    (( chat_line < direct_line )) || fail "$config Steam chat override must precede broad steamcontent direct rule"
+    (( cm_line < direct_line )) || fail "$config Steam CM override must precede general routing rules"
   done
 }
 
