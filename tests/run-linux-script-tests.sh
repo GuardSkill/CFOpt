@@ -1034,16 +1034,14 @@ test_twitter_rules_are_referenced_in_subconverter_configs() {
   done
 }
 
-test_steam_rules_cover_core_store_community_and_cdn_domains() {
+test_steam_rules_cover_core_store_and_community_domains() {
   local rules_file="$ROOT_DIR/rules/Steam.list"
   local required_rules=(
     "DOMAIN-SUFFIX,steampowered.com"
     "DOMAIN-SUFFIX,steamcommunity.com"
     "DOMAIN-SUFFIX,steam-chat.com"
     "DOMAIN-SUFFIX,steamstatic.com"
-    "DOMAIN-SUFFIX,steamcontent.com"
     "DOMAIN-SUFFIX,steamusercontent.com"
-    "DOMAIN-SUFFIX,steamserver.net"
     "DOMAIN-SUFFIX,valvesoftware.com"
     "DOMAIN,steamcdn-a.akamaihd.net"
     "DOMAIN,steamcommunity-a.akamaihd.net"
@@ -1054,6 +1052,29 @@ test_steam_rules_cover_core_store_community_and_cdn_domains() {
   for rule in "${required_rules[@]}"; do
     grep -qxF "$rule" "$rules_file" || fail "Steam rules missing: $rule"
   done
+}
+
+test_steam_download_domains_are_routed_direct() {
+  local direct_rules_file="$ROOT_DIR/rules/MainlandDirect.list"
+  local steam_rules_file="$ROOT_DIR/rules/Steam.list"
+  local required_rules=(
+    "DOMAIN-SUFFIX,steamserver.net"
+    "DOMAIN-SUFFIX,steamcontent.com"
+    "DOMAIN,steamconnecttest.com"
+    "DOMAIN-SUFFIX,clngaa.com"
+    "DOMAIN-SUFFIX,eccdnx.com"
+    "DOMAIN-SUFFIX,pphimalayanrt.com"
+    "DOMAIN-SUFFIX,baishancdnx.cn"
+  )
+
+  for rule in "${required_rules[@]}"; do
+    grep -qxF "$rule" "$direct_rules_file" || fail "MainlandDirect rules missing Steam download domain: $rule"
+  done
+
+  ! grep -qxF "DOMAIN-SUFFIX,steamserver.net" "$steam_rules_file" || fail "Steam download domain must not remain in Steam rules: steamserver.net"
+  ! grep -qxF "DOMAIN-SUFFIX,steamcontent.com" "$steam_rules_file" || fail "Steam download domain must not remain in Steam rules: steamcontent.com"
+  grep -qxF "DOMAIN-SUFFIX,steampowered.com" "$steam_rules_file" || fail "Steam rules must retain steampowered.com for API/store traffic"
+  ! grep -qxF "DOMAIN,api.steampowered.com" "$direct_rules_file" || fail "api.steampowered.com should remain in the Steam group"
 }
 
 test_steam_rules_are_referenced_in_subconverter_configs() {
@@ -1136,7 +1157,8 @@ test_polymarket_rules_cover_core_api_domains
 test_polymarket_rules_are_inlined_in_subconverter_configs
 test_twitter_rules_cover_core_domains
 test_twitter_rules_are_referenced_in_subconverter_configs
-test_steam_rules_cover_core_store_community_and_cdn_domains
+test_steam_rules_cover_core_store_and_community_domains
+test_steam_download_domains_are_routed_direct
 test_steam_rules_are_referenced_in_subconverter_configs
 test_mainland_direct_covers_domestic_ai_model_providers
 
