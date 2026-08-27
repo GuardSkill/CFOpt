@@ -268,6 +268,26 @@ test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retentio
     || fail "final city labels leaked candidate source"
 }
 
+test_linux_full_retest_and_rolling_merge_do_not_revive_stale_nodes() {
+  local tmp_dir previous current output
+  tmp_dir="$(mktemp -d)"
+  previous="$tmp_dir/previous.csv"
+  current="$tmp_dir/current.csv"
+  output="$tmp_dir/output.csv"
+  printf '%s\n' \
+    'IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps' \
+    '203.0.113.200,443,HKG,HK [BJ#01 50.0MB/s],true,2,2,0,50,50' > "$previous"
+  printf '%s\n' \
+    'IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps' \
+    '203.0.113.10,443,NRT,JP [BJ#01 10.0MB/s],true,2,2,0,80,10' > "$current"
+
+  python3 "$ROOT_DIR/scripts/adaptive_pool.py" rolling --previous "$previous" --current "$current" --output "$output" --location BJ
+  ! grep -q '^203\.0\.113\.200,' "$output" || fail "rolling merge revived a stale historical node"
+
+  grep -q 'prepare_previous_work_item "$port_value"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux main flow must schedule the dedicated full historical-node retest"
+}
+
 test_linux_country_speed_floor_protects_only_available_row() {
   local tmp_dir
   tmp_dir="$(mktemp -d)"
@@ -954,8 +974,15 @@ PY
 
 test_tracked_csv_node_labels_are_ascii_safe() {
   for csv in "$ROOT_DIR/CloudflareSpeedTest_BJ.csv" "$ROOT_DIR/CloudflareSpeedTest_CD.csv"; do
-    [[ "$(head -n 1 "$csv" | tr -d '\r')" == "IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps" ]] \
-      || fail "tracked CSV header is not canonical UTF-8/ASCII: $csv"
+    python3 - "$csv" <<'PY' || fail "tracked CSV header is not canonical UTF-8: $csv"
+import csv
+import sys
+
+with open(sys.argv[1], encoding="utf-8-sig", newline="") as handle:
+    header = next(csv.reader(handle))
+expected = ["IP地址", "端口", "数据中心", "城市", "TLS", "已发送", "已接收", "丢包率", "平均延迟", "下载速度(MB/s)"]
+raise SystemExit(0 if header == expected else 1)
+PY
     if grep -Eq '馃|北京测速|成都测速' "$csv"; then
       fail "tracked CSV contains mojibake or old location labels: $csv"
     fi
@@ -1150,6 +1177,7 @@ test_linux_defaults_are_not_overly_strict_for_local_runs
 test_previous_csv_nodes_use_shell_safe_line_endings
 test_linux_country_speed_floor_defaults_and_parser
 test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention
+test_linux_full_retest_and_rolling_merge_do_not_revive_stale_nodes
 test_linux_country_speed_floor_protects_only_available_row
 test_linux_filter_rejects_invalid_candidate_speeds_at_zero_floors
 test_linux_runner_samples_large_country_files

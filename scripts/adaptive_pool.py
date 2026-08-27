@@ -80,22 +80,12 @@ def rolling(args):
         with open(path,encoding="utf-8-sig",newline="") as f:
             reader=csv.reader(f); header=next(reader); return header,[row_obj(r,current) for r in reader if len(r)>=10]
     header,old=load(args.previous,False); _,cur=load(args.current,True)
-    old_by=defaultdict(list); cur_by=defaultdict(list)
-    for x in old: old_by[x["country"]].append(x)
+    cur_by=defaultdict(list)
     for x in cur: cur_by[x["country"]].append(x)
     selected=[]
-    for country in sorted(set(old_by)|set(cur_by)):
-        o=sorted(old_by[country],key=lambda x:(-x["speed"],x["latency"])); c=sorted(cur_by[country],key=lambda x:(-x["speed"],x["latency"]))
-        if not o: chosen=c[:args.max_per_city]
-        else:
-            target=min(args.max_per_city,len(o)); slots=max(1,math.ceil(target*args.replace_fraction)); keep=max(0,target-slots)
-            cur_key={x["key"]:x for x in c}; chosen=[]; keys=set()
-            for x in o[:keep]:
-                x=cur_key.get(x["key"],x)
-                if x["key"] not in keys: keys.add(x["key"]); chosen.append(x)
-            for x in sorted(c+o,key=lambda x:(-x["speed"],x["latency"])):
-                if len(chosen)>=target: break
-                if x["key"] not in keys: keys.add(x["key"]); chosen.append(x)
+    for country in sorted(cur_by):
+        c=sorted(cur_by[country],key=lambda x:(-x["speed"],x["latency"]))
+        chosen=c[:args.max_per_city]
         selected.extend(chosen)
     with open(args.output,"w",encoding="utf-8",newline="") as f:
         w=csv.writer(f,lineterminator="\n"); w.writerow(header)

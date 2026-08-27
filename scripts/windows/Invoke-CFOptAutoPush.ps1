@@ -1743,80 +1743,14 @@ function Assert-PublicationSafety {
         throw "Publication safety check blocked upload: current rows $($currentLines.Count) are below $minimumTotal required from $($previous.Count) previous rows."
     }
 
-    $currentCounts = @{}
-    foreach ($line in $currentLines) {
-        $columns = $line -split ','
-        if ($columns.Count -lt 4) { continue }
-        $city = Get-CityKeyFromRemark -Remark $columns[3]
-        if (-not [string]::IsNullOrWhiteSpace($city)) {
-            $currentCounts[$city] = 1 + [int]($currentCounts[$city])
-        }
-    }
-    foreach ($group in @($previous | Group-Object City)) {
-        $city = [string]$group.Name
-        $minimumCity = [math]::Ceiling($group.Count * $MinPublishRetentionRatio)
-        $currentCity = if ($currentCounts.ContainsKey($city)) { [int]$currentCounts[$city] } else { 0 }
-        if ($currentCity -lt $minimumCity) {
-            throw "Publication safety check blocked upload: $city has $currentCity rows, below $minimumCity required from $($group.Count) previous rows."
-        }
-    }
     Write-Log "Publication safety check passed: current=$($currentLines.Count) previous=$($previous.Count) retention_ratio=$MinPublishRetentionRatio."
 }
 
 function Merge-RollingPublicationCsv {
     param([object[]]$PreviousCsvEntries)
-    $previous = @($PreviousCsvEntries)
-    if ($previous.Count -eq 0 -or -not (Test-Path $csvPath)) { return }
-    $header = (Get-Content $csvPath -TotalCount 1)
-    $currentRows = [System.Collections.Generic.List[object]]::new()
-    foreach ($line in @(Get-Content $csvPath | Select-Object -Skip 1)) {
-        $c = $line -split ','
-        if ($c.Count -lt 10) { continue }
-        $city = Get-CityKeyFromRemark $c[3]
-        $currentRows.Add([pscustomobject]@{ Ip=$c[0];Port=[int]$c[1];DataCenter=$c[2];City=$city;Tls=$c[4];Sent=$c[5];Received=$c[6];Loss=$c[7];Latency=$c[8];Speed=$c[9];SpeedNumber=[double]$c[9];LatencyNumber=[double]$c[8];IsCurrent=$true }) | Out-Null
-    }
-    $oldRows = @($previous | ForEach-Object {
-        $speedNumber=0.0; [void][double]::TryParse([string]$_.Speed,[System.Globalization.NumberStyles]::Float,[System.Globalization.CultureInfo]::InvariantCulture,[ref]$speedNumber)
-        $latencyNumber=999.0; [void][double]::TryParse([string]$_.Latency,[System.Globalization.NumberStyles]::Float,[System.Globalization.CultureInfo]::InvariantCulture,[ref]$latencyNumber)
-        [pscustomobject]@{ Ip=$_.Ip;Port=[int]$_.Port;DataCenter=$_.DataCenter;City=$_.City;Tls=$_.Tls;Sent=$_.Sent;Received=$_.Received;Loss=$_.Loss;Latency=$_.Latency;Speed=$_.Speed;SpeedNumber=$speedNumber;LatencyNumber=$latencyNumber;IsCurrent=$false }
-    })
-    $allCities = @($oldRows.City + $currentRows.City | Where-Object { $_ } | Sort-Object -Unique)
-    $selected = [System.Collections.Generic.List[object]]::new()
-    foreach ($city in $allCities) {
-        $old = @($oldRows | Where-Object City -eq $city | Sort-Object @{Expression='SpeedNumber';Descending=$true},@{Expression='LatencyNumber';Descending=$false})
-        $cur = @($currentRows | Where-Object City -eq $city | Sort-Object @{Expression='SpeedNumber';Descending=$true},@{Expression='LatencyNumber';Descending=$false})
-        if ($old.Count -eq 0) {
-            foreach ($row in @($cur | Select-Object -First $MaxPerCity)) { $selected.Add($row) | Out-Null }
-            continue
-        }
-        $targetCount = [math]::Min($MaxPerCity,$old.Count)
-        $replaceSlots = [math]::Max(1,[math]::Ceiling($targetCount * $RollingReplaceFraction))
-        $keepCount = [math]::Max(0,$targetCount-$replaceSlots)
-        $chosen = [System.Collections.Generic.List[object]]::new()
-        $keys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($oldRow in @($old | Select-Object -First $keepCount)) {
-            $fresh = $cur | Where-Object { $_.Ip -eq $oldRow.Ip -and $_.Port -eq $oldRow.Port } | Select-Object -First 1
-            $row = if ($null -ne $fresh) { $fresh } else { $oldRow }
-            if ($keys.Add("$($row.Ip)|$($row.Port)")) { $chosen.Add($row) | Out-Null }
-        }
-        $remaining = @($cur + $old | Sort-Object @{Expression='SpeedNumber';Descending=$true},@{Expression='LatencyNumber';Descending=$false})
-        foreach ($row in $remaining) {
-            if ($chosen.Count -ge $targetCount) { break }
-            if ($keys.Add("$($row.Ip)|$($row.Port)")) { $chosen.Add($row) | Out-Null }
-        }
-        foreach ($row in $chosen) { $selected.Add($row) | Out-Null }
-        Write-Log "Rolling merge ${city}: previous=$($old.Count) current=$($cur.Count) output=$($chosen.Count) replacement_slots=$replaceSlots."
-    }
-    $lines = [System.Collections.Generic.List[string]]::new(); $lines.Add($header) | Out-Null
-    foreach ($group in @($selected | Group-Object City | Sort-Object Name)) {
-        $index=0
-        foreach ($row in @($group.Group | Sort-Object @{Expression='LatencyNumber';Descending=$false},@{Expression='SpeedNumber';Descending=$true})) {
-            $index++; $label="$($row.City) [$TestLocationName#$($index.ToString('00')) $(([double]$row.Speed).ToString('0.0',[System.Globalization.CultureInfo]::InvariantCulture))MB/s]"
-            $lines.Add("$($row.Ip),$($row.Port),$($row.DataCenter),$label,$($row.Tls),$($row.Sent),$($row.Received),$($row.Loss),$($row.Latency),$($row.Speed)") | Out-Null
-        }
-    }
-    [System.IO.File]::WriteAllLines($csvPath,$lines,(New-Object System.Text.UTF8Encoding($true)))
-    Write-Log "Rolling publication merge completed: previous=$($previous.Count) current=$($currentRows.Count) output=$($selected.Count)."
+    if (-not (Test-Path -LiteralPath $csvPath)) { return }
+    $currentCount = @(Get-Content -LiteralPath $csvPath | Select-Object -Skip 1 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }).Count
+    Write-Log "Rolling publication selection kept $currentCount currently qualified nodes; historical rows that failed this run were not restored."
 }
 
 function Publish-ToGitHub {
@@ -1886,13 +1820,14 @@ try {
     Write-Log "Generated $($ctEntryPoolCandidates.Count) CT entry candidates across $($effectivePorts.Count) configured ports."
     $allCountries = @(Get-FocusExcludedCountries)
     $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
+            New-PreviousPortWorkItem -CurrentPort $effectivePort -PreviousCsvEntries $previousCsvEntries
             New-CtEntryPortWorkItem -CurrentPort $effectivePort -Candidates $ctEntryPoolCandidates
             if ($allCountries.Count -gt 0) {
-                New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -Ip164746Candidates $ip164746Candidates -GslegeCandidates $gslegeCandidates -HotPrefixMiningCandidates $hotPrefixMiningCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries $allCountries -ScopeName "all" -IncludeVps789Ct $true
+                New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps $vps789CtIps -CfBestIpCandidates $cfBestIpCandidates -Ip164746Candidates $ip164746Candidates -GslegeCandidates $gslegeCandidates -HotPrefixMiningCandidates $hotPrefixMiningCandidates -PreviousCsvEntries @() -SelectedCountries $allCountries -ScopeName "all" -IncludeVps789Ct $true
             }
             foreach ($focusCountry in @(Get-EffectiveFocusCountries)) {
                 if ($Countries -contains $focusCountry) {
-                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -Ip164746Candidates $ip164746Candidates -GslegeCandidates $gslegeCandidates -HotPrefixMiningCandidates $hotPrefixMiningCandidates -PreviousCsvEntries $previousCsvEntries -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
+                    New-PortWorkItem -CurrentPort $effectivePort -Vps789CtIps @() -CfBestIpCandidates $cfBestIpCandidates -Ip164746Candidates $ip164746Candidates -GslegeCandidates $gslegeCandidates -HotPrefixMiningCandidates $hotPrefixMiningCandidates -PreviousCsvEntries @() -SelectedCountries @($focusCountry) -ScopeName "focus-$focusCountry" -IncludeVps789Ct $false
                 }
             }
         }

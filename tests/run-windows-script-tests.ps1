@@ -179,6 +179,9 @@ try {
     if ($functionText.ToCharArray() | Where-Object { [int]$_ -gt 127 } | Select-Object -First 1) {
         throw "Invoke-TcpPrecheck must contain ASCII characters only."
     }
+    if ($runnerText -notmatch 'New-PreviousPortWorkItem -CurrentPort \$effectivePort -PreviousCsvEntries \$previousCsvEntries') {
+        throw "Windows main flow must schedule the dedicated full historical-node retest."
+    }
 
     $script:extractDir = Join-Path $tempDir "extract"
     $portDir = Join-Path $script:extractDir "443"
@@ -293,6 +296,16 @@ try {
             throw "Final city label leaked candidate source: $($row.$cityHeaderName)"
         }
     }
+    Merge-RollingPublicationCsv -PreviousCsvEntries @(
+        [pscustomobject]@{ Ip = '203.0.113.200'; Port = 443; DataCenter = 'HKG'; City = 'HK'; Tls = 'true'; Sent = '2'; Received = '2'; Loss = '0'; Latency = '50'; Speed = '50' }
+    )
+    $rollingOutput = Import-Csv -LiteralPath $script:csvPath
+    if ($rollingOutput.$ipHeaderName -contains '203.0.113.200') {
+        throw 'Rolling publication merge revived a historical node that failed the current benchmark.'
+    }
+    Assert-PublicationSafety -PreviousCsvEntries @(
+        [pscustomobject]@{ Ip = '203.0.113.200'; Port = 443; City = 'HK' }
+    )
     try {
         Assert-PublicationSafety -PreviousCsvEntries @(
             [pscustomobject]@{ Ip = '203.0.113.1'; Port = 443; City = 'JP' },

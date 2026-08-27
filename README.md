@@ -87,7 +87,7 @@ Windows 和 Linux 流程都会对所有地区进行独立热前缀挖掘：从�
 
 Windows 和 Linux 流程还会从电信入口候选段分层抽样，默认包括 `104.16.0.0/13`、`104.24.0.0/14`、`172.64.0.0/13` 以及 WARP/Tunnel/合作段中指定的 `/24`。每段默认轮换抽取 32 个 IPv4，并在 `443/2053/2083/2087/2096/8443` 每个已配置端口测试一次；不按 focus 重复，来源为 `ct-pool`。这只验证其作为 CF TLS/下载入口的实际表现，不启用 IPv6 或 7844 专用协议测试。通过 `EnableCtEntryPool`、`CtEntryCidrs` 和 `CtEntrySamplesPerCidr` 配置。
 
-Windows 的 `CandidatePoolMode=adaptive` 与 Linux 的 `CANDIDATE_POOL_MODE=adaptive` 默认启用：地区工作项优先使用 `previous + cf-bestip + gslege + ip164746 + hot-mine`，不再默认灌入大批 `ip.zip` 地址；当某个地区/端口不足 20 个候选时自动用 `ip.zip` 补齐，避免冷门地区断档。`hybrid` 保留新旧全部来源，`legacy` 用于回归对照。成都 443 等量 A/B（各 320 个输入、各下载测试 40 个）中，旧池没有节点达到 5 MB/s，自适应池有 11 个达到 5 MB/s，最高 NRT 127.61 MB/s、SIN 38.46 MB/s。
+Windows 的 `CandidatePoolMode=adaptive` 与 Linux 的 `CANDIDATE_POOL_MODE=adaptive` 默认启用：地区工作项优先使用 `cf-bestip + gslege + ip164746 + hot-mine`，历史节点由独立任务全量复测；当某个地区/端口不足 20 个候选时自动用 `ip.zip` 补齐，避免冷门地区断档。`hybrid` 保留全部新候选来源，`legacy` 用于回归对照。成都 443 等量 A/B（各 320 个输入、各下载测试 40 个）中，旧池没有节点达到 5 MB/s，自适应池有 11 个达到 5 MB/s，最高 NRT 127.61 MB/s、SIN 38.46 MB/s。
 
 最终地区以 CFST 返回的 Cloudflare Colo 为准，例如 `NRT/KIX→JP`、`SIN→SG`、`HKG→HK`、`ICN→KR`、`FRA/TXL→DE`、`LHR→GB`、`AMS→NL`、`LAX/SJC/SEA→US`。上一轮节点也按 Colo 重新归类后参与热前缀学习和发布保护，避免把 `SIN` 节点沿用为 `JP/GB`。DE、HK、KR 默认分别使用 3、2、3 倍热前缀探索预算，Windows 可通过 `HotPrefixCountryMultipliers`、Linux 可通过 `HOT_PREFIX_COUNTRY_MULTIPLIERS` 调整。
 
@@ -205,17 +205,18 @@ IntervalDays=1
 - 本轮不达标的旧节点会被淘汰。
 - 每个已有地区默认保留约 80% 的优质旧节点。
 - 最多约 20% 的位置由本轮新测出的最佳候选替换；新地区直接追加。
-- 如果新候选不足，才继续用达标旧节点补满。
+- 如果新候选不足，才继续用本轮复测达标的旧节点补满；本轮未返回结果的历史节点不会从旧 CSV 恢复。
+- 发布安全阈值按整份 CSV 的总量判断，防止整机网络波动造成全局异常缩水；单个地区可以正常清除大批已过期节点。
 
 默认替换比例：
 
 ```text
-0.33
+0.20
 ```
 
 ### 调参
 
-Windows 和 Linux 默认会在 CFST 深度测速前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 30 个新候选。上一轮节点会合并到对应的 `all/focus` 工作项，不再额外创建一次全量 `previous` 下载任务，因此同一轮不会先发现后再整批重复测速。默认不向 CFST 传入 `-sl`，让 `-dn` 成为固定下载测试上限，速度门槛仍在 CSV 合并阶段执行；需要旧行为时可设置 `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`。
+Windows 和 Linux 默认会在 CFST 深度测速前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 30 个新候选。上一轮节点会进入独立的 `previous` 工作项，并把下载测试数设为该端口的全部历史节点数；这样旧节点必须在本轮重新通过延迟、丢包和下载测试才能发布。默认不向 CFST 传入 `-sl`，让 `-dn` 成为固定下载测试上限，速度门槛仍在 CSV 合并阶段执行；需要旧行为时可设置 `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`。
 
 临时关闭粗筛或调整参数：
 
@@ -410,11 +411,13 @@ Possible sources are `ip.zip`, `cf-bestip`, `ip164746`, `gslege`, `vps789`, `pre
 
 ### Rolling Retest
 
-Each run fetches the current published CSV, retests old nodes, removes failing nodes, keeps about 80% of the best old nodes in existing groups, and fills the rest with the best newly tested candidates. The default replacement fraction is `0.20`.
+Each run fetches the current published CSV and fully retests every old node in a dedicated per-port job. Only nodes qualified in the current run can be retained; missing or failing historical rows are never restored from the old CSV. Existing groups may keep about 80% of their currently qualified old nodes, with the remaining slots filled by the best new candidates. The default replacement fraction is `0.20`.
+
+The publication safety ratio applies to the total CSV size, protecting against broad probe-host network failures while allowing one expired region to shrink normally.
 
 ### TCP Precheck
 
-Windows and Linux perform a local TCP precheck before CFST deep testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 30 new candidates per region/source group. Previous nodes are merged into their matching `all/focus` item instead of being download-tested again in a separate full-history job. By default CFST does not receive `-sl`, so `-dn` is a hard download-test cap; the speed floor is still applied during CSV merging. Restore the old replacement-queue behavior with `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`.
+Windows and Linux perform a local TCP precheck before CFST deep testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 30 new candidates per region/source group. Previous nodes use a separate full-history job whose download-test count equals that port's historical-node count, so every retained node has a fresh result. By default CFST does not receive `-sl`, so `-dn` is a hard download-test cap; the speed floor is still applied during CSV merging. Restore the old replacement-queue behavior with `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`.
 
 Disable it for one run:
 

@@ -484,7 +484,10 @@ append_hot_mine_for_port() {
 }
 
 prepare_ct_entry_work_item() {
-  local port="$1" scope="ct-entry" selected="$WORK_DIR/selected-ip-$port-ct-entry.txt" map="$WORK_DIR/selected-ip-city-map-$port-ct-entry.csv"
+  local port="$1"
+  local scope="ct-entry"
+  local selected="$WORK_DIR/selected-ip-$port-ct-entry.txt"
+  local map="$WORK_DIR/selected-ip-city-map-$port-ct-entry.csv"
   [[ "$ENABLE_CT_ENTRY_POOL" == "1" && -s "$CT_ENTRY_PATH" ]] || return 0
   : > "$selected"
   : > "$map"
@@ -1338,13 +1341,6 @@ assert_publication_safety() {
         printf "Publication safety check blocked upload: current rows %d are below %d required from %d previous rows.\n", current_total, required_total, previous_total > "/dev/stderr"
         exit 1
       }
-      for (city in previous) {
-        required = int(previous[city] * ratio + 0.999999)
-        if ((current[city] + 0) < required) {
-          printf "Publication safety check blocked upload: %s has %d rows, below %d required from %d previous rows.\n", city, current[city] + 0, required, previous[city] > "/dev/stderr"
-          exit 1
-        }
-      }
     }
   ' "$PREVIOUS_NODES_PATH" "$CSV_PATH"; then
     return 1
@@ -1403,15 +1399,16 @@ main() {
   generate_adaptive_pools
   all_countries_csv="$(focus_excluded_countries_csv "$COUNTRIES_CSV" "$FOCUS_COUNTRIES_CSV")"
   for port_value in "${ports[@]}"; do
+    prepare_previous_work_item "$port_value"
     prepare_ct_entry_work_item "$port_value"
     if [[ -n "$all_countries_csv" ]]; then
-      merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" "1" || true
+      merge_country_files_for_port "$port_value" "all" "$all_countries_csv" "1" "0" || true
     fi
     IFS=',' read -r -a focus_countries <<< "$FOCUS_COUNTRIES_CSV"
     for focus_country in "${focus_countries[@]}"; do
       focus_country="$(printf '%s' "$focus_country" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | tr '[:lower:]' '[:upper:]')"
       [[ -n "$focus_country" ]] || continue
-      merge_country_files_for_port "$port_value" "focus-$focus_country" "$focus_country" "0" "1" || true
+      merge_country_files_for_port "$port_value" "focus-$focus_country" "$focus_country" "0" "0" || true
     done
   done
 
@@ -1438,6 +1435,9 @@ main() {
       if [[ "$scope" == focus-* ]]; then
         download_test_count="$FOCUS_CFST_DOWNLOAD_TEST_COUNT"
         download_test_time="$FOCUS_CFST_DOWNLOAD_TEST_TIME"
+      fi
+      if [[ "$scope" == "previous" ]]; then
+        download_test_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
       fi
       args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value-$safe_scope.csv" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$download_test_count" -dt "$download_test_time" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
       [[ "$port_value" != "443" ]] && args+=(-tp "$port_value")
