@@ -28,6 +28,40 @@ try {
 
     $env:CFOPT_SOURCE_ONLY = "1"
     . $runnerPath
+    if ((Resolve-NetworkIspFromProbeText -Text '{"isp":"China Mobile","as":"AS9808 China Mobile"}') -ne 'ChinaMobile') {
+        throw "AS9808/China Mobile probe text must resolve to ChinaMobile."
+    }
+    if ((Resolve-NetworkIspFromProbeText -Text '当前 IP：203.0.113.1 来自于：中国 四川 成都 电信') -ne 'ChinaTelecom') {
+        throw "Chinese China Telecom probe text must resolve to ChinaTelecom."
+    }
+    if ((Resolve-NetworkIspFromProbeText -Text 'China Unicom AS4837') -ne 'Unknown') {
+        throw "Unsupported ISPs must not be routed to a Mobile or Telecom CSV."
+    }
+    $mobileProfile = Resolve-CFOptNetworkProfile -DetectedIsp 'ChinaMobile'
+    if ($mobileProfile.TargetPath -ne 'CloudflareSpeedTest_CD_CM.csv' -or $mobileProfile.TestLocationName -ne 'CDCM' -or $mobileProfile.StateSuffix -ne 'CM') {
+        throw "China Mobile must use the dedicated Chengdu Mobile CSV and state."
+    }
+    $telecomProfile = Resolve-CFOptNetworkProfile -DetectedIsp 'ChinaTelecom'
+    if ($telecomProfile.TargetPath -ne 'CloudflareSpeedTest_CD.csv' -or $telecomProfile.TestLocationName -ne 'CD' -or $telecomProfile.StateSuffix -ne 'CT') {
+        throw "China Telecom must retain the existing Chengdu CSV with separate state."
+    }
+    try {
+        Resolve-CFOptNetworkProfile -DetectedIsp 'Unknown' | Out-Null
+        throw "Unknown ISP was accepted for automatic publication."
+    }
+    catch {
+        if ($_.Exception.Message -eq 'Unknown ISP was accepted for automatic publication.') { throw }
+    }
+    $installerText = Get-Content -LiteralPath (Join-Path $rootDir 'scripts\windows\Install-CFOptAutoPushTask.ps1') -Raw
+    if ($installerText -notmatch '\-AutoDetectNetworkIsp') {
+        throw "The Windows scheduled task must enable ISP detection."
+    }
+    if ($installerText -match 'Unregister-ScheduledTask' -or $installerText -notmatch '\-RunLevel Limited' -or $installerText -notmatch '\-Force' -or $installerText -notmatch 'schtasks\.exe') {
+        throw "The task installer must update safely without deleting the old task first or requiring elevation."
+    }
+    if ($installerText -match 'New-ScheduledTaskTrigger -AtStartup') {
+        throw "A non-elevated installer must not require a machine startup trigger."
+    }
     $waitProbeCsvPath = Join-Path $tempDir "wait-probe.csv"
     Set-Content -LiteralPath $waitProbeCsvPath -Value "IP,Sent" -Encoding ASCII
     $script:waitProbePollCount = 0
@@ -51,7 +85,7 @@ try {
         throw "TW and US must have dedicated default focus scopes."
     }
     $floors = ConvertFrom-CountryMinSpeedMap -Value $CountryMinSpeedMBPerSec -AllowedCountries $Countries
-    if ($floors.Count -ne 7 -or $floors["JP"] -ne 10 -or $floors["US"] -ne 5 -or $floors["KR"] -ne 3 -or $floors["HK"] -ne 2 -or $floors.ContainsKey("TW") -or $floors["DE"] -ne 5 -or $floors["GB"] -ne 3 -or $floors["SG"] -ne 5) {
+    if ($floors.Count -ne 7 -or $floors["JP"] -ne 10 -or $floors["US"] -ne 2 -or $floors["KR"] -ne 3 -or $floors["HK"] -ne 2 -or $floors.ContainsKey("TW") -or $floors["DE"] -ne 5 -or $floors["GB"] -ne 3 -or $floors["SG"] -ne 5) {
         throw "Unexpected default country speed floors."
     }
     if ((ConvertFrom-CountryMinSpeedMap -Value "" -AllowedCountries $Countries).Count -ne 0) {
@@ -265,9 +299,9 @@ try {
         "203.0.113.11,4,4,0,10,11.00,SFO",
         "203.0.113.12,4,4,0,10,1.99,SFO",
         "203.0.113.20,4,4,0,10,0.01,SFO",
-        "203.0.113.30,4,4,0,10,4.90,LAX",
-        "203.0.113.31,4,4,0,10,4.80,LAX",
-        "203.0.113.32,4,4,0,10,4.70,LAX"
+        "203.0.113.30,4,4,0,10,1.90,LAX",
+        "203.0.113.31,4,4,0,10,1.80,LAX",
+        "203.0.113.32,4,4,0,10,1.70,LAX"
     ), [System.Text.Encoding]::ASCII)
     $script:MinSpeedMbps = 0
     $previousNodeKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -320,7 +354,7 @@ try {
         if ($_.Exception.Message -notmatch 'Publication safety check blocked') { throw }
     }
     $mergeLog = Get-Content -LiteralPath $logPath -Raw
-    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=0 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=0 removed=1 passed=0\.' -or $mergeLog -notmatch 'Country speed floor US >= 5 MB/s: evaluated=3 protected=0 removed=3 passed=0\.') {
+    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=0 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=0 removed=1 passed=0\.' -or $mergeLog -notmatch 'Country speed floor US >= 2 MB/s: evaluated=3 protected=0 removed=3 passed=0\.') {
         throw 'Country speed floor summaries were not logged.'
     }
 

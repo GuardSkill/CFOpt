@@ -143,7 +143,7 @@ test_linux_country_speed_floor_defaults_and_parser() {
     CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
 
     [[ "$FOCUS_COUNTRIES_CSV" == "SG,HK,TW,JP,KR,US,DE,GB" ]] || fail "TW and US must be default focus countries"
-    [[ "$COUNTRY_MIN_SPEED_MB_PER_SEC" == "JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5" ]] || fail "unexpected country floors"
+    [[ "$COUNTRY_MIN_SPEED_MB_PER_SEC" == "JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5" ]] || fail "unexpected country floors"
     [[ "$COUNTRY_MIN_SPEED_MB_PER_SEC" != *"TW="* ]] || fail "TW must not have a default country speed floor"
     [[ "$(normalize_country_min_speed_map 'jp=10, US=5' 'HK,JP,US')" == "JP=10,US=5" ]] || fail "country floor normalization failed"
     [[ -z "$(normalize_country_min_speed_map '' 'HK,JP,US')" ]] || fail "empty map must disable floors"
@@ -168,7 +168,7 @@ test_linux_country_speed_floor_defaults_and_parser() {
   chinese_readme="$(sed -n '/^## 中文说明$/,/^## English$/p' "$ROOT_DIR/README.md")"
   english_readme="$(sed -n '/^## English$/,$p' "$ROOT_DIR/README.md")"
 
-  for required_text in 'JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5' 'COUNTRY_MIN_SPEED_MB_PER_SEC' 'CountryMinSpeedMBPerSec' '13.1MB/s'; do
+  for required_text in 'JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5' 'COUNTRY_MIN_SPEED_MB_PER_SEC' 'CountryMinSpeedMBPerSec' '13.1MB/s'; do
     grep -Fq "$required_text" <<<"$chinese_readme" || fail "Chinese README missing country-floor documentation: $required_text"
     grep -Fq "$required_text" <<<"$english_readme" || fail "English README missing country-floor documentation: $required_text"
   done

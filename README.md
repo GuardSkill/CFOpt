@@ -12,7 +12,7 @@ Windows 首次运行并安装每日任务：
 git clone https://github.com/GuardSkill/CFOpt.git H:\Projects\CFOpt
 cd H:\Projects\CFOpt
 [Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "你的 GitHub token", "User")
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -AutoDetectNetworkIsp
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
 ```
 
@@ -34,7 +34,8 @@ FORCE=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### 输出文件
 
-- `CloudflareSpeedTest_CD.csv`：Windows / 成都测速默认输出。
+- `CloudflareSpeedTest_CD.csv`：Windows / 成都电信测速输出。
+- `CloudflareSpeedTest_CD_CM.csv`：Windows / 成都移动测速输出。
 - `CloudflareSpeedTest_BJ.csv`：Linux / 北京测速默认输出。
 - `proxyip-best.txt`：每日从 `https://zip.cm.edu.kg/all.txt` 拉取，完成 TLS/HTTP 可用性验证后按响应延迟筛选出的 ProxyIP，默认每国 Top 10，HK 默认 Top 50，供 Edge Tunnel 订阅生成阶段继续筛选使用。
 - `CFOpt_Subconverter.ini`：Subconverter 配置。
@@ -259,6 +260,12 @@ cd H:\Projects\CFOpt
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
 ```
 
+Windows 任务使用禁用系统代理的公网探针识别当前直连运营商：中国移动写入 `CloudflareSpeedTest_CD_CM.csv`，中国电信写入 `CloudflareSpeedTest_CD.csv`。两种线路使用独立的成功时间状态；探针冲突、未知运营商或无法识别时停止发布，避免覆盖错误的 CSV。仅检测、不测速可运行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -DetectNetworkIspOnly
+```
+
 Linux 容器：
 
 ```bash
@@ -271,7 +278,7 @@ GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -f
 
 ### 国家下载速度下限
 
-默认的国家下载速度下限为 `JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5`。TW 默认不设国家下载速度下限。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。Windows 严格执行此门槛：发布节点的下载速度必须大于等于对应国家的下限。
+默认的国家下载速度下限为 `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`。TW 默认不设国家下载速度下限。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。Windows 严格执行此门槛：发布节点的下载速度必须大于等于对应国家的下限。
 
 默认重点测速范围（focus scope）是 `SG,HK,TW,JP,KR,US,DE,GB`；其中 US 与 TW 会作为独立重点范围测速。脚本先按国家和 IP 去重并保留本轮速度最高的测量，再执行国家下限。新旧节点一视同仁。最终 CSV 的城市栏不再显示来源，而显示一位小数的下载速度，例如 `DE [CD#01 13.1MB/s]`。
 
@@ -313,7 +320,7 @@ Windows first run and daily task:
 git clone https://github.com/GuardSkill/CFOpt.git H:\Projects\CFOpt
 cd H:\Projects\CFOpt
 [Environment]::SetEnvironmentVariable("GITHUB_TOKEN_CFOPT", "your GitHub token", "User")
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -AutoDetectNetworkIsp
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
 ```
 
@@ -325,7 +332,8 @@ GITHUB_TOKEN_CFOPT="your GitHub token" AUTORUN_BACKEND=cron INSTALL_DAILY_AUTORU
 
 ### Outputs
 
-- `CloudflareSpeedTest_CD.csv`: default Windows / Chengdu output.
+- `CloudflareSpeedTest_CD.csv`: Windows / Chengdu China Telecom output.
+- `CloudflareSpeedTest_CD_CM.csv`: Windows / Chengdu China Mobile output.
 - `CloudflareSpeedTest_BJ.csv`: default Linux / Beijing output.
 - `proxyip-best.txt`: daily ProxyIP list selected from `https://zip.cm.edu.kg/all.txt` after TLS/HTTP validation and ranked by response latency for Edge Tunnel subscription generation. Defaults to Top 10 per country, with HK expanded to Top 50 for downstream reachability filtering.
 - `CFOpt_Subconverter.ini`: Subconverter config.
@@ -445,7 +453,7 @@ FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### Country Download Speed Floors
 
-The default country download-speed floors are `JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5`. TW has no country speed floor by default. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. Windows strictly applies each floor: published nodes must be greater than or equal to the corresponding country floor.
+The default country download-speed floors are `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`. TW has no country speed floor by default. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. Windows strictly applies each floor: published nodes must be greater than or equal to the corresponding country floor.
 
 The default focus scope is `SG,HK,TW,JP,KR,US,DE,GB`; TW and US are benchmarked as dedicated focus scopes. The runner first deduplicates each country/IP to its fastest current measurement, then applies the country floor. Old and new candidates compete equally. The final CSV city field shows one-decimal measured speed instead of source, for example `DE [CD#01 13.1MB/s]`.
 

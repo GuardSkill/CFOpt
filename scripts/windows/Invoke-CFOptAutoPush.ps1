@@ -10,6 +10,14 @@ param(
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
     [string]$TargetPath = "CloudflareSpeedTest_CD.csv",
+    [switch]$AutoDetectNetworkIsp,
+    [switch]$DetectNetworkIspOnly,
+    [string]$ChinaMobileTargetPath = "CloudflareSpeedTest_CD_CM.csv",
+    [string]$ChinaTelecomTargetPath = "CloudflareSpeedTest_CD.csv",
+    [string[]]$NetworkIspProbeUrls = @(
+        "http://ip-api.com/json/?fields=status,query,isp,org,as",
+        "http://myip.ipip.net"
+    ),
     [int]$IntervalDays = 0,
     [int]$IntervalHours = 4,
     [int]$MaxLatencyMs = 420,
@@ -31,7 +39,7 @@ param(
     [int]$TcpPrecheckThreads = 128,
     [int]$TcpPrecheckMaxCandidates = 30,
     [switch]$UseProxyForCfst,
-    [string]$CountryMinSpeedMBPerSec = "JP=10,US=5,KR=3,HK=2,DE=5,GB=3,SG=5",
+    [string]$CountryMinSpeedMBPerSec = "JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5",
     [string]$FocusCountries = "SG,HK,TW,JP,KR,US,DE,GB",
     [string]$TestLocationName = "",
     [string]$CfBestIpBaseUrl = "https://zoroaaa.github.io/cf-bestip",
@@ -85,6 +93,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$testLocationNameWasExplicit = -not [string]::IsNullOrWhiteSpace($TestLocationName)
 if ([string]::IsNullOrWhiteSpace($TestLocationName)) {
     $TestLocationName = "CD"
 }
@@ -130,6 +139,103 @@ function Get-EffectiveFocusCountries {
             ForEach-Object { $_.Trim().ToUpperInvariant() } |
             Select-Object -Unique
     )
+}
+
+function Resolve-NetworkIspFromProbeText {
+    param([AllowEmptyString()][string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) {
+        return "Unknown"
+    }
+    if ($Text -match '(?i)China\s*Mobile|\bCMCC\b|\bAS9808\b|\bAS5604[0-9]\b|\bAS24400\b|\bAS9231\b|移动') {
+        return "ChinaMobile"
+    }
+    if ($Text -match '(?i)China\s*Telecom|ChinaNet|\bAS4134\b|\bAS4809\b|\bAS4812\b|电信') {
+        return "ChinaTelecom"
+    }
+    return "Unknown"
+}
+
+function Resolve-CFOptNetworkProfile {
+    param(
+        [Parameter(Mandatory = $true)][string]$DetectedIsp,
+        [string]$MobileTargetPath = "CloudflareSpeedTest_CD_CM.csv",
+        [string]$TelecomTargetPath = "CloudflareSpeedTest_CD.csv"
+    )
+
+    switch ($DetectedIsp) {
+        "ChinaMobile" {
+            return [pscustomobject]@{
+                Isp = "ChinaMobile"
+                TargetPath = $MobileTargetPath
+                TestLocationName = "CDCM"
+                StateSuffix = "CM"
+            }
+        }
+        "ChinaTelecom" {
+            return [pscustomobject]@{
+                Isp = "ChinaTelecom"
+                TargetPath = $TelecomTargetPath
+                TestLocationName = "CD"
+                StateSuffix = "CT"
+            }
+        }
+        default {
+            throw "Unsupported or unknown direct network ISP '$DetectedIsp'; refusing to select a publication target."
+        }
+    }
+}
+
+function Get-DirectNetworkIsp {
+    param([string[]]$ProbeUrls = $NetworkIspProbeUrls)
+
+    Add-Type -AssemblyName System.Net.Http
+    $observations = [System.Collections.Generic.List[object]]::new()
+    $failures = [System.Collections.Generic.List[string]]::new()
+    foreach ($probeUrl in @($ProbeUrls)) {
+        if ([string]::IsNullOrWhiteSpace($probeUrl)) { continue }
+        $handler = [System.Net.Http.HttpClientHandler]::new()
+        $handler.UseProxy = $false
+        $client = [System.Net.Http.HttpClient]::new($handler)
+        $client.Timeout = [TimeSpan]::FromSeconds(10)
+        try {
+            $text = $client.GetStringAsync($probeUrl).GetAwaiter().GetResult()
+            $observations.Add([pscustomobject]@{
+                Url = $probeUrl
+                Text = $text
+                Isp = Resolve-NetworkIspFromProbeText -Text $text
+            })
+        }
+        catch {
+            $failures.Add("${probeUrl}: $($_.Exception.Message)")
+        }
+        finally {
+            $client.Dispose()
+            $handler.Dispose()
+        }
+    }
+
+    $recognized = @($observations | Where-Object { $_.Isp -ne "Unknown" })
+    $detectedIsps = @($recognized | ForEach-Object { $_.Isp } | Select-Object -Unique)
+    if ($detectedIsps.Count -eq 0) {
+        $detail = @($observations | ForEach-Object { "$($_.Url)=Unknown" }) + @($failures)
+        throw "Direct ISP detection produced no recognized Mobile/Telecom result: $($detail -join '; ')"
+    }
+    if ($detectedIsps.Count -gt 1) {
+        $detail = $recognized | ForEach-Object { "$($_.Url)=$($_.Isp)" }
+        throw "Direct ISP probes disagreed; refusing publication: $($detail -join '; ')"
+    }
+
+    $combinedText = @($observations | ForEach-Object { $_.Text }) -join "`n"
+    $publicIp = ""
+    $ipMatch = [regex]::Match($combinedText, '(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)')
+    if ($ipMatch.Success) { $publicIp = $ipMatch.Value }
+    return [pscustomobject]@{
+        Isp = $detectedIsps[0]
+        PublicIp = $publicIp
+        RecognizedProbeCount = $recognized.Count
+        SuccessfulProbeCount = $observations.Count
+    }
 }
 
 function Get-FocusExcludedCountries {
@@ -1782,6 +1888,22 @@ $countryMinSpeedByCode = ConvertFrom-CountryMinSpeedMap `
 if ($env:CFOPT_SOURCE_ONLY -ne "1") {
 try {
     New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+    if ($AutoDetectNetworkIsp -or $DetectNetworkIspOnly) {
+        $networkDetection = Get-DirectNetworkIsp
+        $networkProfile = Resolve-CFOptNetworkProfile `
+            -DetectedIsp $networkDetection.Isp `
+            -MobileTargetPath $ChinaMobileTargetPath `
+            -TelecomTargetPath $ChinaTelecomTargetPath
+        $TargetPath = $networkProfile.TargetPath
+        if (-not $testLocationNameWasExplicit) {
+            $TestLocationName = $networkProfile.TestLocationName
+        }
+        $stateFile = Join-Path $WorkDir "last-success-$($networkProfile.StateSuffix).txt"
+        Write-Log "Direct ISP detected: $($networkDetection.Isp); public_ip=$($networkDetection.PublicIp); recognized_probes=$($networkDetection.RecognizedProbeCount)/$($networkDetection.SuccessfulProbeCount); target=$TargetPath; test_location=$TestLocationName."
+        if ($DetectNetworkIspOnly) {
+            exit 0
+        }
+    }
     Write-Log "Starting CFOpt auto push."
 
     if (-not (Test-IntervalGate)) {
