@@ -868,7 +868,7 @@ for rule in cmliussss_rules:
 
 required_business_groups = [
     "custom_proxy_group=CodeAgent`select`[]DE Pool`[]JP Pool`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
-    "custom_proxy_group=Polymarket`select`[]Polymarket GB + IE Pool`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=Polymarket`select`[]Polymarket GB + IE Pool`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]HK Proxy ↪`[]HK Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
