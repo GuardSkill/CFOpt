@@ -56,6 +56,15 @@ try {
     if ($installerText -notmatch '\-AutoDetectNetworkIsp') {
         throw "The Windows scheduled task must enable ISP detection."
     }
+    if ($installerText -notmatch 'New-ScheduledTaskTrigger\s+-Daily\s+-At' -or $installerText -match 'New-ScheduledTaskTrigger\s+-Once') {
+        throw "The Windows scheduled task must use a true daily trigger."
+    }
+    if ($installerText -notmatch '\-Force\s+-AutoDetectNetworkIsp') {
+        throw "The scheduled daily run must bypass the interval gate after selecting the direct ISP."
+    }
+    if ($installerText -match 'New-ScheduledTaskTrigger\s+-AtLogOn') {
+        throw "A logon trigger must not interfere with the fixed daily benchmark."
+    }
     if ($installerText -match 'Unregister-ScheduledTask' -or $installerText -notmatch '\-RunLevel Limited' -or $installerText -notmatch '\-Force' -or $installerText -notmatch 'schtasks\.exe') {
         throw "The task installer must update safely without deleting the old task first or requiring elevation."
     }
