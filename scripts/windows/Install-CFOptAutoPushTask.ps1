@@ -11,6 +11,8 @@ param(
     [string]$CfstPath = "",
     [string]$TaskName = "CFOpt Auto Push",
     [string]$DailyAt = "03:30",
+    [switch]$PublishWithGit,
+    [string]$GitPublisherPath = (Join-Path $PSScriptRoot "Invoke-CFOptDailyGit.ps1"),
     [switch]$SkipDownloads
 )
 
@@ -90,7 +92,15 @@ if (-not (Test-Path -LiteralPath $CfstPath)) {
 }
 
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-$argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`" -Force -AutoDetectNetworkIsp"
+if ($PublishWithGit) {
+    if (-not (Test-Path -LiteralPath $GitPublisherPath)) {
+        throw "Git publisher script not found: $GitPublisherPath"
+    }
+    $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$GitPublisherPath`" -RepoRoot `"$repoRoot`" -WorkDir `"$WorkDir`" -RunnerPath `"$ScriptPath`" -CfstPath `"$CfstPath`""
+}
+else {
+    $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`" -Force -AutoDetectNetworkIsp"
+}
 
 $action = New-ScheduledTaskAction -Execute $powershell -Argument $argument -WorkingDirectory $repoRoot
 $dailyTrigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Parse($DailyAt))

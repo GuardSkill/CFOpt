@@ -16,6 +16,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1"
 ```
 
+如果多台测速机器会在同一时段更新仓库，可让 Windows 任务通过本地 Git 发布。该模式在测速完成、提交之后执行 `git pull --rebase`，并在远端分支并发更新导致推送失败时最多重试三次：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Install-CFOptAutoPushTask.ps1" -PublishWithGit
+```
+
 Linux / 容器一键下载、授权、运行，并用 crontab 每天自动检查：
 
 ```bash
