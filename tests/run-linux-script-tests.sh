@@ -1129,6 +1129,19 @@ test_steam_rules_are_referenced_in_subconverter_configs() {
   done
 }
 
+test_dead_by_daylight_eac_domains_are_routed_direct() {
+  local direct_rules_file="$ROOT_DIR/rules/MainlandDirect.list"
+  local required_rules=(
+    "DOMAIN-SUFFIX,easyanticheat.net"
+    "DOMAIN-SUFFIX,eac-cdn.com"
+    "DOMAIN-SUFFIX,eac-prod.on.epicgames.com"
+  )
+
+  for rule in "${required_rules[@]}"; do
+    grep -qxF "$rule" "$direct_rules_file" || fail "MainlandDirect rules missing Dead by Daylight EAC domain: $rule"
+  done
+}
+
 test_mainland_direct_covers_domestic_ai_model_providers() {
   local rules_file="$ROOT_DIR/rules/MainlandDirect.list"
   local required_rules=(
@@ -1204,6 +1217,7 @@ test_twitter_rules_are_referenced_in_subconverter_configs
 test_steam_rules_cover_core_store_and_community_domains
 test_steam_download_domains_are_routed_direct
 test_steam_rules_are_referenced_in_subconverter_configs
+test_dead_by_daylight_eac_domains_are_routed_direct
 test_mainland_direct_covers_domestic_ai_model_providers
 
 printf 'Linux script tests passed.\n'
