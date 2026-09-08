@@ -16,6 +16,7 @@ BRANCH="${BRANCH:-main}"
 TARGET_PATH="${TARGET_PATH:-CloudflareSpeedTest_BJ.csv}"
 INTERVAL_DAYS="${INTERVAL_DAYS:-}"
 INTERVAL_HOURS="${INTERVAL_HOURS:-4}"
+DAILY_SCHEDULE="${DAILY_SCHEDULE:-0}"
 MAX_LATENCY_MS="${MAX_LATENCY_MS:-420}"
 MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
@@ -178,6 +179,17 @@ should_run() {
     return 0
   fi
 
+  if [[ "$DAILY_SCHEDULE" == "1" ]]; then
+    local last_date today
+    last_date="$(date -d "$(cat "$STATE_FILE")" +%F 2>/dev/null || true)"
+    today="$(date +%F)"
+    if [[ "$last_date" == "$today" ]]; then
+      log "Skipped. A successful run has already completed today."
+      return 1
+    fi
+    return 0
+  fi
+
   local interval_hours="$INTERVAL_HOURS"
   if [[ -n "$INTERVAL_DAYS" && "${INTERVAL_HOURS:-}" == "4" ]]; then
     interval_hours=$((INTERVAL_DAYS * 24))
@@ -252,11 +264,11 @@ with open(csv_path, "r", encoding="utf-8-sig", newline="") as f:
         port = row[1].strip()
         city_text = row[3].strip()
         match = city_re.search(city_text)
-        if not match:
-            continue
-        city = match.group(1).upper()
-        if len(row) > 2 and row[2].strip().upper() in colo_country:
+        city = match.group(1).upper() if match else ""
+        if not city and len(row) > 2 and row[2].strip().upper() in colo_country:
             city = colo_country[row[2].strip().upper()]
+        if not city:
+            continue
         if re.match(r"^(?:\d{1,3}\.){3}\d{1,3}$", ip) and port.isdigit():
             rows.append((ip, port, city))
 

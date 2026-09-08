@@ -20,7 +20,7 @@ def country_from_remark(value):
     return m.group(1).upper() if m else ""
 
 def normalize_country(colo, remark):
-    return COLO_COUNTRY.get((colo or "").strip().upper(), country_from_remark(remark))
+    return country_from_remark(remark) or COLO_COUNTRY.get((colo or "").strip().upper(), "")
 
 def parse_pairs(text, default=1):
     out = defaultdict(lambda: default)

@@ -553,11 +553,19 @@ test_runner_defaults_include_europe_focus_countries() {
   done
 }
 
-test_runners_default_to_four_hour_interval() {
+test_runners_use_expected_schedules() {
   grep -q 'INTERVAL_HOURS="${INTERVAL_HOURS:-4}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux runner should default to a 4-hour interval"
-  grep -q 'INTERVAL_HOURS=4' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh" \
-    || fail "Linux installer autorun should pass INTERVAL_HOURS=4"
+  grep -q 'DAILY_AT="${DAILY_AT:-03:32}"' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh" \
+    || fail "Linux installer should default to a 03:32 daily trigger"
+  grep -q 'INTERVAL_HOURS="${INTERVAL_HOURS:-24}"' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh" \
+    || fail "Linux installer autorun should use a 24-hour success interval"
+  grep -q 'cron_line="$minute $hour \* \* \*' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh" \
+    || fail "Linux cron should use the configured fixed daily time"
+  grep -q 'Environment=DAILY_SCHEDULE=1' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh" \
+    || fail "Linux systemd daily task should use calendar-day gating"
+  grep -q 'INTERVAL_HOURS=24 DAILY_SCHEDULE=1' "$ROOT_DIR/scripts/linux/install-and-run-cfopt-linux.sh" \
+    || fail "Linux cron daily task should use calendar-day gating"
   grep -q '\[int\]\$IntervalHours = 4' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows runner should default to a 4-hour interval"
   grep -q '\[string\]\$DailyAt = "03:30"' "$ROOT_DIR/scripts/windows/Install-CFOptAutoPushTask.ps1" \
@@ -1198,7 +1206,7 @@ test_linux_runner_applies_country_sample_multipliers
 test_linux_runner_excludes_focus_countries_from_all_scope
 test_linux_runner_waits_multiple_fast_cfst_jobs
 test_runner_defaults_include_europe_focus_countries
-test_runners_default_to_four_hour_interval
+test_runners_use_expected_schedules
 test_focus_scopes_use_fast_download_profile
 test_candidate_pool_defaults_are_expanded_before_precheck
 test_missing_cfbestip_country_is_optional
