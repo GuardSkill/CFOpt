@@ -897,7 +897,8 @@ for rule in cmliussss_rules:
 required_business_groups = [
     "custom_proxy_group=CodeAgent`select`[]DE Pool`[]JP Pool`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Polymarket`select`[]Polymarket GB + IE Pool`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]HK Proxy ↪`[]HK Pool`[]Auto`[]DIRECT",
-    "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]OKX HK Pool`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=Binance`select`[]Binance JP Proxy ↪`[]Binance KR Proxy ↪`[]Binance JP Pool`[]Binance HK Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
 ]
@@ -938,8 +939,21 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: Steam must not use Proxy or ProxyIP chain groups: {steam_group}")
     if "custom_proxy_group=OKX HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`780,,50" not in content:
         raise SystemExit(f"{path}: OKX HK Proxy must retest every 13 minutes")
+    if "custom_proxy_group=OKX HK Pool`url-test`^(🇭🇰 )?HK \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`780,,50" not in content:
+        raise SystemExit(f"{path}: OKX HK Pool must use plain HK nodes and the OKX probe")
     if "custom_proxy_group=HK Proxy ↪`url-test`^.*HK ↪ \\[`https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT`" in content:
         raise SystemExit(f"{path}: OKX must not reuse the shared HK Proxy group")
+    binance_test_url = "https://api.binance.com/api/v3/ping"
+    binance_groups = {
+        "Binance JP Proxy ↪": "^.*JP ↪ \\[",
+        "Binance KR Proxy ↪": "^.*KR ↪ \\[",
+        "Binance JP Pool": "^(🇯🇵 )?JP \\[",
+        "Binance HK Proxy ↪": "^.*HK ↪ \\[",
+    }
+    for group_name, node_filter in binance_groups.items():
+        matches = [line for line in lines(path, f"custom_proxy_group={group_name}`url-test`")]
+        if len(matches) != 1 or node_filter not in matches[0] or binance_test_url not in matches[0]:
+            raise SystemExit(f"{path}: invalid Binance business pool {group_name}: {matches}")
     polymarket_test_url = "https://clob.polymarket.com/markets?next_cursor="
     polymarket_url_test_groups = [
         line for line in lines(path, "custom_proxy_group=")
