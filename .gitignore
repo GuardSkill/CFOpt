@@ -1,0 +1,7 @@
+.env
+.cfopt-work/
+.cfopt-runner/
+.cfopt-*/
+.codex-artifact-*/
+.worktrees/
+__pycache__/

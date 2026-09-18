@@ -1,0 +1,123 @@
+name: Update CFOpt CSVs
+
+on:
+  schedule:
+    # GitHub Actions uses UTC: 20:00 UTC = 04:00 UTC+8 on the next day.
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Benchmark runner
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - windows-cd
+          - linux-bj
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cfopt-csv-publisher
+  cancel-in-progress: false
+
+jobs:
+  windows-cd:
+    if: github.event_name == 'schedule' || inputs.runner == 'all' || inputs.runner == 'windows-cd'
+    runs-on: [self-hosted, windows, x64]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CloudflareSpeedTest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Invoke-RestMethod -Headers @{ 'User-Agent' = 'CFOpt-Actions' } -Uri 'https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest'
+          $asset = @($release.assets | Where-Object { $_.name -eq 'cfst_windows_amd64.zip' })
+          if ($asset.Count -ne 1) { throw "Expected one Windows x64 CFST asset, got $($asset.Count)" }
+          New-Item -ItemType Directory -Force -Path '.cfopt-runner/bin' | Out-Null
+          Invoke-WebRequest -Uri $asset[0].browser_download_url -OutFile '.cfopt-runner/cfst.zip'
+          Expand-Archive -Path '.cfopt-runner/cfst.zip' -DestinationPath '.cfopt-runner/bin' -Force
+          $targetCfst = Join-Path $env:GITHUB_WORKSPACE '.cfopt-runner\bin\cfst.exe'
+          $extractedCfst = Get-ChildItem -LiteralPath '.cfopt-runner/bin' -Recurse -File -Filter 'cfst.exe' | Select-Object -First 1
+          if (-not $extractedCfst) { throw 'CFST archive did not contain cfst.exe' }
+          if ($extractedCfst.FullName -ne $targetCfst) {
+            Copy-Item -LiteralPath $extractedCfst.FullName -Destination $targetCfst -Force
+          }
+
+      - name: Benchmark Chengdu and publish the detected carrier CSV
+        shell: powershell
+        env:
+          GITHUB_TOKEN_CFOPT: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Invoke-CFOptAutoPush.ps1' `
+            -WorkDir "$env:RUNNER_TEMP\cfopt-cd" `
+            -CfstPath "$env:GITHUB_WORKSPACE\.cfopt-runner\bin\cfst.exe" `
+            -Force `
+            -AutoDetectNetworkIsp `
+            -DisableProxyipBest
+          if ($LASTEXITCODE -ne 0) { throw "CFOpt Windows runner exited with code $LASTEXITCODE" }
+
+  linux-bj:
+    if: github.event_name == 'schedule' || inputs.runner == 'all' || inputs.runner == 'linux-bj'
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CloudflareSpeedTest
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset_url="$(python3 - <<'PY'
+          import json
+          import urllib.request
+
+          request = urllib.request.Request(
+              "https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest",
+              headers={"Accept": "application/vnd.github+json", "User-Agent": "CFOpt-Actions"},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              release = json.load(response)
+          matches = [
+              asset["browser_download_url"]
+              for asset in release["assets"]
+              if asset["name"].endswith("linux_amd64.tar.gz")
+          ]
+          if len(matches) != 1:
+              raise SystemExit(f"expected one linux_amd64 CFST asset, found {len(matches)}")
+          print(matches[0])
+          PY
+          )"
+          mkdir -p .cfopt-runner/bin
+          curl --fail --location --retry 3 --output .cfopt-runner/cfst.tar.gz "$asset_url"
+          tar -xzf .cfopt-runner/cfst.tar.gz -C .cfopt-runner/bin
+          extracted_cfst="$(find .cfopt-runner/bin -type f -name cfst -print -quit)"
+          if [[ -z "$extracted_cfst" ]]; then
+            echo "CFST archive did not contain a cfst executable" >&2
+            exit 1
+          fi
+          if [[ "$extracted_cfst" != ".cfopt-runner/bin/cfst" ]]; then
+            cp "$extracted_cfst" .cfopt-runner/bin/cfst
+          fi
+          chmod +x .cfopt-runner/bin/cfst
+
+      - name: Benchmark Beijing CMCC and publish its CSV
+        shell: bash
+        env:
+          GITHUB_TOKEN_CFOPT: ${{ github.token }}
+          WORK_DIR: ${{ runner.temp }}/cfopt-bj
+          CFST_PATH: ${{ github.workspace }}/.cfopt-runner/bin/cfst
+          TARGET_PATH: CMCC_BJ.csv
+          TEST_LOCATION_NAME: BJ
+          FORCE: "1"
+          DISABLE_PROXYIP_BEST: "1"
+        run: bash scripts/linux/invoke-cfopt-auto-push-linux.sh
