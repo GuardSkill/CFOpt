@@ -13,6 +13,14 @@ GitHub Actions 只负责调度，测速实际发生在自己的机器上：
 
 ## 2. 前置条件
 
+### 四川移动配置（德阳测点，待部署）
+
+新机器使用独立 runner 名称（例如 `cfopt-sc-deyang`），注册标签设为 `cfopt,sichuan,cmcc`，不要设置 `chengdu` 或 `beijing`。Windows 安装方式与下文成都步骤相同，替换名称、标签和工作目录即可。
+
+首次测试选择 **Actions → Update Sichuan CMCC CSV → Run workflow**。该流程先检查直连线路必须为中国移动，再以 `DY` 测点标记发布到 `CMCC_SC.csv`；原有三个 CSV 不受影响。目前不启用该配置的定时调度，以免未安装 runner 时产生排队任务。
+
+Windows EXE 安装器源码与构建脚本已提供，见 [EXE 安装步骤](windows-runner-installer.md)。漏跑补测尚未实现。注册令牌仍由仓库管理员临时提供，不向朋友分发个人 PAT。
+
 - runner 只注册到 `GuardSkill/CFOpt`，不要继续注册到旧的 `GuardSkill/CFIP`。
 - runner 能访问 GitHub、CFST release、候选来源和下载测速地址。
 - Windows 需要 PowerShell 5.1、Git 和可写的工作盘。

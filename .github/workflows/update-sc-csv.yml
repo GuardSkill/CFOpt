@@ -1,0 +1,57 @@
+name: Update Sichuan CMCC CSV
+
+# Enable scheduling after the friend's runner is installed and verified.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cfopt-sc-publisher
+  cancel-in-progress: false
+
+jobs:
+  windows-sc:
+    runs-on: [self-hosted, windows, x64, cfopt, sichuan, cmcc]
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install CloudflareSpeedTest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Invoke-RestMethod -Headers @{ 'User-Agent' = 'CFOpt-Actions' } -Uri 'https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest'
+          $asset = @($release.assets | Where-Object { $_.name -eq 'cfst_windows_amd64.zip' })
+          if ($asset.Count -ne 1) { throw "Expected one Windows x64 CFST asset, got $($asset.Count)" }
+          New-Item -ItemType Directory -Force -Path '.cfopt-runner/bin' | Out-Null
+          Invoke-WebRequest -Uri $asset[0].browser_download_url -OutFile '.cfopt-runner/cfst.zip'
+          Expand-Archive -Path '.cfopt-runner/cfst.zip' -DestinationPath '.cfopt-runner/bin' -Force
+          $targetCfst = Join-Path $env:GITHUB_WORKSPACE '.cfopt-runner\bin\cfst.exe'
+          $extractedCfst = Get-ChildItem -LiteralPath '.cfopt-runner/bin' -Recurse -File -Filter 'cfst.exe' | Select-Object -First 1
+          if (-not $extractedCfst) { throw 'CFST archive did not contain cfst.exe' }
+          if ($extractedCfst.FullName -ne $targetCfst) {
+            Copy-Item -LiteralPath $extractedCfst.FullName -Destination $targetCfst -Force
+          }
+
+      - name: Verify CMCC network, benchmark Deyang and publish Sichuan CSV
+        shell: powershell
+        env:
+          GITHUB_TOKEN_CFOPT: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:CFOPT_SOURCE_ONLY = '1'
+          try { . '.\scripts\windows\Invoke-CFOptAutoPush.ps1' } finally { Remove-Item Env:\CFOPT_SOURCE_ONLY }
+          $isp = Get-DirectNetworkIsp
+          if ($isp.Isp -ne 'ChinaMobile') { throw 'The Sichuan profile requires a China Mobile network' }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Invoke-CFOptAutoPush.ps1' `
+            -WorkDir "$env:RUNNER_TEMP\cfopt-sc" `
+            -CfstPath "$env:GITHUB_WORKSPACE\.cfopt-runner\bin\cfst.exe" `
+            -TargetPath 'CMCC_SC.csv' `
+            -TestLocationName 'DY' `
+            -Force `
+            -DisableProxyipBest
+          if ($LASTEXITCODE -ne 0) { throw "CFOpt Sichuan runner exited with code $LASTEXITCODE" }

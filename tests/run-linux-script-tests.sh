@@ -577,9 +577,9 @@ test_runners_use_expected_schedules() {
 test_self_hosted_workflow_publishes_renamed_csvs() {
   local workflow="$ROOT_DIR/.github/workflows/update-csv.yml"
   [[ -f "$workflow" ]] || fail "missing self-hosted CSV workflow"
-  grep -q 'runs-on: \[self-hosted, windows, x64\]' "$workflow" \
+  grep -q 'runs-on: \[self-hosted, windows, x64, cfopt, chengdu\]' "$workflow" \
     || fail "workflow must target the Windows self-hosted runner"
-  grep -q 'runs-on: \[self-hosted, linux, x64\]' "$workflow" \
+  grep -q 'runs-on: \[self-hosted, linux, x64, cfopt, beijing\]' "$workflow" \
     || fail "workflow must target the Linux self-hosted runner"
   grep -q 'TARGET_PATH: CMCC_BJ.csv' "$workflow" \
     || fail "Linux runner must publish CMCC_BJ.csv"
@@ -589,6 +589,13 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "workflow must publish with the scoped Actions token"
   grep -q 'permissions:' "$workflow" && grep -q 'contents: write' "$workflow" \
     || fail "workflow must grant contents write permission"
+  local sc_workflow="$ROOT_DIR/.github/workflows/update-sc-csv.yml"
+  grep -q 'runs-on: \[self-hosted, windows, x64, cfopt, sichuan, cmcc\]' "$sc_workflow" \
+    || fail "Sichuan runner must be isolated by regional labels"
+  grep -q "TargetPath 'CMCC_SC.csv'" "$sc_workflow" \
+    || fail "Sichuan runner must publish CMCC_SC.csv"
+  grep -q "isp.Isp -ne 'ChinaMobile'" "$sc_workflow" \
+    || fail "Sichuan runner must reject non-CMCC networks"
 }
 
 test_focus_scopes_use_fast_download_profile() {

@@ -5,3 +5,4 @@
 .codex-artifact-*/
 .worktrees/
 __pycache__/
+dist/

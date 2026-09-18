@@ -10,8 +10,13 @@ CFOpt 是一个 Cloudflare 优选 IP 自动测速与发布工具。它会下载�
 
 | Runner | 实际线路 | 输出 | 标签 |
 | --- | --- | --- | --- |
-| 成都 Windows | 自动识别中国电信/中国移动 | `CTC_CD.csv` 或 `CMCC_CD.csv` | `self-hosted, Windows, X64` |
-| 北京 Linux / UCloud | UCloud 地址段、CMCC 出口 | `CMCC_BJ.csv` | `self-hosted, Linux, X64` |
+| 成都 Windows | 自动识别中国电信/中国移动 | `CTC_CD.csv` 或 `CMCC_CD.csv` | `self-hosted, Windows, X64, cfopt, chengdu` |
+| 北京 Linux / UCloud | UCloud 地址段、CMCC 出口 | `CMCC_BJ.csv` | `self-hosted, Linux, X64, cfopt, beijing` |
+| 四川 Windows（待部署） | 德阳中国移动 | `CMCC_SC.csv` | `self-hosted, Windows, X64, cfopt, sichuan, cmcc` |
+
+四川配置使用独立的 [Update Sichuan CMCC CSV](./.github/workflows/update-sc-csv.yml)，目前仅手动触发，待朋友的 runner 安装并验证后再启用定时调度。首次成功测速后才生成 `CMCC_SC.csv`，不会复制成都结果冒充四川新测结果。
+
+给 Windows 用户的 EXE 服务安装包可用 `scripts/windows/Build-RunnerInstaller.ps1` 构建，详见 [安装包使用说明](docs/windows-runner-installer.md)。安装包需要临时 runner 注册令牌，不包含个人 GitHub Token。
 
 workflow 每天北京时间 `04:00` 触发，也可在 GitHub 的 **Actions → Update CFOpt CSVs → Run workflow** 中选择双端、仅成都或仅北京。每个 job 使用仓库内置的短期 `GITHUB_TOKEN` 发布，不需要在 runner 保存个人令牌。完整安装、迁移与验证步骤见 [Self-hosted runner 部署指南](docs/runner-deployment.md)。
 
@@ -29,6 +34,7 @@ GITHUB_TOKEN_CFOPT="你的 GitHub token" FORCE=1 TARGET_PATH=CMCC_BJ.csv ./scrip
 
 - `CTC_CD.csv`：Windows / 成都电信测速输出。
 - `CMCC_CD.csv`：Windows / 成都移动测速输出。
+- `CMCC_SC.csv`：四川移动配置，首个测点为德阳；待该测点首次成功发布后生成。
 - `CMCC_BJ.csv`：Linux / 北京移动（UCloud 地址段、CMCC 出口）测速输出。
 - `proxyip-best.txt`：每日从 `https://zip.cm.edu.kg/all.txt` 拉取，完成 TLS/HTTP 可用性验证后按响应延迟筛选出的 ProxyIP，默认每国 Top 10，HK 默认 Top 50，供 Edge Tunnel 订阅生成阶段继续筛选使用。
 - `CFOpt_Subconverter.ini`：Subconverter 配置。
