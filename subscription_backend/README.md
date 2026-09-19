@@ -37,10 +37,7 @@ sudo docker compose -f compose.ghcr.yaml ps
 
 ## GHCR 可见性
 
-首次发布后可在 GitHub Packages 设置镜像可见性：
-
-- Public：NAS 可以匿名拉取；
-- Private：在 NAS 使用仅授予 `read:packages` 的 PAT 执行 `docker login ghcr.io`。
+`ghcr.io/guardskill/cfopt-sub` 当前为 Public，NAS 可以匿名拉取，不需要 GitHub PAT 或 `docker login`。镜像只包含服务程序，不包含 `data/`、密码、订阅 Token、节点 UUID、UsagePanel Cookie 或代理认证。
 
 发布工作流只监听 `subscription_backend/server.py`、Dockerfile 和工作流自身。它不运行 CFOpt 测速脚本，也不修改 CSV、`proxyip-best.txt` 或现有测速工作流。
 
