@@ -197,6 +197,21 @@ class BuilderTests(unittest.TestCase):
         c = {'public_base_url': 'https://sub.example', 'subscription_token': 'secret', 'output_style': 'pools'}
         self.assertIn('style=pools', server.subscription_links(c)['电信订阅'])
 
+    def test_subscription_userinfo_maps_requests_to_kib(self):
+        c = {'hosts': [{'usage_account': 1}, {'usage_account': 2}],
+             'request_quota_display': {'total_requests': 700000, 'requests_per_kib': 1000, 'expire': 4102329600}}
+        accounts = [
+            {'ID': 1, 'Usage': {'success': True, 'total': 2500, 'max': 100000}},
+            {'ID': 2, 'Usage': {'success': True, 'total': 5000, 'max': 100000}},
+            {'ID': 99, 'Usage': {'success': True, 'total': 90000, 'max': 100000}},
+        ]
+        with patch.object(server, 'panel_accounts', return_value=accounts):
+            self.assertEqual(server.subscription_userinfo(c),
+                             'upload=7680; download=0; total=204800; expire=4102329600')
+        with patch.object(server, 'panel_accounts', side_effect=OSError()):
+            self.assertEqual(server.subscription_userinfo(c),
+                             'upload=0; download=0; total=716800; expire=4102329600')
+
 
 if __name__ == '__main__':
     unittest.main()

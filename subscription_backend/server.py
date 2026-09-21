@@ -319,6 +319,11 @@ def admin_page(c):
     page += field('filename_default', '自动订阅文件名', filenames.get('default', 'yuanclash.yaml'))
     page += field('filename_cmcc', '移动订阅文件名', filenames.get('cmcc', '北京移动_yuanclash.yaml'))
     page += field('filename_ctc', '电信订阅文件名', filenames.get('ctc', '成都电信_yuanclash.yaml'))
+    quota = c.get('request_quota_display', {})
+    page += '<fieldset><legend>Clash Party 请求额度显示</legend><small>客户端只能显示流量单位；按下方比例将 UsagePanel 请求次数换算成 KB。默认 1000 次 = 1 KB，因此 70 万次显示为 700 KB。</small>'
+    page += field('quota_total_requests', '面板不可用时的总请求次数', quota.get('total_requests', 700000), 'number')
+    page += field('quota_requests_per_kib', '每 1 KB 代表的请求次数', quota.get('requests_per_kib', 1000), 'number')
+    page += field('quota_expire', '显示到期时间（Unix 秒）', quota.get('expire', 4102329600), 'number') + '</fieldset>'
     page += field('node_uri', 'VLESS 节点 URI', c['node_uri'], 'password')
     page += field('rule_template_url', 'GitHub 路由模板 INI 地址（空白则使用原配置规则）', c.get('rule_template_url', ''))
     page += field('rule_cache_seconds', '规则缓存秒数（60–86400）', c.get('rule_cache_seconds', 300), 'number')
@@ -369,6 +374,13 @@ def form_config(c, fields):
     new['subscription_filenames'] = {key: fields.get('filename_' + key, [existing_names.get(key, defaults[key])])[0].strip() for key in defaults}
     for key in new['subscription_filenames']:
         subscription_filename(new, {'cmcc': 'CMCC', 'ctc': 'CTC'}.get(key, ''))
+    previous_quota = c.get('request_quota_display', {})
+    new['request_quota_display'] = {
+        'total_requests': int(fields.get('quota_total_requests', [previous_quota.get('total_requests', 700000)])[0]),
+        'requests_per_kib': int(fields.get('quota_requests_per_kib', [previous_quota.get('requests_per_kib', 1000)])[0]),
+        'expire': int(fields.get('quota_expire', [previous_quota.get('expire', 4102329600)])[0]),
+    }
+    subscription_userinfo({**new, 'usage_panel': {}})
     if 'proxyip_url' in fields:
         new['proxyip_enabled'] = 'proxyip_enabled' in fields
         new['proxyip_url'] = value('proxyip_url')
@@ -445,6 +457,33 @@ def panel_accounts(c):
     if not isinstance(data, list):
         raise ValueError('UsagePanel did not return account data')
     return data
+
+
+def subscription_userinfo(c):
+    display = c.get('request_quota_display', {})
+    requests_per_kib = int(display.get('requests_per_kib', 1000))
+    fallback_total = int(display.get('total_requests', 700000))
+    expire = int(display.get('expire', 4102329600))
+    if not 1 <= requests_per_kib <= 1000000 or fallback_total < 0 or expire < 0:
+        raise ValueError('Invalid request quota display')
+    used, total = 0, fallback_total
+    try:
+        wanted = {str(h['usage_account']) for h in c.get('hosts', []) if h.get('usage_account') is not None}
+        accounts = [a for a in panel_accounts(c) if not wanted or str(a.get('ID')) in wanted]
+        values = []
+        for account in accounts:
+            usage = account.get('Usage', {})
+            account_used, account_total = int(usage['total']), int(usage['max'])
+            if usage.get('success') and account_used >= 0 and account_total > 0:
+                values.append((account_used, account_total))
+        if values:
+            used, total = sum(v[0] for v in values), sum(v[1] for v in values)
+    except Exception:
+        pass
+    # Clash only supports byte traffic. Here one displayed KiB represents a
+    # configurable number of requests; this is quota telemetry, not bandwidth.
+    to_bytes = lambda requests: round(requests / requests_per_kib * 1024)
+    return f'upload={to_bytes(used)}; download=0; total={to_bytes(total)}; expire={expire}'
 
 
 def host_weights(c):
@@ -663,7 +702,8 @@ class Handler(BaseHTTPRequestHandler):
             quoted = urllib.parse.quote(filename)
             ascii_name = re.sub(r'[^A-Za-z0-9._-]', '_', filename) or 'yuanclash.yaml'
             headers = {'Content-Disposition': f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}",
-                       'profile-title': urllib.parse.quote(filename.rsplit('.', 1)[0])}
+                       'profile-title': urllib.parse.quote(filename.rsplit('.', 1)[0]),
+                       'Subscription-Userinfo': subscription_userinfo(c)}
             return self.reply(200, result, headers=headers)
         except Exception:
             return self.reply(503, {'error': 'Generation failed; keep existing profile and check configuration/sources'})

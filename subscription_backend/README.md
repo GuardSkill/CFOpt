@@ -8,6 +8,7 @@
 - 从远程 subconverter INI 编译规则和策略组；
 - 从 `proxyip-best.txt` 生成国家 ProxyIP 链式节点；
 - 在可视化后台管理配置和订阅文件名。
+- 将 UsagePanel 请求次数通过 `Subscription-Userinfo` 映射到 Clash Party 的流量卡片；默认 1000 次代表 1 KB，所以 70 万次显示为 700 KB。该数值表示请求额度，不是真实网络流量。
 
 ## 镜像
 
