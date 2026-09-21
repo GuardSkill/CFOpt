@@ -25,6 +25,7 @@ param(
     [int]$MinReceived = 1,
     [double]$MinSpeedMbps = 0.03,
     [int]$MaxPerCity = 20,
+    [int]$MinNewNodesPerCountry = 10,
     [int]$CfstThreads = 80,
     [int]$CfstLatencyTestCount = 2,
     [int]$CfstDownloadTestCount = 15,
@@ -1771,20 +1772,28 @@ function Write-MergedFilteredCsv {
             ForEach-Object {
                 $sortedGroup = @($_.Group | Sort-Object @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "SpeedNumber"; Descending = $true })
                 $protectedRows = @($_.Group | Where-Object { $_.IsProtected } | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false } | Select-Object -First $MaxPerCity)
-                $protectedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-                foreach ($protected in $protectedRows) {
-                    [void]$protectedKeys.Add("$($protected.Ip)|$($protected.CityKey)")
+                $selectedRows = @($protectedRows)
+                $selectedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                foreach ($selected in $selectedRows) {
+                    [void]$selectedKeys.Add("$($selected.Ip)|$($selected.Port)|$($selected.CityKey)")
                 }
-                $remainingGroup = @($sortedGroup | Where-Object { -not $protectedKeys.Contains("$($_.Ip)|$($_.CityKey)") })
-                $maxPreviousKeep = [math]::Max(0, [math]::Floor($MaxPerCity * (1 - $RollingReplaceFraction)))
-                $oldRows = @($remainingGroup | Where-Object { $_.IsPrevious } | Select-Object -First ([math]::Min($maxPreviousKeep, [math]::Max(0, $MaxPerCity - $protectedRows.Count))))
-                $newRows = @($remainingGroup | Where-Object { -not $_.IsPrevious } | Select-Object -First ([math]::Max(0, $MaxPerCity - $protectedRows.Count - $oldRows.Count)))
-                $selectedRows = @($protectedRows + $oldRows + $newRows)
+                $protectedNewCount = @($protectedRows | Where-Object { -not $_.IsPrevious }).Count
+                $requiredNewCount = [math]::Min($MaxPerCity, [math]::Max(0, $MinNewNodesPerCountry))
+                $newSlots = [math]::Min(
+                    [math]::Max(0, $requiredNewCount - $protectedNewCount),
+                    [math]::Max(0, $MaxPerCity - $selectedRows.Count)
+                )
+                $speedSelectedNewRows = @(
+                    $sortedGroup |
+                        Where-Object { -not $_.IsPrevious -and -not $selectedKeys.Contains("$($_.Ip)|$($_.Port)|$($_.CityKey)") } |
+                        Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "Ip"; Descending = $false } |
+                        Select-Object -First $newSlots
+                )
+                $selectedRows = @($selectedRows + $speedSelectedNewRows)
+                foreach ($selected in $speedSelectedNewRows) {
+                    [void]$selectedKeys.Add("$($selected.Ip)|$($selected.Port)|$($selected.CityKey)")
+                }
                 if ($selectedRows.Count -lt $MaxPerCity) {
-                    $selectedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-                    foreach ($selected in $selectedRows) {
-                        [void]$selectedKeys.Add("$($selected.Ip)|$($selected.Port)|$($selected.CityKey)")
-                    }
                     $fillRows = @(
                         $sortedGroup |
                             Where-Object { -not $selectedKeys.Contains("$($_.Ip)|$($_.Port)|$($_.CityKey)") } |

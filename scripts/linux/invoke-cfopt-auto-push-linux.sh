@@ -22,6 +22,7 @@ MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
 COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
+MIN_NEW_NODES_PER_COUNTRY="${MIN_NEW_NODES_PER_COUNTRY:-10}"
 ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.20}"
 MIN_PUBLISH_RETENTION_RATIO="${MIN_PUBLISH_RETENTION_RATIO:-0.6}"
 CFST_THREADS="${CFST_THREADS:-80}"
@@ -1071,7 +1072,7 @@ filter_csv() {
   local tmp_csv="$CSV_PATH.filtered" filter_status=0
   rm -f "$COUNTRY_SPEED_STATS_PATH"
   [[ -s "$PREVIOUS_NODE_KEYS_PATH" ]] || printf '__none__\n' > "$PREVIOUS_NODE_KEYS_PATH"
-  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
+  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v min_new_nodes_per_country="$MIN_NEW_NODES_PER_COUNTRY" -v test_location_name="$TEST_LOCATION_NAME" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
     function colo_country(c) {
       if (c ~ /^(NRT|KIX|FUK|OKA)$/) return "JP"; if (c=="SIN") return "SG"; if (c=="HKG") return "HK"; if (c=="ICN") return "KR"
       if (c ~ /^(TPE|KHH)$/) return "TW"; if (c ~ /^(MNL|CEB)$/) return "PH"; if (c ~ /^(SGN|HAN)$/) return "VN"; if (c ~ /^(KUL|PEN)$/) return "MY"
@@ -1177,7 +1178,6 @@ filter_csv() {
           }
         }
       }
-      max_previous_keep = int(max_per_city * (1 - rolling_replace_fraction))
       for (i = 1; i <= accepted_count; i++) {
         split(accepted[i], parts, "\t")
         city = parts[1]
@@ -1185,8 +1185,33 @@ filter_csv() {
         protected = parts[5] + 0
         if (protected == 1 && selected_total[city] < max_per_city) {
           selected_total[city]++
-          if (is_previous == 1) previous_city_count[city]++
+          if (is_previous == 0) selected_new_count[city]++
+          selected_key[parts[6]] = 1
           selected[++selected_count] = parts[6]
+        }
+      }
+      for (i = 1; i <= accepted_count; i++) {
+        split(accepted[i], parts, "\t")
+        if (parts[4] + 0 == 0 && parts[5] + 0 == 0) {
+          speed_ranked_new[++speed_ranked_new_count] = sprintf("%s\t%s\t%s\t%s", parts[1], parts[3], parts[2], parts[6])
+        }
+      }
+      for (i = 1; i <= speed_ranked_new_count; i++) {
+        for (j = i + 1; j <= speed_ranked_new_count; j++) {
+          if (speed_ranked_new[j] < speed_ranked_new[i]) {
+            tmp = speed_ranked_new[i]; speed_ranked_new[i] = speed_ranked_new[j]; speed_ranked_new[j] = tmp
+          }
+        }
+      }
+      for (i = 1; i <= speed_ranked_new_count; i++) {
+        split(speed_ranked_new[i], parts, "\t")
+        city = parts[1]
+        row = parts[4]
+        if (selected_total[city] < max_per_city && selected_new_count[city] < min_new_nodes_per_country && !(row in selected_key)) {
+          selected_total[city]++
+          selected_new_count[city]++
+          selected_key[row] = 1
+          selected[++selected_count] = row
         }
       }
       for (i = 1; i <= accepted_count; i++) {
@@ -1194,21 +1219,13 @@ filter_csv() {
         city = parts[1]
         is_previous = parts[4] + 0
         protected = parts[5] + 0
-        if (protected == 1) continue
-        if (selected_total[city] < max_per_city && !(is_previous == 1 && previous_city_count[city] >= max_previous_keep)) {
-          selected_total[city]++
-          if (is_previous == 1) previous_city_count[city]++
-          selected[++selected_count] = parts[6]
-        } else if (is_previous == 1) {
-          overflow_old[++overflow_count] = accepted[i]
-        }
-      }
-      for (i = 1; i <= overflow_count; i++) {
-        split(overflow_old[i], parts, "\t")
-        city = parts[1]
+        row = parts[6]
+        if (protected == 1 || (row in selected_key)) continue
         if (selected_total[city] < max_per_city) {
           selected_total[city]++
-          selected[++selected_count] = parts[6]
+          if (is_previous == 0) selected_new_count[city]++
+          selected_key[row] = 1
+          selected[++selected_count] = row
         }
       }
       for (i = 1; i <= selected_count; i++) {

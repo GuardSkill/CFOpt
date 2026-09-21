@@ -223,16 +223,9 @@ IntervalDays=1
 每次运行会先下载 GitHub 上当前目标 CSV，把旧节点重新加入 CFST 输入进行复测。最终每个地区执行滚动保鲜：
 
 - 本轮不达标的旧节点会被淘汰。
-- 每个已有地区默认保留约 80% 的优质旧节点。
-- 最多约 20% 的位置由本轮新测出的最佳候选替换；新地区直接追加。
-- 如果新候选不足，才继续用本轮复测达标的旧节点补满；本轮未返回结果的历史节点不会从旧 CSV 恢复。
+- 最终每个国家/地区最多保留 20 个节点；如果本轮有至少 10 个达标的新节点，其中 10 个名额优先按下载速度从高到低选择，其余名额再按低延迟补齐。Windows 可通过 `MinNewNodesPerCountry`、Linux 可通过 `MIN_NEW_NODES_PER_COUNTRY` 调整该保留数。
+- 如果达标新候选不足 10 个，就保留全部达标新候选，再用本轮复测达标的历史节点和其他低延迟节点补满；本轮未返回结果的历史节点不会从旧 CSV 恢复。
 - 发布安全阈值按整份 CSV 的总量判断，防止整机网络波动造成全局异常缩水；单个地区可以正常清除大批已过期节点。
-
-默认替换比例：
-
-```text
-0.20
-```
 
 ### 调参
 
@@ -438,7 +431,7 @@ Possible sources are `ip.zip`, `cf-bestip`, `ip164746`, `gslege`, `vps789`, `pre
 
 ### Rolling Retest
 
-Each run fetches the current published CSV and fully retests every old node in a dedicated per-port job. Only nodes qualified in the current run can be retained; missing or failing historical rows are never restored from the old CSV. Existing groups may keep about 80% of their currently qualified old nodes, with the remaining slots filled by the best new candidates. The default replacement fraction is `0.20`.
+Each run fetches the current published CSV and fully retests every old node in a dedicated per-port job. Only nodes qualified in the current run can be retained; missing or failing historical rows are never restored from the old CSV. Each country/group keeps at most 20 nodes. When at least 10 qualified new nodes are available, 10 slots are selected by download speed before the remaining slots are filled by low latency. If fewer are available, every qualified new node is retained. Configure this quota with Windows `MinNewNodesPerCountry` or Linux `MIN_NEW_NODES_PER_COUNTRY`.
 
 The publication safety ratio applies to the total CSV size, protecting against broad probe-host network failures while allowing one expired region to shrink normally.
 

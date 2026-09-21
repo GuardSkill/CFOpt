@@ -289,6 +289,34 @@ test_linux_full_retest_and_rolling_merge_do_not_revive_stale_nodes() {
     || fail "Linux main flow must schedule the dedicated full historical-node retest"
 }
 
+test_linux_final_top20_reserves_ten_speed_ranked_new_nodes() {
+  local tmp_dir index new_count
+  tmp_dir="$(mktemp -d)"
+  mkdir -p "$tmp_dir/work"
+  (
+    export CFOPT_SOURCE_ONLY=1 WORK_DIR="$tmp_dir/work" MAX_PER_CITY=20 MIN_NEW_NODES_PER_COUNTRY=10
+    export COUNTRY_MIN_SPEED_MB_PER_SEC='US=0' MIN_SPEED_MBPS=0 TEST_LOCATION_NAME=TST
+    source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+    printf '__none__\n' > "$PREVIOUS_NODE_KEYS_PATH"
+    : > "$COMBINED_CANDIDATES_PATH"
+    for index in $(seq 1 15); do
+      printf '198.51.100.%s|443|US\n' "$index" >> "$PREVIOUS_NODE_KEYS_PATH"
+      printf '443,US,previous,198.51.100.%s,2,2,0,%s,2.00,LAX\n' "$index" "$index" >> "$COMBINED_CANDIDATES_PATH"
+    done
+    for index in $(seq 1 15); do
+      printf '443,US,ip.zip,203.0.113.%s,2,2,0,%s,%s.00,LAX\n' "$index" "$((100 + index))" "$((15 + index))" >> "$COMBINED_CANDIDATES_PATH"
+    done
+    filter_csv
+  )
+  [[ "$(($(wc -l < "$tmp_dir/work/CloudflareSpeedTest.csv") - 1))" == 20 ]] || fail "Linux final Top 20 did not retain 20 US nodes"
+  new_count="$(grep -c '^203\.0\.113\.' "$tmp_dir/work/CloudflareSpeedTest.csv")"
+  [[ "$new_count" -ge 10 ]] || fail "Linux final Top 20 retained only $new_count new US nodes"
+  for index in $(seq 6 15); do
+    grep -q "^203\.0\.113\.$index," "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "Linux speed-ranked quota omitted new node $index"
+  done
+  rm -rf "$tmp_dir"
+}
+
 test_linux_country_speed_floor_protects_only_available_row() {
   local tmp_dir
   tmp_dir="$(mktemp -d)"
@@ -1285,6 +1313,7 @@ test_previous_csv_nodes_use_shell_safe_line_endings
 test_linux_country_speed_floor_defaults_and_parser
 test_linux_country_speed_floors_filter_raw_mb_per_second_before_rolling_retention
 test_linux_full_retest_and_rolling_merge_do_not_revive_stale_nodes
+test_linux_final_top20_reserves_ten_speed_ranked_new_nodes
 test_linux_country_speed_floor_protects_only_available_row
 test_linux_filter_rejects_invalid_candidate_speeds_at_zero_floors
 test_linux_runner_samples_large_country_files

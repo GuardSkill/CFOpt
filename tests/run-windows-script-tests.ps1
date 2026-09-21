@@ -421,6 +421,41 @@ try {
             throw "Final city label leaked candidate source: $($row.$cityHeaderName)"
         }
     }
+
+    $newQuotaMapPath = Join-Path $tempDir "new-quota-map.csv"
+    $newQuotaCfstPath = Join-Path $tempDir "new-quota-cfst.csv"
+    $script:csvPath = Join-Path $tempDir "new-quota-merged.csv"
+    $quotaMap = [System.Collections.Generic.List[string]]::new()
+    $quotaCfst = [System.Collections.Generic.List[string]]::new()
+    $quotaCfst.Add("IP,Sent,Received,Loss,Latency,Speed,DataCenter")
+    $quotaPreviousKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($index in 1..15) {
+        $ip = "198.51.100.$index"
+        $quotaMap.Add("$ip,US,previous")
+        $quotaCfst.Add("$ip,2,2,0,$index,2.00,LAX")
+        [void]$quotaPreviousKeys.Add("$ip|443|US")
+    }
+    foreach ($index in 1..15) {
+        $ip = "203.0.113.$index"
+        $quotaMap.Add("$ip,US,ip.zip")
+        $quotaCfst.Add("$ip,2,2,0,$(100 + $index),$([string](15 + $index)).00,LAX")
+    }
+    [System.IO.File]::WriteAllLines($newQuotaMapPath, $quotaMap, [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllLines($newQuotaCfstPath, $quotaCfst, [System.Text.Encoding]::ASCII)
+    $script:countryMinSpeedByCode = ConvertFrom-CountryMinSpeedMap -Value "US=0" -AllowedCountries $Countries
+    Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath = $newQuotaMapPath; CsvPath = $newQuotaCfstPath; Port = 443 }) -PreviousNodeKeys $quotaPreviousKeys
+    $quotaOutput = @(Import-Csv -LiteralPath $script:csvPath)
+    $quotaNewIps = @($quotaOutput.$ipHeaderName | Where-Object { $_ -like '203.0.113.*' })
+    if ($quotaOutput.Count -ne 20 -or $quotaNewIps.Count -lt 10) {
+        throw "Final Top 20 must reserve at least 10 speed-ranked slots for qualified new nodes. total=$($quotaOutput.Count) new=$($quotaNewIps.Count)"
+    }
+    foreach ($expectedIndex in 6..15) {
+        if ($quotaNewIps -notcontains "203.0.113.$expectedIndex") {
+            throw "Speed-ranked new-node quota omitted 203.0.113.$expectedIndex."
+        }
+    }
+    $script:csvPath = Join-Path $tempDir "merged.csv"
+
     Merge-RollingPublicationCsv -PreviousCsvEntries @(
         [pscustomobject]@{ Ip = '203.0.113.200'; Port = 443; DataCenter = 'HKG'; City = 'HK'; Tls = 'true'; Sent = '2'; Received = '2'; Loss = '0'; Latency = '50'; Speed = '50' }
     )
