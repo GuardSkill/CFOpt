@@ -362,12 +362,15 @@ function Test-IntervalGate {
 }
 
 function Get-GitHubToken {
-    $token = [Environment]::GetEnvironmentVariable($TokenEnvName, "User")
+    $token = [Environment]::GetEnvironmentVariable($TokenEnvName, "Process")
+    if ([string]::IsNullOrWhiteSpace($token)) {
+        $token = [Environment]::GetEnvironmentVariable($TokenEnvName, "User")
+    }
     if ([string]::IsNullOrWhiteSpace($token)) {
         $token = [Environment]::GetEnvironmentVariable($TokenEnvName, "Machine")
     }
     if ([string]::IsNullOrWhiteSpace($token)) {
-        throw "Missing GitHub token. Set user environment variable $TokenEnvName first."
+        throw "Missing GitHub token. Set $TokenEnvName in the process, user, or machine environment."
     }
     return $token
 }

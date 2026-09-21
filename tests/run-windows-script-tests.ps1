@@ -28,6 +28,28 @@ try {
 
     $env:CFOPT_SOURCE_ONLY = "1"
     . $runnerPath
+    $originalTokenEnvName = $TokenEnvName
+    $testTokenEnvName = "CFOPT_TEST_TOKEN_$([guid]::NewGuid().ToString('N'))"
+    try {
+        $TokenEnvName = $testTokenEnvName
+        [Environment]::SetEnvironmentVariable($testTokenEnvName, 'workflow-process-token', 'Process')
+        if ((Get-GitHubToken) -ne 'workflow-process-token') {
+            throw 'The Windows runner did not read the workflow process token.'
+        }
+        [Environment]::SetEnvironmentVariable($testTokenEnvName, $null, 'Process')
+        try {
+            Get-GitHubToken | Out-Null
+            throw 'A missing GitHub token was accepted.'
+        }
+        catch {
+            if ($_.Exception.Message -eq 'A missing GitHub token was accepted.') { throw }
+            if ($_.Exception.Message -notmatch 'Missing GitHub token') { throw }
+        }
+    }
+    finally {
+        [Environment]::SetEnvironmentVariable($testTokenEnvName, $null, 'Process')
+        $TokenEnvName = $originalTokenEnvName
+    }
     if ((Resolve-NetworkIspFromProbeText -Text '{"isp":"China Mobile","as":"AS9808 China Mobile"}') -ne 'ChinaMobile') {
         throw "AS9808/China Mobile probe text must resolve to ChinaMobile."
     }

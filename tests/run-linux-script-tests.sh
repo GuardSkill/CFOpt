@@ -595,6 +595,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Sichuan runner must be isolated by regional labels"
   grep -q "TargetPath 'CMCC_SC.csv'" "$sc_workflow" \
     || fail "Sichuan runner must publish CMCC_SC.csv"
+  grep -q 'GITHUB_TOKEN_CFOPT:.*github.token' "$sc_workflow" \
+    || fail "Sichuan workflow must pass its scoped token to the runner process"
   grep -q "isp.Isp -ne 'ChinaMobile'" "$sc_workflow" \
     || fail "Sichuan runner must reject non-CMCC networks"
   [[ "$(grep -Fc 'shell: powershell -NoProfile -ExecutionPolicy Bypass -Command' "$sc_workflow")" -eq 2 ]] \
