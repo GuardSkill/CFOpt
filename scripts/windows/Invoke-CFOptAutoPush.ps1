@@ -27,9 +27,9 @@ param(
     [int]$MaxPerCity = 20,
     [int]$CfstThreads = 80,
     [int]$CfstLatencyTestCount = 2,
-    [int]$CfstDownloadTestCount = 10,
+    [int]$CfstDownloadTestCount = 15,
     [int]$CfstDownloadTestTime = 4,
-    [int]$FocusCfstDownloadTestCount = 10,
+    [int]$FocusCfstDownloadTestCount = 15,
     [int]$FocusCfstDownloadTestTime = 4,
     [double]$CfstLossRateLimit = 0,
     [bool]$CfstEnforceSpeedLimit = $false,
@@ -59,6 +59,11 @@ param(
     [ValidateSet('adaptive','hybrid','legacy')]
     [string]$CandidatePoolMode = 'adaptive',
     [int]$AdaptiveMinCandidatesPerWorkItem = 20,
+    [bool]$EnableGenericCandidatePool = $true,
+    [int]$GenericPoolMaxPrefixes = 96,
+    [int]$GenericPoolTopPerSource = 128,
+    [int]$ChannelLatencyTopPerCountry = 20,
+    [string]$GenericPoolPython = 'python',
     [bool]$EnableGslegeCloudflareIp = $true,
     [string]$GslegeRawBaseUrl = "https://raw.githubusercontent.com/gslege/CloudflareIP/main",
     [string]$GslegeCountries = "JP,SG,US,DE,NL",
@@ -642,6 +647,16 @@ function Get-Vps789CtIps {
     }
 }
 
+function Get-CfBestIpCountryFromTag {
+    param([string]$Tag)
+
+    # ip_all.txt uses #KR-score0.1974, not just #KR.
+    if ($Tag -match '^(?<country>[A-Za-z]{2})(?:-score[0-9]+(?:\.[0-9]+)?)?$') {
+        return $Matches.country.ToUpperInvariant()
+    }
+    return ''
+}
+
 function Get-CfBestIpCandidates {
     if ($DisableCfBestIp) {
         Write-Log "cf-bestip candidate source disabled."
@@ -679,8 +694,9 @@ function Get-CfBestIpCandidates {
             $countsByPort = @{}
             foreach ($line in ($text -split "`r?`n")) {
                 $trimmed = $line.Trim()
-                if ($trimmed -match '^(?<ip>(?:\d{1,3}\.){3}\d{1,3}):(?<port>\d+)#(?<region>[A-Za-z0-9_-]+)') {
-                    if ($filterCountry -and $Matches.region.ToUpperInvariant() -ne $countryCode) {
+                if ($trimmed -match '^(?<ip>(?:\d{1,3}\.){3}\d{1,3}):(?<port>\d+)#(?<region>[A-Za-z0-9_.-]+)') {
+                    $tagCountry = Get-CfBestIpCountryFromTag -Tag $Matches.region
+                    if ($filterCountry -and $tagCountry -ne $countryCode) {
                         continue
                     }
                     $candidatePort = [int]$Matches.port
@@ -894,6 +910,40 @@ function Get-CtEntryPoolCandidates {
         foreach ($ip in $ips) { $result.Add([pscustomobject]@{ Ip = $ip; Port = $portValue; City = 'CT-SEED' }) | Out-Null }
     }
     return $result.ToArray()
+}
+
+function Get-GenericCandidatePool {
+    param([int[]]$SelectedPorts)
+    $outputPath = Join-Path $WorkDir 'generic-candidates.csv'
+    if (Test-Path -LiteralPath $outputPath) { Remove-Item -LiteralPath $outputPath -Force }
+    if (-not $EnableGenericCandidatePool) { return @() }
+    $helper = Join-Path $repoRoot 'scripts\generic_candidate_pool.py'
+    if (-not (Test-Path -LiteralPath $helper) -or -not (Get-Command $GenericPoolPython -ErrorAction SilentlyContinue)) {
+        Write-Log 'WARN: Generic candidate pool helper or Python is unavailable; continuing without it.'
+        return @()
+    }
+    try {
+        $stderrPath = Join-Path $WorkDir 'generic-pool-stderr.log'
+        $arguments = Join-ProcessArguments -Arguments @($helper, '--ports', ($SelectedPorts -join ','), '--output', $outputPath, '--max-prefixes', ([string]$GenericPoolMaxPrefixes), '--top-per-source', ([string]$GenericPoolTopPerSource))
+        $process = Start-Process -FilePath (Get-Command $GenericPoolPython).Source -ArgumentList $arguments -RedirectStandardError $stderrPath -NoNewWindow -Wait -PassThru
+        if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath | ForEach-Object { Write-Log "generic-pool: $_" } }
+        if ($process.ExitCode -ne 0) { throw "helper exited with code $($process.ExitCode)" }
+        $candidates = @(
+            Get-Content -LiteralPath $outputPath -ErrorAction Stop | ForEach-Object {
+                $fields = $_ -split ',', 3
+                $portValue = 0
+                if ($fields.Count -eq 3 -and (Test-StrictIpv4 -Value $fields[0]) -and [int]::TryParse($fields[1], [ref]$portValue) -and $SelectedPorts -contains $portValue -and $fields[2] -match '^generic-(?:cm|as13335|as209242)$') {
+                    [pscustomobject]@{ Ip = $fields[0]; Port = $portValue; Source = $fields[2] }
+                }
+            }
+        )
+        Write-Log "Prepared $($candidates.Count) latency-ranked generic candidates across configured ports."
+        return $candidates
+    }
+    catch {
+        Write-Log "WARN: Generic candidate pool failed; continuing without it: $($_.Exception.Message)"
+        return @()
+    }
 }
 
 function New-PortWorkItem {
@@ -1352,6 +1402,24 @@ function Get-NonEmptyWorkItems {
     }
 }
 
+function Invoke-ChannelLatencyPool {
+    param([object[]]$WorkItems)
+    $helper = Join-Path $repoRoot 'scripts\channel_latency_pool.py'
+    if (-not (Test-Path -LiteralPath $helper) -or -not (Get-Command $GenericPoolPython -ErrorAction SilentlyContinue)) {
+        throw 'Channel latency pool requires Python and scripts/channel_latency_pool.py.'
+    }
+    $manifest = Join-Path $WorkDir 'channel-latency-work-items.csv'
+    $lines = @($WorkItems | ForEach-Object { "$($_.Port),$($_.Scope),$($_.SelectedIpPath),$($_.MapPath)" })
+    [System.IO.File]::WriteAllLines($manifest, [string[]]$lines, [System.Text.Encoding]::UTF8)
+    $genericPath = Join-Path $WorkDir 'generic-candidates.csv'
+    $stderrPath = Join-Path $WorkDir 'channel-latency-stderr.log'
+    $arguments = Join-ProcessArguments -Arguments @($helper, '--work-items', $manifest, '--generic', $genericPath, '--cfst', $CfstPath, '--workdir', $WorkDir, '--url', $DownloadTestUrl, '--max-latency', ([string]$MaxLatencyMs), '--latency-tests', ([string]$CfstLatencyTestCount), '--top-per-channel-country', ([string]$ChannelLatencyTopPerCountry))
+    if ($UseProxyForCfst) { $arguments += ' --use-proxy-for-cfst' }
+    $process = Start-Process -FilePath (Get-Command $GenericPoolPython).Source -ArgumentList $arguments -RedirectStandardError $stderrPath -NoNewWindow -Wait -PassThru
+    if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath | ForEach-Object { Write-Log "channel-latency: $_" } }
+    if ($process.ExitCode -ne 0) { throw "Channel latency stage exited with code $($process.ExitCode)." }
+}
+
 function Get-CfstArguments {
     param([object]$Item)
 
@@ -1624,6 +1692,10 @@ function Write-MergedFilteredCsv {
                 }
             }
             $source = if ($sourceByIp.ContainsKey($ip)) { $sourceByIp[$ip] } else { "unknown" }
+            if ($source -like 'generic-*' -and [string]::IsNullOrWhiteSpace($coloCountry)) {
+                $removed++
+                continue
+            }
 
             $speedMbps = $speedMbps.ToString("0.00", [System.Globalization.CultureInfo]::InvariantCulture)
             $latencyText = [math]::Round($latency, 0).ToString("0", [System.Globalization.CultureInfo]::InvariantCulture)
@@ -1941,6 +2013,7 @@ try {
     Write-Log "Generated $($hotPrefixMiningCandidates.Count) rotating hot-prefix candidates for all available country/port pools."
     $ctEntryPoolCandidates = @(Get-CtEntryPoolCandidates -SelectedPorts $effectivePorts)
     Write-Log "Generated $($ctEntryPoolCandidates.Count) CT entry candidates across $($effectivePorts.Count) configured ports."
+    Get-GenericCandidatePool -SelectedPorts $effectivePorts | Out-Null
     $allCountries = @(Get-FocusExcludedCountries)
     $generatedWorkItems = foreach ($effectivePort in $effectivePorts) {
             New-PreviousPortWorkItem -CurrentPort $effectivePort -PreviousCsvEntries $previousCsvEntries
@@ -1962,6 +2035,7 @@ try {
     foreach ($item in $workItems) {
         Invoke-TcpPrecheck -Port $item.Port -SelectedIpPath $item.SelectedIpPath -MapPath $item.MapPath
     }
+    Invoke-ChannelLatencyPool -WorkItems $workItems
     $workItems = @(Get-NonEmptyWorkItems -WorkItems $workItems)
     if ($workItems.Count -eq 0) {
         throw "No usable port/country inputs remained after TCP precheck."

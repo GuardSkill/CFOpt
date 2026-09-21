@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATH="$ROOT_DIR/tests/bin:$PATH"
 export TARGET_PATH="tests/fixtures/nonexistent.csv"
+export ENABLE_GENERIC_CANDIDATE_POOL=0  # Network-free fixtures; the helper has its own mocked tests.
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -452,9 +453,9 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
   if grep -q '^198\.18\.2\.1$' "$tmp_dir/work/selected-ip-443-all.txt"; then
     fail "all scope should exclude focus country DE"
   fi
-  grep -Eq 'Would run: .*selected-ip-443-all\.txt.* -t 2 -dn 10 -dt 4 ' "$tmp_dir/work/auto-push.log" \
+  grep -Eq 'Would run: .*selected-ip-443-all\.txt.* -t 2 -dn 15 -dt 4 ' "$tmp_dir/work/auto-push.log" \
     || fail "all scope should use the fast CFST profile"
-  grep -Eq 'Would run: .*selected-ip-443-focus-DE\.txt.* -t 2 -dn 10 -dt 4 ' "$tmp_dir/work/auto-push.log" \
+  grep -Eq 'Would run: .*selected-ip-443-focus-DE\.txt.* -t 2 -dn 15 -dt 4 ' "$tmp_dir/work/auto-push.log" \
     || fail "focus scope should use the fast CFST profile"
 }
 
@@ -601,12 +602,12 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
 }
 
 test_focus_scopes_use_fast_download_profile() {
-  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-10}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
-    || fail "Linux focus scopes should default to 10 download candidates"
+  grep -q 'FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-15}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux focus scopes should default to 15 download candidates"
   grep -q 'FOCUS_CFST_DOWNLOAD_TEST_TIME="${FOCUS_CFST_DOWNLOAD_TEST_TIME:-4}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux focus scopes should default to a 4-second download test"
-  grep -q '\[int\]\$FocusCfstDownloadTestCount = 10' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
-    || fail "Windows focus scopes should default to 10 download candidates"
+  grep -q '\[int\]\$FocusCfstDownloadTestCount = 15' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows focus scopes should default to 15 download candidates"
   grep -q '\[int\]\$FocusCfstDownloadTestTime = 4' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows focus scopes should default to a 4-second download test"
 }
@@ -1274,6 +1275,7 @@ test_adaptive_pool_helper_generates_multiport_candidates() {
   [[ "$(wc -l < "$tmp_dir/hot.csv" | tr -d ' ')" == 20 ]] || fail "adaptive hot pool count mismatch"
   [[ "$(wc -l < "$tmp_dir/ct.csv" | tr -d ' ')" == 4 ]] || fail "CT pool must cover every configured port"
 }
+
 
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs

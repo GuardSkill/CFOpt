@@ -160,6 +160,42 @@ try {
     if ($gslegeCandidates.Count -ne 2 -or $gslegeCandidates[1].Ip -ne '108.162.198.19') {
         throw "gslege parser must validate and deduplicate IPv4 candidates."
     }
+    foreach ($tag in @('KR', 'KR-score0.1974', 'kr-score1')) {
+        if ((Get-CfBestIpCountryFromTag -Tag $tag) -ne 'KR') {
+            throw "cf-bestip combined-list tag was not recognized: $tag"
+        }
+    }
+    foreach ($tag in @('JP-score0.1974', 'KRU-score0.19', 'KR-other', 'KR-scoreoops')) {
+        if ((Get-CfBestIpCountryFromTag -Tag $tag) -eq 'KR') {
+            throw "cf-bestip combined-list tag leaked another or invalid country: $tag"
+        }
+    }
+    $savedCountries = $script:Countries
+    $savedPorts = $script:Ports
+    $script:Countries = @('KR', 'JP')
+    $script:Ports = '443,2053'
+    function Invoke-WebRequest {
+        param([string]$Uri, [switch]$UseBasicParsing, [int]$TimeoutSec)
+        if ($Uri -like '*/ip_KR.txt') { throw 'Not Found' }
+        if ($Uri -like '*/ip_JP.txt') { return [pscustomobject]@{ Content = '203.0.113.9:2053#JP-score0.2' } }
+        if ($Uri -like '*/ip_all.txt') {
+            return [pscustomobject]@{ Content = "203.0.113.1:443#KR-score0.1974`n203.0.113.2:2053#kr-score1`n203.0.113.3:443#JP-score0.3`n203.0.113.4:443#KRU-score0.3`n203.0.113.5:443#KR-other" }
+        }
+        throw "Unexpected cf-bestip URL: $Uri"
+    }
+    try {
+        $cfBestIpCandidates = @(Get-CfBestIpCandidates)
+        $krCandidates = @($cfBestIpCandidates | Where-Object { $_.City -eq 'KR' })
+        $jpCandidates = @($cfBestIpCandidates | Where-Object { $_.City -eq 'JP' })
+        if ($krCandidates.Count -ne 2 -or $krCandidates[0].Ip -ne '203.0.113.1' -or $krCandidates[1].Ip -ne '203.0.113.2' -or $jpCandidates.Count -ne 1 -or $jpCandidates[0].Ip -ne '203.0.113.9') {
+            throw 'cf-bestip fallback must accept only KR-score entries while preserving the JP country-file path.'
+        }
+    }
+    finally {
+        Remove-Item Function:\Invoke-WebRequest
+        $script:Countries = $savedCountries
+        $script:Ports = $savedPorts
+    }
     $script:HotPrefixSamples = 4
     $script:HotPrefixMaxPrefixesPerCountryPort = 4
     $mined = @(Get-HotPrefixMiningCandidates -SeedCandidates @(
@@ -183,12 +219,12 @@ try {
         throw "ip.164746.xyz candidates must default to the JP 443 pool."
     }
     $profile = @($CfstLatencyTestCount, $CfstDownloadTestCount, $CfstDownloadTestTime, $FocusCfstDownloadTestCount, $FocusCfstDownloadTestTime) -join ","
-    if ($profile -ne "2,10,4,10,4") {
-        throw "Expected fast CFST defaults 2,10,4,10,4; got $profile."
+    if ($profile -ne "2,15,4,15,4") {
+        throw "Expected fast CFST defaults 2,15,4,15,4; got $profile."
     }
     $allArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "all"; Port = 443; SelectedIpPath = "all.txt"; CsvPath = "all.csv" })) -join " "
     $focusArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "focus-DE"; Port = 443; SelectedIpPath = "focus.txt"; CsvPath = "focus.csv" })) -join " "
-    if ($allArgs -notmatch '(?:^| )-t 2 -dn 10 -dt 4(?: |$)' -or $focusArgs -notmatch '(?:^| )-t 2 -dn 10 -dt 4(?: |$)') {
+    if ($allArgs -notmatch '(?:^| )-t 2 -dn 15 -dt 4(?: |$)' -or $focusArgs -notmatch '(?:^| )-t 2 -dn 15 -dt 4(?: |$)') {
         throw "Windows all and focus scopes must build the fast CFST argument profile."
     }
     $previousArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "previous"; Port = 443; SelectedIpPath = "previous.txt"; CsvPath = "previous.csv"; DownloadTestCount = 37 })) -join " "
@@ -200,6 +236,14 @@ try {
     }
     $script:WorkDir = $tempDir
     $script:logFile = $logPath
+    $staleGenericPath = Join-Path $tempDir 'generic-candidates.csv'
+    [System.IO.File]::WriteAllText($staleGenericPath, '104.17.63.208,443,generic-cm')
+    $script:EnableGenericCandidatePool = $false
+    Get-GenericCandidatePool -SelectedPorts @(443) | Out-Null
+    $script:EnableGenericCandidatePool = $true
+    if (Test-Path -LiteralPath $staleGenericPath) {
+        throw 'Disabling the generic source must not reuse candidates from a previous run.'
+    }
     $script:TcpPrecheckEnabled = $true
     $script:TcpPrecheckMinCandidates = 120
     $script:TcpPrecheckTimeoutMs = 200
@@ -290,6 +334,18 @@ try {
     }
     if (-not ((Get-Content -LiteralPath $logPath -Raw) -match "Skipping empty TCP precheck work item")) {
         throw "Skipped empty TCP precheck work item was not logged."
+    }
+
+    $genericMapPath = Join-Path $tempDir 'generic-map.csv'
+    $genericCsvPath = Join-Path $tempDir 'generic-cfst.csv'
+    $script:csvPath = Join-Path $tempDir 'generic-published.csv'
+    [System.IO.File]::WriteAllLines($genericMapPath, @('104.17.63.208,UNKNOWN,generic-cm', '104.17.63.209,UNKNOWN,generic-as13335'), [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllLines($genericCsvPath, @('IP,Sent,Received,Loss,Latency,Speed,DataCenter', '104.17.63.208,2,2,0,30,12.00,NRT', '104.17.63.209,2,2,0,20,12.00,N/A'), [System.Text.Encoding]::ASCII)
+    Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath=$genericMapPath; CsvPath=$genericCsvPath; Port=443 }) -PreviousNodeKeys ([System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase))
+    $genericPublished = @(Import-Csv -LiteralPath $script:csvPath)
+    $genericIpHeader = "IP" + [string]([char]0x5730) + [string]([char]0x5740)
+    if ($genericPublished.Count -ne 1 -or $genericPublished[0].$genericIpHeader -ne '104.17.63.208') {
+        throw 'Unclassified generic candidates must never be published; NRT must classify as JP.'
     }
 
     $mergeMapPath = Join-Path $tempDir "merge-map.csv"

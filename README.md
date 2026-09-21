@@ -107,6 +107,8 @@ Windows 和 Linux 流程还会从电信入口候选段分层抽样，默认包�
 
 Windows 的 `CandidatePoolMode=adaptive` 与 Linux 的 `CANDIDATE_POOL_MODE=adaptive` 默认启用：地区工作项优先使用 `cf-bestip + gslege + ip164746 + hot-mine`，历史节点由独立任务全量复测；当某个地区/端口不足 20 个候选时自动用 `ip.zip` 补齐，避免冷门地区断档。`hybrid` 保留全部新候选来源，`legacy` 用于回归对照。成都 443 等量 A/B（各 320 个输入、各下载测试 40 个）中，旧池没有节点达到 5 MB/s，自适应池有 11 个达到 5 MB/s，最高 NRT 127.61 MB/s、SIN 38.46 MB/s。
 
+无国家标签的补充源包括 [CMLiu 移动优选 IPv4](https://cf.090227.xyz/cmcc)、[RIPEstat AS13335](https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335) 和 [RIPEstat AS209242](https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS209242)。先从各 ASN 均匀抽样最多 96 个 IPv4 前缀、每日轮换地址并做 TCP 粗筛；然后 `scripts/channel_latency_pool.py` 对新旧渠道分别用 CFST 只测延迟，新渠道使用 HTTPing 获取数据中心码来归国，旧渠道保留原有国家来源信息。按「渠道 × 国家」跨所有端口统一选择延迟前 20 个，加入相应国家的工作项；无法识别国家的新节点不会发布。第二阶段 CFST 按池内延迟排序，默认对每个工作项前 15 个做下载测速，仍需通过原有国家速度门槛和发布安全检查。历史已发布节点的独立全量复测不受 Top 20 截断。Windows 可设置 `GenericPoolMaxPrefixes`、`GenericPoolTopPerSource`（TCP 粗筛上限）、`ChannelLatencyTopPerCountry`；Linux 对应 `GENERIC_POOL_MAX_PREFIXES`、`GENERIC_POOL_TOP_PER_SOURCE`、`CHANNEL_LATENCY_TOP_PER_COUNTRY`。Windows 需要 `python` 命令可用，Linux 需要 `python3`。
+
 最终地区以 CFST 返回的 Cloudflare Colo 为准，例如 `NRT/KIX→JP`、`SIN→SG`、`HKG→HK`、`ICN→KR`、`FRA/TXL→DE`、`LHR→GB`、`AMS→NL`、`LAX/SJC/SEA→US`。上一轮节点也按 Colo 重新归类后参与热前缀学习和发布保护，避免把 `SIN` 节点沿用为 `JP/GB`。DE、HK、KR 默认分别使用 3、2、3 倍热前缀探索预算，Windows 可通过 `HotPrefixCountryMultipliers`、Linux 可通过 `HOT_PREFIX_COUNTRY_MULTIPLIERS` 调整。
 
 `vps789` 的 `cfIpApi.data.CT` 当前返回的电信候选很少，所以默认关闭。需要时手动开启：

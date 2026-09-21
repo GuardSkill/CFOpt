@@ -26,9 +26,9 @@ ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.20}"
 MIN_PUBLISH_RETENTION_RATIO="${MIN_PUBLISH_RETENTION_RATIO:-0.6}"
 CFST_THREADS="${CFST_THREADS:-80}"
 CFST_LATENCY_TEST_COUNT="${CFST_LATENCY_TEST_COUNT:-2}"
-CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-10}"
+CFST_DOWNLOAD_TEST_COUNT="${CFST_DOWNLOAD_TEST_COUNT:-15}"
 CFST_DOWNLOAD_TEST_TIME="${CFST_DOWNLOAD_TEST_TIME:-4}"
-FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-10}"
+FOCUS_CFST_DOWNLOAD_TEST_COUNT="${FOCUS_CFST_DOWNLOAD_TEST_COUNT:-15}"
 FOCUS_CFST_DOWNLOAD_TEST_TIME="${FOCUS_CFST_DOWNLOAD_TEST_TIME:-4}"
 CFST_LOSS_RATE_LIMIT="${CFST_LOSS_RATE_LIMIT:-0}"
 CFST_ENFORCE_SPEED_LIMIT="${CFST_ENFORCE_SPEED_LIMIT:-0}"
@@ -61,6 +61,9 @@ CT_ENTRY_CIDRS="${CT_ENTRY_CIDRS:-104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,162.
 CT_ENTRY_SAMPLES_PER_CIDR="${CT_ENTRY_SAMPLES_PER_CIDR:-32}"
 CANDIDATE_POOL_MODE="${CANDIDATE_POOL_MODE:-adaptive}"
 ADAPTIVE_MIN_CANDIDATES_PER_WORK_ITEM="${ADAPTIVE_MIN_CANDIDATES_PER_WORK_ITEM:-20}"
+ENABLE_GENERIC_CANDIDATE_POOL="${ENABLE_GENERIC_CANDIDATE_POOL:-1}"
+GENERIC_POOL_MAX_PREFIXES="${GENERIC_POOL_MAX_PREFIXES:-96}"
+GENERIC_POOL_TOP_PER_SOURCE="${GENERIC_POOL_TOP_PER_SOURCE:-128}"
 IPZIP_SAMPLE_ENABLED="${IPZIP_SAMPLE_ENABLED:-1}"
 IPZIP_SAMPLE_PERCENT="${IPZIP_SAMPLE_PERCENT:-40}"
 IPZIP_COUNTRY_MIN_CANDIDATES="${IPZIP_COUNTRY_MIN_CANDIDATES:-40}"
@@ -101,6 +104,10 @@ IP164746_PATH="$WORK_DIR/ip164746.txt"
 GSLEGE_PATH="$WORK_DIR/gslege-candidates.csv"
 HOT_MINE_PATH="$WORK_DIR/hot-mine-candidates.csv"
 CT_ENTRY_PATH="$WORK_DIR/ct-entry-candidates.csv"
+GENERIC_POOL_PATH="$WORK_DIR/generic-candidates.csv"
+GENERIC_POOL_SCRIPT="${GENERIC_POOL_SCRIPT:-$ROOT_DIR/scripts/generic_candidate_pool.py}"
+CHANNEL_LATENCY_SCRIPT="${CHANNEL_LATENCY_SCRIPT:-$ROOT_DIR/scripts/channel_latency_pool.py}"
+CHANNEL_LATENCY_TOP_PER_COUNTRY="${CHANNEL_LATENCY_TOP_PER_COUNTRY:-20}"
 ADAPTIVE_POOL_SCRIPT="${ADAPTIVE_POOL_SCRIPT:-$ROOT_DIR/scripts/adaptive_pool.py}"
 STATE_FILE="$WORK_DIR/last-success.txt"
 LOG_FILE="$WORK_DIR/auto-push.log"
@@ -1108,6 +1115,7 @@ filter_csv() {
       datacenter = $10
       actual_country = colo_country(datacenter)
       if (actual_country != "") city = actual_country
+      if (source ~ /^generic-/ && actual_country == "") { removed++; next }
       speed_mbps = speed * 8
       if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
@@ -1396,7 +1404,7 @@ main() {
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
-  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$HOT_MINE_PATH" "$CT_ENTRY_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$WORK_DIR/cfbestip-all.txt" "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
+  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$HOT_MINE_PATH" "$CT_ENTRY_PATH" "$GENERIC_POOL_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$WORK_DIR/cfbestip-all.txt" "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
 
   update_zip_cache
   fetch_previous_csv_nodes
@@ -1408,6 +1416,12 @@ main() {
 
   mapfile -t ports < <(effective_ports)
   log "Configured ports: ${ports[*]}"
+  if [[ "$ENABLE_GENERIC_CANDIDATE_POOL" == "1" && "$CANDIDATE_POOL_MODE" != "legacy" && -f "$GENERIC_POOL_SCRIPT" ]]; then
+    if ! python3 "$GENERIC_POOL_SCRIPT" --ports "$(IFS=,; echo "${ports[*]}")" --output "$GENERIC_POOL_PATH" --max-prefixes "$GENERIC_POOL_MAX_PREFIXES" --top-per-source "$GENERIC_POOL_TOP_PER_SOURCE"; then
+      log "WARN: Generic candidate pool failed; continuing without it."
+      rm -f "$GENERIC_POOL_PATH"
+    fi
+  fi
   generate_adaptive_pools
   all_countries_csv="$(focus_excluded_countries_csv "$COUNTRIES_CSV" "$FOCUS_COUNTRIES_CSV")"
   for port_value in "${ports[@]}"; do
@@ -1432,6 +1446,14 @@ main() {
   while IFS=',' read -r port_value _scope selected_ip_path map_path; do
     apply_tcp_precheck "$port_value" "$selected_ip_path" "$map_path"
   done < "$WORK_DIR/port-work-items.csv"
+  local -a channel_args=(--work-items "$WORK_DIR/port-work-items.csv" --generic "$GENERIC_POOL_PATH" --cfst "$CFST_PATH" --workdir "$WORK_DIR" --url "$DOWNLOAD_TEST_URL" --max-latency "$MAX_LATENCY_MS" --latency-tests "$CFST_LATENCY_TEST_COUNT" --top-per-channel-country "$CHANNEL_LATENCY_TOP_PER_COUNTRY")
+  if [[ "$USE_PROXY_FOR_CFST" == "1" ]]; then
+    channel_args+=(--use-proxy-for-cfst)
+  fi
+  if ! python3 "$CHANNEL_LATENCY_SCRIPT" "${channel_args[@]}" 2>>"$LOG_FILE"; then
+    log 'ERROR: Channel latency stage failed; refusing to publish an incomplete selection.'
+    return 1
+  fi
   prune_empty_work_items "$WORK_DIR/port-work-items.csv"
   if [[ ! -s "$WORK_DIR/port-work-items.csv" ]]; then
     log "ERROR: No usable port/country inputs remained after TCP precheck."
