@@ -21,7 +21,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install CloudflareSpeedTest
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $ErrorActionPreference = 'Stop'
           $release = Invoke-RestMethod -Headers @{ 'User-Agent' = 'CFOpt-Actions' } -Uri 'https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest'
@@ -38,7 +38,7 @@ jobs:
           }
 
       - name: Verify CMCC network, benchmark Deyang and publish Sichuan CSV
-        shell: powershell
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         env:
           GITHUB_TOKEN_CFOPT: ${{ github.token }}
         run: |

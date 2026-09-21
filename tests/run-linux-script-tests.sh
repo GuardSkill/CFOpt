@@ -596,6 +596,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Sichuan runner must publish CMCC_SC.csv"
   grep -q "isp.Isp -ne 'ChinaMobile'" "$sc_workflow" \
     || fail "Sichuan runner must reject non-CMCC networks"
+  [[ "$(grep -Fc 'shell: powershell -NoProfile -ExecutionPolicy Bypass -Command' "$sc_workflow")" -eq 2 ]] \
+    || fail "Both Sichuan PowerShell steps must bypass the runner's restrictive local execution policy"
 }
 
 test_focus_scopes_use_fast_download_profile() {
