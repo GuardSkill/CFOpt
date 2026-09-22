@@ -361,6 +361,7 @@ try {
     $genericMapPath = Join-Path $tempDir 'generic-map.csv'
     $genericCsvPath = Join-Path $tempDir 'generic-cfst.csv'
     $script:csvPath = Join-Path $tempDir 'generic-published.csv'
+    $script:MinNodesPerCountry = 0
     [System.IO.File]::WriteAllLines($genericMapPath, @('104.17.63.208,UNKNOWN,generic-cm', '104.17.63.209,UNKNOWN,generic-as13335'), [System.Text.Encoding]::ASCII)
     [System.IO.File]::WriteAllLines($genericCsvPath, @('IP,Sent,Received,Loss,Latency,Speed,DataCenter', '104.17.63.208,2,2,0,30,12.00,NRT', '104.17.63.209,2,2,0,20,12.00,N/A'), [System.Text.Encoding]::ASCII)
     Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath=$genericMapPath; CsvPath=$genericCsvPath; Port=443 }) -PreviousNodeKeys ([System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase))
@@ -422,38 +423,33 @@ try {
         }
     }
 
-    $newQuotaMapPath = Join-Path $tempDir "new-quota-map.csv"
-    $newQuotaCfstPath = Join-Path $tempDir "new-quota-cfst.csv"
-    $script:csvPath = Join-Path $tempDir "new-quota-merged.csv"
-    $quotaMap = [System.Collections.Generic.List[string]]::new()
-    $quotaCfst = [System.Collections.Generic.List[string]]::new()
-    $quotaCfst.Add("IP,Sent,Received,Loss,Latency,Speed,DataCenter")
-    $quotaPreviousKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($index in 1..15) {
-        $ip = "198.51.100.$index"
-        $quotaMap.Add("$ip,US,previous")
-        $quotaCfst.Add("$ip,2,2,0,$index,2.00,LAX")
-        [void]$quotaPreviousKeys.Add("$ip|443|US")
-    }
-    foreach ($index in 1..15) {
+    $minimumMapPath = Join-Path $tempDir "minimum-map.csv"
+    $minimumCfstPath = Join-Path $tempDir "minimum-cfst.csv"
+    $script:csvPath = Join-Path $tempDir "minimum-merged.csv"
+    $minimumMap = [System.Collections.Generic.List[string]]::new()
+    $minimumCfst = [System.Collections.Generic.List[string]]::new()
+    $minimumCfst.Add("IP,Sent,Received,Loss,Latency,Speed,DataCenter")
+    foreach ($index in 1..12) {
         $ip = "203.0.113.$index"
-        $quotaMap.Add("$ip,US,ip.zip")
-        $quotaCfst.Add("$ip,2,2,0,$(100 + $index),$([string](15 + $index)).00,LAX")
+        $minimumMap.Add("$ip,JP,ip.zip")
+        $speed = if ($index -eq 12) { '12.00' } else { '0.00' }
+        $minimumCfst.Add("$ip,2,2,0,$index,$speed,NRT")
     }
-    [System.IO.File]::WriteAllLines($newQuotaMapPath, $quotaMap, [System.Text.Encoding]::ASCII)
-    [System.IO.File]::WriteAllLines($newQuotaCfstPath, $quotaCfst, [System.Text.Encoding]::ASCII)
-    $script:countryMinSpeedByCode = ConvertFrom-CountryMinSpeedMap -Value "US=0" -AllowedCountries $Countries
-    Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath = $newQuotaMapPath; CsvPath = $newQuotaCfstPath; Port = 443 }) -PreviousNodeKeys $quotaPreviousKeys
-    $quotaOutput = @(Import-Csv -LiteralPath $script:csvPath)
-    $quotaNewIps = @($quotaOutput.$ipHeaderName | Where-Object { $_ -like '203.0.113.*' })
-    if ($quotaOutput.Count -ne 20 -or $quotaNewIps.Count -lt 10) {
-        throw "Final Top 20 must reserve at least 10 speed-ranked slots for qualified new nodes. total=$($quotaOutput.Count) new=$($quotaNewIps.Count)"
+    [System.IO.File]::WriteAllLines($minimumMapPath, $minimumMap, [System.Text.Encoding]::ASCII)
+    [System.IO.File]::WriteAllLines($minimumCfstPath, $minimumCfst, [System.Text.Encoding]::ASCII)
+    $script:MinNodesPerCountry = 10
+    $script:countryMinSpeedByCode = ConvertFrom-CountryMinSpeedMap -Value "JP=10" -AllowedCountries $Countries
+    Write-MergedFilteredCsv -WorkItems @([pscustomobject]@{ MapPath = $minimumMapPath; CsvPath = $minimumCfstPath; Port = 443 }) -PreviousNodeKeys ([System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase))
+    $minimumOutput = @(Import-Csv -LiteralPath $script:csvPath)
+    if ($minimumOutput.Count -ne 10 -or $minimumOutput.$ipHeaderName -notcontains '203.0.113.12') {
+        throw "Final country minimum must keep the speed-qualified node and fill to 10 by latency. total=$($minimumOutput.Count)"
     }
-    foreach ($expectedIndex in 6..15) {
-        if ($quotaNewIps -notcontains "203.0.113.$expectedIndex") {
-            throw "Speed-ranked new-node quota omitted 203.0.113.$expectedIndex."
+    foreach ($expectedIndex in 1..9) {
+        if ($minimumOutput.$ipHeaderName -notcontains "203.0.113.$expectedIndex") {
+            throw "Latency fallback omitted 203.0.113.$expectedIndex."
         }
     }
+    $script:MinNodesPerCountry = 0
     $script:csvPath = Join-Path $tempDir "merged.csv"
 
     Merge-RollingPublicationCsv -PreviousCsvEntries @(
@@ -480,7 +476,7 @@ try {
         if ($_.Exception.Message -notmatch 'Publication safety check blocked') { throw }
     }
     $mergeLog = Get-Content -LiteralPath $logPath -Raw
-    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 protected=0 removed=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 protected=0 removed=1 passed=0\.' -or $mergeLog -notmatch 'Country speed floor US >= 2 MB/s: evaluated=3 protected=0 removed=3 passed=0\.') {
+    if ($mergeLog -notmatch 'Country speed floor JP >= 10 MB/s: evaluated=3 fallback=0 below=1 passed=2\.' -or $mergeLog -notmatch 'Country speed floor HK >= 2 MB/s: evaluated=1 fallback=0 below=1 passed=0\.' -or $mergeLog -notmatch 'Country speed floor US >= 2 MB/s: evaluated=3 fallback=0 below=3 passed=0\.') {
         throw 'Country speed floor summaries were not logged.'
     }
 
@@ -515,7 +511,7 @@ try {
         }
     }
     $precisionLog = Get-Content -LiteralPath $logPath -Raw
-    if ($precisionLog -notmatch 'Country speed floor JP >= 0\.001 MB/s: evaluated=1 protected=0 removed=0 passed=1\.') {
+    if ($precisionLog -notmatch 'Country speed floor JP >= 0\.001 MB/s: evaluated=1 fallback=0 below=0 passed=1\.') {
         throw 'Country speed floor log lost three-decimal precision.'
     }
 

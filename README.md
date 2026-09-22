@@ -223,13 +223,15 @@ IntervalDays=1
 每次运行会先下载 GitHub 上当前目标 CSV，把旧节点重新加入 CFST 输入进行复测。最终每个地区执行滚动保鲜：
 
 - 本轮不达标的旧节点会被淘汰。
-- 最终每个国家/地区最多保留 20 个节点；如果本轮有至少 10 个达标的新节点，其中 10 个名额优先按下载速度从高到低选择，其余名额再按低延迟补齐。Windows 可通过 `MinNewNodesPerCountry`、Linux 可通过 `MIN_NEW_NODES_PER_COUNTRY` 调整该保留数。
-- 如果达标新候选不足 10 个，就保留全部达标新候选，再用本轮复测达标的历史节点和其他低延迟节点补满；本轮未返回结果的历史节点不会从旧 CSV 恢复。
+- 最终每个国家/地区最多保留 20 个、尽量至少保留 10 个，不区分新旧节点。先应用正常下载速度门槛；不足 10 个时，从本轮延迟和丢包达标的同地区节点中按延迟从低到高补足，补位节点允许下载速度为 0。Windows 可通过 `MinNodesPerCountry`、Linux 可通过 `MIN_NODES_PER_COUNTRY` 调整保底数量。
+- 如果本轮连延迟合格的候选也不足 10 个，则只发布实际可用的数量；不会恢复本轮未返回结果的历史节点，也不会伪造节点。
 - 发布安全阈值按整份 CSV 的总量判断，防止整机网络波动造成全局异常缩水；单个地区可以正常清除大批已过期节点。
 
 ### 调参
 
 Windows 和 Linux 默认会在 CFST 深度测速前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 30 个新候选。上一轮节点会进入独立的 `previous` 工作项，并把下载测试数设为该端口的全部历史节点数；这样旧节点必须在本轮重新通过延迟、丢包和下载测试才能发布。默认不向 CFST 传入 `-sl`，让 `-dn` 成为固定下载测试上限，速度门槛仍在 CSV 合并阶段执行；需要旧行为时可设置 `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`。
+
+默认下载测速地址仍为 `https://cf.xiu2.xyz/url`，该地址会重定向到公益测速站，站点可用性和地区连通性并不稳定；连接、403 或响应头超时都可能被 CFST 记为 `0.00 MB/s`。Cloudflare 官方下载地址在部分候选 IP 上也可能返回 403，不适合作为未经验证的直接替代。稳定运行建议自建大文件测速地址，并通过 Windows `DownloadTestUrl` 或 Linux `DOWNLOAD_TEST_URL` 覆盖。
 
 临时关闭粗筛或调整参数：
 
@@ -302,7 +304,7 @@ GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -f
 
 ### 国家下载速度下限
 
-默认的国家下载速度下限为 `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`。TW 默认不设国家下载速度下限。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。Windows 严格执行此门槛：发布节点的下载速度必须大于等于对应国家的下限。
+默认的国家下载速度下限为 `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`。TW 默认不设国家下载速度下限。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。速度大于等于下限即为达标，脚本优先发布达标节点；仅当该地区不足默认 10 个时，才用本轮延迟、丢包合格的低延迟节点补位，补位节点不要求下载达标。
 
 默认重点测速范围（focus scope）是 `SG,HK,TW,JP,KR,US,DE,GB`；其中 US 与 TW 会作为独立重点范围测速。脚本先按国家和 IP 去重并保留本轮速度最高的测量，再执行国家下限。新旧节点一视同仁。最终 CSV 的城市栏不再显示来源，而显示一位小数的下载速度，例如 `DE [CD#01 13.1MB/s]`。
 
@@ -431,13 +433,15 @@ Possible sources are `ip.zip`, `cf-bestip`, `ip164746`, `gslege`, `vps789`, `pre
 
 ### Rolling Retest
 
-Each run fetches the current published CSV and fully retests every old node in a dedicated per-port job. Only nodes qualified in the current run can be retained; missing or failing historical rows are never restored from the old CSV. Each country/group keeps at most 20 nodes. When at least 10 qualified new nodes are available, 10 slots are selected by download speed before the remaining slots are filled by low latency. If fewer are available, every qualified new node is retained. Configure this quota with Windows `MinNewNodesPerCountry` or Linux `MIN_NEW_NODES_PER_COUNTRY`.
+Each run fetches the current published CSV and fully retests every old node in a dedicated per-port job. Missing historical rows are never restored. Each country/group keeps at most 20 nodes and, when enough latency-qualified candidates exist, at least 10 regardless of whether they are old or new. The normal speed policy is applied first; a group below 10 is filled by lowest latency from candidates that passed receive, loss, and latency checks, even when their measured download speed is zero. Configure the floor with Windows `MinNodesPerCountry` or Linux `MIN_NODES_PER_COUNTRY`.
 
 The publication safety ratio applies to the total CSV size, protecting against broad probe-host network failures while allowing one expired region to shrink normally.
 
 ### TCP Precheck
 
 Windows and Linux perform a local TCP precheck before CFST deep testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 30 new candidates per region/source group. Previous nodes use a separate full-history job whose download-test count equals that port's historical-node count, so every retained node has a fresh result. By default CFST does not receive `-sl`, so `-dn` is a hard download-test cap; the speed floor is still applied during CSV merging. Restore the old replacement-queue behavior with `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`.
+
+The default download test remains `https://cf.xiu2.xyz/url`. It redirects to community-hosted endpoints whose availability and regional reachability vary; connection failures, HTTP 403 responses, and response-header timeouts can all appear as CFST `0.00 MB/s`. Cloudflare's official download endpoint can also return 403 through some candidate IPs, so it is not an automatically safe replacement. For stable operation, use a self-hosted large file and override Windows `DownloadTestUrl` or Linux `DOWNLOAD_TEST_URL`.
 
 Disable it for one run:
 
@@ -465,7 +469,7 @@ FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### Country Download Speed Floors
 
-The default country download-speed floors are `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`. TW has no country speed floor by default. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. Windows strictly applies each floor: published nodes must be greater than or equal to the corresponding country floor.
+The default country download-speed floors are `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`. TW has no country speed floor by default. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. A value greater than or equal to the floor passes, and passing nodes are preferred. Only when a region has fewer than the default 10 nodes does the runner fill it with the lowest-latency candidates that passed receive, loss, and latency checks, regardless of download speed.
 
 The default focus scope is `SG,HK,TW,JP,KR,US,DE,GB`; TW and US are benchmarked as dedicated focus scopes. The runner first deduplicates each country/IP to its fastest current measurement, then applies the country floor. Old and new candidates compete equally. The final CSV city field shows one-decimal measured speed instead of source, for example `DE [CD#01 13.1MB/s]`.
 

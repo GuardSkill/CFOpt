@@ -25,7 +25,7 @@ param(
     [int]$MinReceived = 1,
     [double]$MinSpeedMbps = 0.03,
     [int]$MaxPerCity = 20,
-    [int]$MinNewNodesPerCountry = 10,
+    [int]$MinNodesPerCountry = 10,
     [int]$CfstThreads = 80,
     [int]$CfstLatencyTestCount = 2,
     [int]$CfstDownloadTestCount = 15,
@@ -1673,11 +1673,6 @@ function Write-MergedFilteredCsv {
                 continue
             }
             $speedMbps = [math]::Round($speed * 8, 2)
-            if ($speedMbps -lt $MinSpeedMbps) {
-                $removed++
-                continue
-            }
-
             $city = ""
             if ($cityByIp.ContainsKey($ip)) {
                 $city = $cityByIp[$ip]
@@ -1721,6 +1716,7 @@ function Write-MergedFilteredCsv {
                 IsPrevious = $PreviousNodeKeys.Contains("$ip|$($item.Port)|$city")
                 Source = $source
                 IsProtected = $false
+                MeetsSpeedPolicy = $false
             })
         }
     }
@@ -1737,60 +1733,47 @@ function Write-MergedFilteredCsv {
         $removed += ($candidateRows.Count - $dedupRows.Count)
     }
 
-    $floorFilteredRows = New-Object System.Collections.Generic.List[object]
     foreach ($cityGroup in @($dedupRows | Group-Object CityKey)) {
         $city = [string]$cityGroup.Name
         $rankedRows = @($cityGroup.Group | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "Ip"; Descending = $false })
         for ($rank = 0; $rank -lt $rankedRows.Count; $rank++) {
             $row = $rankedRows[$rank]
-            if (-not $countryMinSpeedByCode.ContainsKey($city)) {
-                $floorFilteredRows.Add($row)
+            $speedMbps = $row.SpeedNumber * 8
+            if ($speedMbps -lt $MinSpeedMbps) {
                 continue
             }
-
-            $stats = $countrySpeedStats[$city]
-            $stats.Evaluated++
-            if ($row.SpeedNumber -lt $countryMinSpeedByCode[$city]) {
-                $stats.Removed++
-                $removed++
-                continue
+            if ($countryMinSpeedByCode.ContainsKey($city)) {
+                $stats = $countrySpeedStats[$city]
+                $stats.Evaluated++
+                if ($row.SpeedNumber -lt $countryMinSpeedByCode[$city]) {
+                    $stats.Removed++
+                    continue
+                }
+                $stats.Passed++
             }
-            $stats.Passed++
-            $floorFilteredRows.Add($row)
+            $row.MeetsSpeedPolicy = $true
         }
     }
 
-    foreach ($countryCode in @($countryMinSpeedByCode.Keys | Sort-Object)) {
-        $floor = $countryMinSpeedByCode[$countryCode].ToString("R", [System.Globalization.CultureInfo]::InvariantCulture)
-        $stats = $countrySpeedStats[$countryCode]
-        Write-Log "Country speed floor $countryCode >= $floor MB/s: evaluated=$($stats.Evaluated) protected=$($stats.Protected) removed=$($stats.Removed) passed=$($stats.Passed)."
-    }
-
     $keptRows = @(
-        $floorFilteredRows |
+        $dedupRows |
             Group-Object CityKey |
             ForEach-Object {
-                $sortedGroup = @($_.Group | Sort-Object @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "SpeedNumber"; Descending = $true })
-                $protectedRows = @($_.Group | Where-Object { $_.IsProtected } | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false } | Select-Object -First $MaxPerCity)
+                $cityName = [string]$_.Name
+                $allRowsByLatency = @($_.Group | Sort-Object @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "SpeedNumber"; Descending = $true })
+                $sortedGroup = @($allRowsByLatency | Where-Object { $_.MeetsSpeedPolicy })
+                $protectedRows = @($sortedGroup | Where-Object { $_.IsProtected } | Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false } | Select-Object -First $MaxPerCity)
                 $selectedRows = @($protectedRows)
                 $selectedKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
                 foreach ($selected in $selectedRows) {
                     [void]$selectedKeys.Add("$($selected.Ip)|$($selected.Port)|$($selected.CityKey)")
                 }
-                $protectedNewCount = @($protectedRows | Where-Object { -not $_.IsPrevious }).Count
-                $requiredNewCount = [math]::Min($MaxPerCity, [math]::Max(0, $MinNewNodesPerCountry))
-                $newSlots = [math]::Min(
-                    [math]::Max(0, $requiredNewCount - $protectedNewCount),
-                    [math]::Max(0, $MaxPerCity - $selectedRows.Count)
-                )
-                $speedSelectedNewRows = @(
-                    $sortedGroup |
-                        Where-Object { -not $_.IsPrevious -and -not $selectedKeys.Contains("$($_.Ip)|$($_.Port)|$($_.CityKey)") } |
-                        Sort-Object @{ Expression = "SpeedNumber"; Descending = $true }, @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "Ip"; Descending = $false } |
-                        Select-Object -First $newSlots
-                )
-                $selectedRows = @($selectedRows + $speedSelectedNewRows)
-                foreach ($selected in $speedSelectedNewRows) {
+                $remainingGroup = @($sortedGroup | Where-Object { -not $selectedKeys.Contains("$($_.Ip)|$($_.Port)|$($_.CityKey)") })
+                $maxPreviousKeep = [math]::Max(0, [math]::Floor($MaxPerCity * (1 - $RollingReplaceFraction)))
+                $oldRows = @($remainingGroup | Where-Object { $_.IsPrevious } | Select-Object -First ([math]::Min($maxPreviousKeep, [math]::Max(0, $MaxPerCity - $selectedRows.Count))))
+                $newRows = @($remainingGroup | Where-Object { -not $_.IsPrevious } | Select-Object -First ([math]::Max(0, $MaxPerCity - $selectedRows.Count - $oldRows.Count)))
+                $selectedRows = @($selectedRows + $oldRows + $newRows)
+                foreach ($selected in @($oldRows + $newRows)) {
                     [void]$selectedKeys.Add("$($selected.Ip)|$($selected.Port)|$($selected.CityKey)")
                 }
                 if ($selectedRows.Count -lt $MaxPerCity) {
@@ -1801,13 +1784,34 @@ function Write-MergedFilteredCsv {
                     )
                     $selectedRows = @($selectedRows + $fillRows)
                 }
+                $minimumForCity = [math]::Min($MaxPerCity, [math]::Max(0, $MinNodesPerCountry))
+                if ($selectedRows.Count -lt $minimumForCity) {
+                    foreach ($selected in $selectedRows) {
+                        [void]$selectedKeys.Add("$($selected.Ip)|$($selected.Port)|$($selected.CityKey)")
+                    }
+                    $fallbackRows = @(
+                        $allRowsByLatency |
+                            Where-Object { -not $selectedKeys.Contains("$($_.Ip)|$($_.Port)|$($_.CityKey)") } |
+                            Select-Object -First ($minimumForCity - $selectedRows.Count)
+                    )
+                    $selectedRows = @($selectedRows + $fallbackRows)
+                    if ($countrySpeedStats.ContainsKey($cityName)) {
+                        $countrySpeedStats[$cityName].Protected += $fallbackRows.Count
+                    }
+                }
                 $selectedRows
             } |
             Sort-Object CityKey, @{ Expression = "LatencyNumber"; Descending = $false }, @{ Expression = "SpeedNumber"; Descending = $true }
     )
 
-    if ($keptRows.Count -lt $floorFilteredRows.Count) {
-        $removed += ($floorFilteredRows.Count - $keptRows.Count)
+    if ($keptRows.Count -lt $dedupRows.Count) {
+        $removed += ($dedupRows.Count - $keptRows.Count)
+    }
+
+    foreach ($countryCode in @($countryMinSpeedByCode.Keys | Sort-Object)) {
+        $floor = $countryMinSpeedByCode[$countryCode].ToString("R", [System.Globalization.CultureInfo]::InvariantCulture)
+        $stats = $countrySpeedStats[$countryCode]
+        Write-Log "Country speed floor $countryCode >= $floor MB/s: evaluated=$($stats.Evaluated) fallback=$($stats.Protected) below=$($stats.Removed) passed=$($stats.Passed)."
     }
 
     $kept = New-Object System.Collections.Generic.List[string]
@@ -1830,7 +1834,7 @@ function Write-MergedFilteredCsv {
     }
 
     [System.IO.File]::WriteAllLines($csvPath, $kept.ToArray(), (New-Object System.Text.UTF8Encoding($true)))
-    Write-Log "Merged and filtered CSV rows across ports. Kept $($kept.Count - 1), removed $removed. Top $MaxPerCity per country/group. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms, speed >= $MinSpeedMbps Mbps."
+    Write-Log "Merged and filtered CSV rows across ports. Kept $($kept.Count - 1), removed $removed. Top $MaxPerCity per country/group, minimum $MinNodesPerCountry when enough latency-qualified candidates exist. Rules: received >= $MinReceived, loss < 1, latency <= $MaxLatencyMs ms; speed policy may be bypassed only for minimum-count fallback."
 }
 
 function Publish-FileToGitHub {

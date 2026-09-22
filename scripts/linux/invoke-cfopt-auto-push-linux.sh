@@ -22,7 +22,7 @@ MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
 COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
-MIN_NEW_NODES_PER_COUNTRY="${MIN_NEW_NODES_PER_COUNTRY:-10}"
+MIN_NODES_PER_COUNTRY="${MIN_NODES_PER_COUNTRY:-10}"
 ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.20}"
 MIN_PUBLISH_RETENTION_RATIO="${MIN_PUBLISH_RETENTION_RATIO:-0.6}"
 CFST_THREADS="${CFST_THREADS:-80}"
@@ -1072,7 +1072,7 @@ filter_csv() {
   local tmp_csv="$CSV_PATH.filtered" filter_status=0
   rm -f "$COUNTRY_SPEED_STATS_PATH"
   [[ -s "$PREVIOUS_NODE_KEYS_PATH" ]] || printf '__none__\n' > "$PREVIOUS_NODE_KEYS_PATH"
-  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v min_new_nodes_per_country="$MIN_NEW_NODES_PER_COUNTRY" -v test_location_name="$TEST_LOCATION_NAME" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
+  awk -F',' -v max_latency="$MAX_LATENCY_MS" -v min_received="$MIN_RECEIVED" -v min_speed_mbps="$MIN_SPEED_MBPS" -v max_per_city="$MAX_PER_CITY" -v min_nodes_per_country="$MIN_NODES_PER_COUNTRY" -v test_location_name="$TEST_LOCATION_NAME" -v rolling_replace_fraction="$ROLLING_REPLACE_FRACTION" -v country_speed_floors="$COUNTRY_MIN_SPEED_MB_PER_SEC_NORMALIZED" -v country_speed_stats_path="$COUNTRY_SPEED_STATS_PATH" '
     function colo_country(c) {
       if (c ~ /^(NRT|KIX|FUK|OKA)$/) return "JP"; if (c=="SIN") return "SG"; if (c=="HKG") return "HK"; if (c=="ICN") return "KR"
       if (c ~ /^(TPE|KHH)$/) return "TW"; if (c ~ /^(MNL|CEB)$/) return "PH"; if (c ~ /^(SGN|HAN)$/) return "VN"; if (c ~ /^(KUL|PEN)$/) return "MY"
@@ -1118,7 +1118,7 @@ filter_csv() {
       if (actual_country != "") city = actual_country
       if (source ~ /^generic-/ && actual_country == "") { removed++; next }
       speed_mbps = speed * 8
-      if (received >= min_received && loss < 1 && latency <= max_latency && speed_mbps >= min_speed_mbps) {
+      if (received >= min_received && loss < 1 && latency <= max_latency) {
         remark = sprintf("%s [%.0fms %.2fMbps]", city, latency, speed_mbps)
         row = sprintf("%s,%s,%s,%s,true,%s,%s,%s,%s,%s,%s", ip, port, datacenter, remark, sent, received, loss, latency, speed, source)
         key = ip "|" port "|" city
@@ -1130,6 +1130,7 @@ filter_csv() {
           best_speed[dedupe_key] = speed
           best_latency[dedupe_key] = latency
           best_previous[dedupe_key] = is_previous
+          best_global_speed[dedupe_key] = (speed_mbps >= min_speed_mbps) ? 1 : 0
         }
         kept++
       } else {
@@ -1138,7 +1139,7 @@ filter_csv() {
     }
     END {
       for (dedupe_key in best_row) {
-        rows[++count] = sprintf("%s\t%020.6f\t%020.6f\t%d\t%s", best_city[dedupe_key], 999999999-best_speed[dedupe_key], best_latency[dedupe_key], best_previous[dedupe_key], best_row[dedupe_key])
+        rows[++count] = sprintf("%s\t%020.6f\t%020.6f\t%d\t%d\t%s", best_city[dedupe_key], 999999999-best_speed[dedupe_key], best_latency[dedupe_key], best_previous[dedupe_key], best_global_speed[dedupe_key], best_row[dedupe_key])
       }
       for (i = 1; i <= count; i++) {
         for (j = i + 1; j <= count; j++) {
@@ -1153,21 +1154,17 @@ filter_csv() {
         speed = 999999999 - (parts[2] + 0)
         country_rank[city]++
         protected = 0
-        if (city in country_floor) {
+        speed_ok = parts[5] + 0
+        if (speed_ok && city in country_floor) {
           country_evaluated[city]++
           if (speed < country_floor[city]) {
             country_removed[city]++
-            removed++
-            continue
+            speed_ok = 0
           } else {
             country_passed[city]++
           }
         }
-        accepted[++accepted_count] = sprintf("%s\t%020.6f\t%020.6f\t%d\t%d\t%s", city, parts[3] + 0, parts[2] + 0, parts[4] + 0, protected, parts[5])
-      }
-      for (i = 1; i <= country_floor_code_count; i++) {
-        country = country_floor_codes[i]
-        print country "," country_floor_value[country] "," (country_evaluated[country] + 0) "," (country_protected[country] + 0) "," (country_removed[country] + 0) "," (country_passed[country] + 0) > country_speed_stats_path
+        accepted[++accepted_count] = sprintf("%s\t%020.6f\t%020.6f\t%d\t%d\t%d\t%s", city, parts[3] + 0, parts[2] + 0, parts[4] + 0, protected, speed_ok, parts[6])
       }
       if (accepted_count < 1) exit 2
       print "IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps"
@@ -1178,38 +1175,17 @@ filter_csv() {
           }
         }
       }
+      max_previous_keep = int(max_per_city * (1 - rolling_replace_fraction))
       for (i = 1; i <= accepted_count; i++) {
         split(accepted[i], parts, "\t")
         city = parts[1]
         is_previous = parts[4] + 0
         protected = parts[5] + 0
-        if (protected == 1 && selected_total[city] < max_per_city) {
+        speed_ok = parts[6] + 0
+        row = parts[7]
+        if (speed_ok == 1 && protected == 1 && selected_total[city] < max_per_city) {
           selected_total[city]++
-          if (is_previous == 0) selected_new_count[city]++
-          selected_key[parts[6]] = 1
-          selected[++selected_count] = parts[6]
-        }
-      }
-      for (i = 1; i <= accepted_count; i++) {
-        split(accepted[i], parts, "\t")
-        if (parts[4] + 0 == 0 && parts[5] + 0 == 0) {
-          speed_ranked_new[++speed_ranked_new_count] = sprintf("%s\t%s\t%s\t%s", parts[1], parts[3], parts[2], parts[6])
-        }
-      }
-      for (i = 1; i <= speed_ranked_new_count; i++) {
-        for (j = i + 1; j <= speed_ranked_new_count; j++) {
-          if (speed_ranked_new[j] < speed_ranked_new[i]) {
-            tmp = speed_ranked_new[i]; speed_ranked_new[i] = speed_ranked_new[j]; speed_ranked_new[j] = tmp
-          }
-        }
-      }
-      for (i = 1; i <= speed_ranked_new_count; i++) {
-        split(speed_ranked_new[i], parts, "\t")
-        city = parts[1]
-        row = parts[4]
-        if (selected_total[city] < max_per_city && selected_new_count[city] < min_new_nodes_per_country && !(row in selected_key)) {
-          selected_total[city]++
-          selected_new_count[city]++
+          if (is_previous == 1) previous_city_count[city]++
           selected_key[row] = 1
           selected[++selected_count] = row
         }
@@ -1219,15 +1195,45 @@ filter_csv() {
         city = parts[1]
         is_previous = parts[4] + 0
         protected = parts[5] + 0
-        row = parts[6]
-        if (protected == 1 || (row in selected_key)) continue
+        speed_ok = parts[6] + 0
+        row = parts[7]
+        if (speed_ok == 0 || protected == 1 || (row in selected_key)) continue
+        if (selected_total[city] < max_per_city && !(is_previous == 1 && previous_city_count[city] >= max_previous_keep)) {
+          selected_total[city]++
+          if (is_previous == 1) previous_city_count[city]++
+          selected_key[row] = 1
+          selected[++selected_count] = row
+        } else if (is_previous == 1) {
+          overflow_old[++overflow_count] = accepted[i]
+        }
+      }
+      for (i = 1; i <= overflow_count; i++) {
+        split(overflow_old[i], parts, "\t")
+        city = parts[1]
+        row = parts[7]
         if (selected_total[city] < max_per_city) {
           selected_total[city]++
-          if (is_previous == 0) selected_new_count[city]++
           selected_key[row] = 1
           selected[++selected_count] = row
         }
       }
+      for (i = 1; i <= accepted_count; i++) {
+        split(accepted[i], parts, "\t")
+        city = parts[1]
+        speed_ok = parts[6] + 0
+        row = parts[7]
+        if (selected_total[city] < min_nodes_per_country && selected_total[city] < max_per_city && !(row in selected_key)) {
+          selected_total[city]++
+          selected_key[row] = 1
+          selected[++selected_count] = row
+          if (speed_ok == 0 && city in country_floor) country_fallback[city]++
+        }
+      }
+      for (i = 1; i <= country_floor_code_count; i++) {
+        country = country_floor_codes[i]
+        print country "," country_floor_value[country] "," (country_evaluated[country] + 0) "," (country_fallback[country] + 0) "," (country_removed[country] + 0) "," (country_passed[country] + 0) > country_speed_stats_path
+      }
+      if (selected_count < 1) exit 2
       for (i = 1; i <= selected_count; i++) {
           col_count = split(selected[i], cols, ",")
           city = cols[4]
@@ -1269,10 +1275,10 @@ filter_csv() {
     }
   ' "$PREVIOUS_NODE_KEYS_PATH" "$COMBINED_CANDIDATES_PATH" > "$tmp_csv" || filter_status=$?
   if [[ -f "$COUNTRY_SPEED_STATS_PATH" ]]; then
-    local country floor evaluated protected removed passed
-    while IFS=',' read -r country floor evaluated protected removed passed; do
+    local country floor evaluated fallback below passed
+    while IFS=',' read -r country floor evaluated fallback below passed; do
       [[ -n "$country" ]] || continue
-      log "Country speed floor $country >= $floor MB/s: evaluated=$evaluated protected=$protected removed=$removed passed=$passed."
+      log "Country speed floor $country >= $floor MB/s: evaluated=$evaluated fallback=$fallback below=$below passed=$passed."
     done < "$COUNTRY_SPEED_STATS_PATH"
   fi
   if ((filter_status != 0)); then
@@ -1288,7 +1294,7 @@ filter_csv() {
   mv "$tmp_csv" "$CSV_PATH"
   local kept
   kept=$(( $(wc -l < "$CSV_PATH") - 1 ))
-  log "Merged and filtered CSV rows across ports. Kept $kept. Top $MAX_PER_CITY per city/group. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms, speed >= $MIN_SPEED_MBPS Mbps."
+  log "Merged and filtered CSV rows across ports. Kept $kept. Top $MAX_PER_CITY per city/group, minimum $MIN_NODES_PER_COUNTRY when enough latency-qualified candidates exist. Rules: received >= $MIN_RECEIVED, loss < 1, latency <= $MAX_LATENCY_MS ms; speed policy may be bypassed only for minimum-count fallback."
 }
 
 publish_file_to_github() {
