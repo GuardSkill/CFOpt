@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PATH="$ROOT_DIR/tests/bin:$PATH"
 export TARGET_PATH="tests/fixtures/nonexistent.csv"
 export ENABLE_GENERIC_CANDIDATE_POOL=0  # Network-free fixtures; the helper has its own mocked tests.
+export ENABLE_BESTCF_PROBE=0            # Network-free fixtures; bestcf_probe.py has mocked unit tests.
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -480,9 +481,9 @@ test_linux_runner_excludes_focus_countries_from_all_scope() {
   if grep -q '^198\.18\.2\.1$' "$tmp_dir/work/selected-ip-443-all.txt"; then
     fail "all scope should exclude focus country DE"
   fi
-  grep -Eq 'Would run: .*selected-ip-443-all\.txt.* -t 2 -dn 15 -dt 4 ' "$tmp_dir/work/auto-push.log" \
+  grep -Eq 'Would run: .*selected-ip-443-all\.txt.* -t 2 .* -dn 15 -dt 4( |$)' "$tmp_dir/work/auto-push.log" \
     || fail "all scope should use the fast CFST profile"
-  grep -Eq 'Would run: .*selected-ip-443-focus-DE\.txt.* -t 2 -dn 15 -dt 4 ' "$tmp_dir/work/auto-push.log" \
+  grep -Eq 'Would run: .*selected-ip-443-focus-DE\.txt.* -t 2 .* -dn 15 -dt 4( |$)' "$tmp_dir/work/auto-push.log" \
     || fail "focus scope should use the fast CFST profile"
 }
 
@@ -639,6 +640,12 @@ test_focus_scopes_use_fast_download_profile() {
     || fail "Windows focus scopes should default to 15 download candidates"
   grep -q '\[int\]\$FocusCfstDownloadTestTime = 4' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
     || fail "Windows focus scopes should default to a 4-second download test"
+  grep -q 'ENABLE_BESTCF_PROBE="${ENABLE_BESTCF_PROBE:-1}"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should enable the same-origin BestCF probe by default"
+  grep -q '\[bool\]\$EnableBestCfProbe = \$true' "$ROOT_DIR/scripts/windows/Invoke-CFOptAutoPush.ps1" \
+    || fail "Windows runner should enable the same-origin BestCF probe by default"
+  grep -q 'bestcf\.cmliussss\.hidns\.vip/__down?bytes=20000000' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux runner should default to the BestCF same-origin download endpoint"
 }
 
 test_candidate_pool_defaults_are_expanded_before_precheck() {

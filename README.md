@@ -107,9 +107,9 @@ Windows 和 Linux 流程还会从电信入口候选段分层抽样，默认包�
 
 Windows 的 `CandidatePoolMode=adaptive` 与 Linux 的 `CANDIDATE_POOL_MODE=adaptive` 默认启用：地区工作项优先使用 `cf-bestip + gslege + ip164746 + hot-mine`，历史节点由独立任务全量复测；当某个地区/端口不足 20 个候选时自动用 `ip.zip` 补齐，避免冷门地区断档。`hybrid` 保留全部新候选来源，`legacy` 用于回归对照。成都 443 等量 A/B（各 320 个输入、各下载测试 40 个）中，旧池没有节点达到 5 MB/s，自适应池有 11 个达到 5 MB/s，最高 NRT 127.61 MB/s、SIN 38.46 MB/s。
 
-无国家标签的补充源包括 [CMLiu 移动优选 IPv4](https://cf.090227.xyz/cmcc)、[RIPEstat AS13335](https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335) 和 [RIPEstat AS209242](https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS209242)。先从各 ASN 均匀抽样最多 96 个 IPv4 前缀、每日轮换地址并做 TCP 粗筛；然后 `scripts/channel_latency_pool.py` 对新旧渠道分别用 CFST 只测延迟，新渠道使用 HTTPing 获取数据中心码来归国，旧渠道保留原有国家来源信息。按「渠道 × 国家」跨所有端口统一选择延迟前 20 个，加入相应国家的工作项；无法识别国家的新节点不会发布。第二阶段 CFST 按池内延迟排序，默认对每个工作项前 15 个做下载测速，仍需通过原有国家速度门槛和发布安全检查。历史已发布节点的独立全量复测不受 Top 20 截断。Windows 可设置 `GenericPoolMaxPrefixes`、`GenericPoolTopPerSource`（TCP 粗筛上限）、`ChannelLatencyTopPerCountry`；Linux 对应 `GENERIC_POOL_MAX_PREFIXES`、`GENERIC_POOL_TOP_PER_SOURCE`、`CHANNEL_LATENCY_TOP_PER_COUNTRY`。Windows 需要 `python` 命令可用，Linux 需要 `python3`。
+无国家标签的补充源包括 [CMLiu 移动优选 IPv4](https://cf.090227.xyz/cmcc)、[RIPEstat AS13335](https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335) 和 [RIPEstat AS209242](https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS209242)。先从各 ASN 均匀抽样最多 96 个 IPv4 前缀、每日轮换地址并做 TCP 粗筛；然后 `scripts/channel_latency_pool.py` 对新旧渠道分别用 CFST 只测延迟，新渠道使用 HTTPing 请求 BestCF `/ip.json` 获取数据中心码来归国，旧渠道保留原有国家来源信息。按「渠道 × 国家」跨所有端口统一选择延迟前 20 个，加入相应国家的工作项；无法识别国家的新节点不会发布。第二阶段 CFST 只测 TCP 延迟和丢包，再由 `scripts/bestcf_probe.py` 对每个工作项延迟前 15 个请求同一候选域名的 `/ip.json` 与 `/__down`，确认最终 Colo/国家并测量下载速度。历史已发布节点仍会全部复测。Windows 可设置 `GenericPoolMaxPrefixes`、`GenericPoolTopPerSource`（TCP 粗筛上限）、`ChannelLatencyTopPerCountry`；Linux 对应 `GENERIC_POOL_MAX_PREFIXES`、`GENERIC_POOL_TOP_PER_SOURCE`、`CHANNEL_LATENCY_TOP_PER_COUNTRY`。Windows 需要 `python` 命令可用，Linux 需要 `python3`。
 
-最终地区以 CFST 返回的 Cloudflare Colo 为准，例如 `NRT/KIX→JP`、`SIN→SG`、`HKG→HK`、`ICN→KR`、`FRA/TXL→DE`、`LHR→GB`、`AMS→NL`、`LAX/SJC/SEA→US`。上一轮节点也按 Colo 重新归类后参与热前缀学习和发布保护，避免把 `SIN` 节点沿用为 `JP/GB`。DE、HK、KR 默认分别使用 3、2、3 倍热前缀探索预算，Windows 可通过 `HotPrefixCountryMultipliers`、Linux 可通过 `HOT_PREFIX_COUNTRY_MULTIPLIERS` 调整。
+最终地区以同一候选 `/ip.json` 返回的 Cloudflare Colo 为准，例如 `NRT/KIX→JP`、`SIN→SG`、`HKG→HK`、`ICN→KR`、`FRA/TXL→DE`、`LHR→GB`、`AMS→NL`、`LAX/SJC/SEA→US`。上一轮节点也按 Colo 重新归类后参与热前缀学习和发布保护，避免把 `SIN` 节点沿用为 `JP/GB`。DE、HK、KR 默认分别使用 3、2、3 倍热前缀探索预算，Windows 可通过 `HotPrefixCountryMultipliers`、Linux 可通过 `HOT_PREFIX_COUNTRY_MULTIPLIERS` 调整。
 
 `vps789` 的 `cfIpApi.data.CT` 当前返回的电信候选很少，所以默认关闭。需要时手动开启：
 
@@ -143,20 +143,19 @@ HK,TW,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US
 SG,HK,TW,JP,KR,US,DE,GB
 ```
 
-默认 CFST 参数：
+默认 CFST 延迟阶段参数：
 
 ```text
 -n 80
 -t 2
--dn 10
--dt 4
+-dd
 -tl 420
 -tlr 0
 -sl 0
 -p 0
 ```
 
-普通与重点地区默认使用同一套快速参数；仍可通过 `Cfst*` / `FocusCfst*` 参数或对应的 `CFST_*` / `FOCUS_CFST_*` 环境变量分别覆盖。
+下载阶段默认对普通与重点工作项的延迟前 15 个节点并发请求 20 MB 的同源 `/__down`，单节点最多 4 秒；历史工作项全部复测。仍可通过 `CfstDownloadTestCount` / `FocusCfstDownloadTestCount`、`CfstDownloadTestTime` / `FocusCfstDownloadTestTime` 或对应 Linux 环境变量覆盖。
 
 默认外层 CFST 任务串行运行：
 
@@ -229,9 +228,9 @@ IntervalDays=1
 
 ### 调参
 
-Windows 和 Linux 默认会在 CFST 深度测速前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 30 个新候选。上一轮节点会进入独立的 `previous` 工作项，并把下载测试数设为该端口的全部历史节点数；这样旧节点必须在本轮重新通过延迟、丢包和下载测试才能发布。默认不向 CFST 传入 `-sl`，让 `-dn` 成为固定下载测试上限，速度门槛仍在 CSV 合并阶段执行；需要旧行为时可设置 `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`。
+Windows 和 Linux 默认会在 CFST 延迟测试前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 30 个新候选。上一轮节点会进入独立的 `previous` 工作项，并由 BestCF 阶段全部下载复测；这样旧节点必须在本轮重新通过延迟、丢包和下载测试才能发布。
 
-默认下载测速地址仍为 `https://cf.xiu2.xyz/url`，该地址会重定向到公益测速站，站点可用性和地区连通性并不稳定；连接、403 或响应头超时都可能被 CFST 记为 `0.00 MB/s`。Cloudflare 官方下载地址在部分候选 IP 上也可能返回 403，不适合作为未经验证的直接替代。稳定运行建议自建大文件测速地址，并通过 Windows `DownloadTestUrl` 或 Linux `DOWNLOAD_TEST_URL` 覆盖。
+默认启用 BestCF 同源测速：候选 IP 被编码为专属测试域名，先请求 `/ip.json` 确认 Colo/国家，再请求同一域名的 `/__down?bytes=20000000` 流式计速。详细结果写入工作目录的 `bestcf-probe-diagnostics.csv`，其中会分别标记 `http_error`、`timeout`、`dns_error`、`tls_error`、`no_data` 和有实际响应数据但未达到门槛的 `low_speed`，并列出渠道预判与最终确认国家的差异。无法通过 `/ip.json` 确认身份的节点不会进入发布保底；已经确认国家但下载失败的节点仍可按低延迟规则补位。可用 Windows `EnableBestCfProbe` / Linux `ENABLE_BESTCF_PROBE` 关闭并退回 CFST 内置下载模式；测速域后缀可通过 `BestCfProbeHostSuffix` / `BESTCF_PROBE_HOST_SUFFIX` 覆盖。
 
 临时关闭粗筛或调整参数：
 
@@ -255,7 +254,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CF
 FORCE=1 CFST_DOWNLOAD_TEST_COUNT=100 CFST_DOWNLOAD_TEST_TIME=20 CFST_LOSS_RATE_LIMIT=0 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-如果下载速度全是 `0.00 MB/s`，开启调试：
+如果下载测速失败或全是 `0.00 MB/s`，先查看工作目录中的 `bestcf-probe-diagnostics.csv`；它会列出 HTTP 状态、失败分类、实际接收字节和已确认的 Colo/国家。需要继续检查前置延迟阶段时再开启 CFST 调试：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
@@ -395,20 +394,19 @@ Default ports:
 443,2053,2083,2087,2096,8443
 ```
 
-Default CFST parameters:
+Default CFST latency-stage parameters:
 
 ```text
 -n 80
 -t 2
--dn 10
--dt 4
+-dd
 -tl 420
 -tlr 0
 -sl 0
 -p 0
 ```
 
-All and focus scopes use the same fast defaults. They can still be overridden independently through the `Cfst*` / `FocusCfst*` parameters or matching `CFST_*` / `FOCUS_CFST_*` environment variables.
+The download stage probes the 15 lowest-latency candidates in each normal or focus work item through a same-origin 20 MB `/__down` response for up to four seconds per candidate. Historical work items are fully retested. The count and duration remain configurable through the `Cfst*` / `FocusCfst*` parameters or matching Linux environment variables.
 
 The final CSV keeps the Top 20 rows per region/group.
 
@@ -439,9 +437,9 @@ The publication safety ratio applies to the total CSV size, protecting against b
 
 ### TCP Precheck
 
-Windows and Linux perform a local TCP precheck before CFST deep testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 30 new candidates per region/source group. Previous nodes use a separate full-history job whose download-test count equals that port's historical-node count, so every retained node has a fresh result. By default CFST does not receive `-sl`, so `-dn` is a hard download-test cap; the speed floor is still applied during CSV merging. Restore the old replacement-queue behavior with `CfstEnforceSpeedLimit=true` / `CFST_ENFORCE_SPEED_LIMIT=1`.
+Windows and Linux perform a local TCP precheck before CFST latency testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 30 new candidates per region/source group. Previous nodes use a separate full-history job and are all download-tested by the BestCF stage, so every retained historical node has a fresh result.
 
-The default download test remains `https://cf.xiu2.xyz/url`. It redirects to community-hosted endpoints whose availability and regional reachability vary; connection failures, HTTP 403 responses, and response-header timeouts can all appear as CFST `0.00 MB/s`. Cloudflare's official download endpoint can also return 403 through some candidate IPs, so it is not an automatically safe replacement. For stable operation, use a self-hosted large file and override Windows `DownloadTestUrl` or Linux `DOWNLOAD_TEST_URL`.
+The default is now a same-origin BestCF probe. Each candidate IP is encoded into its own test hostname; `/ip.json` confirms Colo/country and `/__down?bytes=20000000` measures streamed throughput through that same hostname. `bestcf-probe-diagnostics.csv` distinguishes `http_error`, `timeout`, `dns_error`, `tls_error`, `no_data`, and successful transfers that are genuinely below policy as `low_speed`, while also recording source-country versus confirmed-country differences. Candidates whose identity cannot be confirmed by `/ip.json` are ineligible even for the minimum-count fallback; confirmed candidates whose download fails may still fill that fallback by latency. Disable it with Windows `EnableBestCfProbe` or Linux `ENABLE_BESTCF_PROBE` to restore CFST's built-in download mode. Override the service with `BestCfProbeHostSuffix` / `BESTCF_PROBE_HOST_SUFFIX` when using a compatible self-hosted endpoint.
 
 Disable it for one run:
 
@@ -457,7 +455,7 @@ The tuning pairs are `TcpPrecheckMinCandidates` / `TCP_PRECHECK_MIN_CANDIDATES`,
 
 ### Debugging
 
-If every download speed is `0.00 MB/s`, enable CFST debug output:
+If download tests fail or report zero, inspect `bestcf-probe-diagnostics.csv`. It records a separate status, HTTP response, confirmed country/Colo, transferred byte count, duration, and measured speed for every probed candidate. CFST debug remains useful for the preceding latency stage:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\windows\Invoke-CFOptAutoPush.ps1" -Force -CfstDebug
@@ -497,4 +495,4 @@ Disable Linux country floors:
 FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-The default outer CFST concurrency is one process (`MaxParallelCfst=1` / `MAX_PARALLEL_CFST=1`) to avoid saturating an approximately `80 MB/s` access link with simultaneous download tests. Increase it only with appropriate available bandwidth.
+The default outer CFST concurrency is one process (`MaxParallelCfst=1` / `MAX_PARALLEL_CFST=1`). BestCF download probes use four workers by default (`BestCfProbeConcurrency=4` / `BESTCF_PROBE_CONCURRENCY=4`); increase that only when the runner has enough spare bandwidth.

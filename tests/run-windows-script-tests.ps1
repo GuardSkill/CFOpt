@@ -246,13 +246,15 @@ try {
     }
     $allArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "all"; Port = 443; SelectedIpPath = "all.txt"; CsvPath = "all.csv" })) -join " "
     $focusArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "focus-DE"; Port = 443; SelectedIpPath = "focus.txt"; CsvPath = "focus.csv" })) -join " "
-    if ($allArgs -notmatch '(?:^| )-t 2 -dn 15 -dt 4(?: |$)' -or $focusArgs -notmatch '(?:^| )-t 2 -dn 15 -dt 4(?: |$)') {
-        throw "Windows all and focus scopes must build the fast CFST argument profile."
+    if ($allArgs -notmatch '(?:^| )-t 2(?: |$)' -or $allArgs -notmatch '(?:^| )-dd(?: |$)' -or $focusArgs -notmatch '(?:^| )-dd(?: |$)' -or $allArgs -match '(?:^| )-dn(?: |$)') {
+        throw "Windows CFST stage must measure latency only when the BestCF probe is enabled."
     }
+    $script:EnableBestCfProbe = $false
     $previousArgs = @(Get-CfstArguments -Item ([pscustomobject]@{ Scope = "previous"; Port = 443; SelectedIpPath = "previous.txt"; CsvPath = "previous.csv"; DownloadTestCount = 37 })) -join " "
     if ($previousArgs -notmatch '(?:^| )-dn 37(?: |$)') {
-        throw "Historical-node work items must download-test every selected node."
+        throw "Legacy historical-node work items must download-test every selected node."
     }
+    $script:EnableBestCfProbe = $true
     if ((Get-PositiveTcpPrecheckValue -Value 0 -Fallback 1) -ne 1 -or (Get-PositiveTcpPrecheckValue -Value 32 -Fallback 1) -ne 32) {
         throw "TCP precheck values must be normalized to positive integers."
     }

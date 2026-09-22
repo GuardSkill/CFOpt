@@ -5,7 +5,11 @@ param(
     [string[]]$Countries = @("HK", "TW", "JP", "KR", "SG", "PH", "VN", "MY", "KZ", "MN", "IE", "US", "DE", "GB", "NL", "IT"),
     [int]$Port = 0,
     [string]$Ports = "443,2053,2083,2087,2096,8443",
-    [string]$DownloadTestUrl = "https://cf.xiu2.xyz/url",
+    [string]$DownloadTestUrl = "https://671F0401.bestcf.cmliussss.hidns.vip/__down?bytes=20000000",
+    [bool]$EnableBestCfProbe = $true,
+    [string]$BestCfProbeHostSuffix = "bestcf.cmliussss.hidns.vip",
+    [string]$BestCfIdentityTestUrl = "https://671F0401.bestcf.cmliussss.hidns.vip/ip.json",
+    [int]$BestCfProbeConcurrency = 4,
     [string]$Owner = "GuardSkill",
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
@@ -1417,7 +1421,8 @@ function Invoke-ChannelLatencyPool {
     [System.IO.File]::WriteAllLines($manifest, [string[]]$lines, [System.Text.Encoding]::UTF8)
     $genericPath = Join-Path $WorkDir 'generic-candidates.csv'
     $stderrPath = Join-Path $WorkDir 'channel-latency-stderr.log'
-    $arguments = Join-ProcessArguments -Arguments @($helper, '--work-items', $manifest, '--generic', $genericPath, '--cfst', $CfstPath, '--workdir', $WorkDir, '--url', $DownloadTestUrl, '--max-latency', ([string]$MaxLatencyMs), '--latency-tests', ([string]$CfstLatencyTestCount), '--top-per-channel-country', ([string]$ChannelLatencyTopPerCountry))
+    $latencyUrl = if ($EnableBestCfProbe) { $BestCfIdentityTestUrl } else { $DownloadTestUrl }
+    $arguments = Join-ProcessArguments -Arguments @($helper, '--work-items', $manifest, '--generic', $genericPath, '--cfst', $CfstPath, '--workdir', $WorkDir, '--url', $latencyUrl, '--max-latency', ([string]$MaxLatencyMs), '--latency-tests', ([string]$CfstLatencyTestCount), '--top-per-channel-country', ([string]$ChannelLatencyTopPerCountry))
     if ($UseProxyForCfst) { $arguments += ' --use-proxy-for-cfst' }
     $process = Start-Process -FilePath (Get-Command $GenericPoolPython).Source -ArgumentList $arguments -RedirectStandardError $stderrPath -NoNewWindow -Wait -PassThru
     if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath | ForEach-Object { Write-Log "channel-latency: $_" } }
@@ -1442,21 +1447,24 @@ function Get-CfstArguments {
         "-o", $Item.CsvPath,
         "-n", ([string]$CfstThreads),
         "-t", ([string]$CfstLatencyTestCount),
-        "-dn", ([string]$downloadTestCount),
-        "-dt", ([string]$downloadTestTime),
         "-tl", ([string]$MaxLatencyMs),
         "-tlr", ($CfstLossRateLimit.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture)),
         "-p", "0"
     )
+    if ($EnableBestCfProbe) {
+        $arguments += "-dd"
+    }
+    else {
+        $arguments += @("-dn", ([string]$downloadTestCount), "-dt", ([string]$downloadTestTime))
+    }
     if ($Item.Port -ne 443) {
         $arguments += @("-tp", ([string]$Item.Port))
     }
-    if (-not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
+    if (-not $EnableBestCfProbe -and -not [string]::IsNullOrWhiteSpace($DownloadTestUrl)) {
         $arguments += @("-url", $DownloadTestUrl)
     }
-    # CFST keeps extending the download queue when -sl is set until -dn rows
-    # pass the floor. Apply the same floor after CSV merge instead so -dn is a
-    # hard upper bound for each work item.
+    # In legacy mode CFST keeps extending the download queue when -sl is set.
+    # Apply speed policy after merge; BestCF mode owns the download stage.
     if ($CfstEnforceSpeedLimit -and $MinSpeedMbps -gt 0) {
         $arguments += @("-sl", $MinSpeedMbps.ToString("0.##", [System.Globalization.CultureInfo]::InvariantCulture))
     }
@@ -1464,6 +1472,40 @@ function Get-CfstArguments {
         $arguments += "-debug"
     }
     return $arguments
+}
+
+function Invoke-BestCfProbes {
+    param([object[]]$WorkItems)
+
+    if (-not $EnableBestCfProbe) { return }
+    $helper = Join-Path $repoRoot 'scripts\bestcf_probe.py'
+    $pythonCommand = Get-Command $GenericPoolPython -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $helper) -or $null -eq $pythonCommand) {
+        throw 'BestCF probing requires Python and scripts/bestcf_probe.py.'
+    }
+    $diagnosticsPath = Join-Path $WorkDir 'bestcf-probe-diagnostics.csv'
+    if (Test-Path -LiteralPath $diagnosticsPath) { Remove-Item -LiteralPath $diagnosticsPath -Force }
+    foreach ($item in $WorkItems) {
+        if (-not (Test-Path -LiteralPath $item.CsvPath)) { continue }
+        $downloadTestCount = if ([string]$item.Scope -like 'focus-*') { $FocusCfstDownloadTestCount } else { $CfstDownloadTestCount }
+        $downloadTestTime = if ([string]$item.Scope -like 'focus-*') { $FocusCfstDownloadTestTime } else { $CfstDownloadTestTime }
+        if ($item.PSObject.Properties.Name -contains 'DownloadTestCount' -and [int]$item.DownloadTestCount -gt 0) {
+            $downloadTestCount = [int]$item.DownloadTestCount
+        }
+        $stdoutPath = Join-Path $WorkDir "bestcf-$($item.Port)-$($item.Scope)-stdout.log"
+        $stderrPath = Join-Path $WorkDir "bestcf-$($item.Port)-$($item.Scope)-stderr.log"
+        $arguments = Join-ProcessArguments -Arguments @(
+            $helper, '--csv', $item.CsvPath, '--map', $item.MapPath, '--diagnostics', $diagnosticsPath,
+            '--port', ([string]$item.Port), '--scope', ([string]$item.Scope), '--limit', ([string]$downloadTestCount),
+            '--duration', ([string]$downloadTestTime), '--concurrency', ([string]$BestCfProbeConcurrency),
+            '--host-suffix', $BestCfProbeHostSuffix, '--min-speed-mbps', $MinSpeedMbps.ToString('R', [System.Globalization.CultureInfo]::InvariantCulture),
+            '--country-speed-floors', $CountryMinSpeedMBPerSec
+        )
+        $process = Start-Process -FilePath $pythonCommand.Source -ArgumentList $arguments -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -NoNewWindow -Wait -PassThru
+        if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath | ForEach-Object { Write-Log $_ } }
+        if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath | ForEach-Object { Write-Log "bestcf[$($item.Port)/$($item.Scope)] stderr: $_" } }
+        if ($process.ExitCode -ne 0) { throw "BestCF probe exited with code $($process.ExitCode) for port $($item.Port) scope $($item.Scope)." }
+    }
 }
 
 function Start-CfstProcesses {
@@ -1830,7 +1872,7 @@ function Write-MergedFilteredCsv {
     }
 
     if ($kept.Count -le 1) {
-        throw "Filtering removed all CSV rows. Check MaxLatencyMs=$MaxLatencyMs, MinReceived=$MinReceived, and MinSpeedMbps=$MinSpeedMbps. If cfst reports 0.00 MB/s, rerun with -CfstDebug."
+        throw "Filtering removed all CSV rows. Check MaxLatencyMs=$MaxLatencyMs, MinReceived=$MinReceived, and MinSpeedMbps=$MinSpeedMbps. Inspect bestcf-probe-diagnostics.csv for identity/download failures."
     }
 
     [System.IO.File]::WriteAllLines($csvPath, $kept.ToArray(), (New-Object System.Text.UTF8Encoding($true)))
@@ -2068,6 +2110,7 @@ try {
 
     $running = @(Start-CfstProcesses -WorkItems $workItems)
     Wait-CfstProcesses -Running $running
+    Invoke-BestCfProbes -WorkItems $workItems
     Write-MergedFilteredCsv -WorkItems $workItems -PreviousNodeKeys $previousNodeKeys
     Merge-RollingPublicationCsv -PreviousCsvEntries $previousCsvEntries
     Assert-PublicationSafety -PreviousCsvEntries $previousCsvEntries

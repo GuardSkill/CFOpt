@@ -8,7 +8,11 @@ WORK_DIR="${WORK_DIR:-$HOME/cfopt-auto-push}"
 CFST_PATH="${CFST_PATH:-$WORK_DIR/cfst}"
 PORT="${PORT:-}"
 PORTS="${PORTS:-443,2053,2083,2087,2096,8443}"
-DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://cf.xiu2.xyz/url}"
+DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://671F0401.bestcf.cmliussss.hidns.vip/__down?bytes=20000000}"
+ENABLE_BESTCF_PROBE="${ENABLE_BESTCF_PROBE:-1}"
+BESTCF_PROBE_HOST_SUFFIX="${BESTCF_PROBE_HOST_SUFFIX:-bestcf.cmliussss.hidns.vip}"
+BESTCF_IDENTITY_TEST_URL="${BESTCF_IDENTITY_TEST_URL:-https://671F0401.bestcf.cmliussss.hidns.vip/ip.json}"
+BESTCF_PROBE_CONCURRENCY="${BESTCF_PROBE_CONCURRENCY:-4}"
 COUNTRIES_CSV="${COUNTRIES_CSV:-HK,TW,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"
 OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
@@ -108,6 +112,8 @@ CT_ENTRY_PATH="$WORK_DIR/ct-entry-candidates.csv"
 GENERIC_POOL_PATH="$WORK_DIR/generic-candidates.csv"
 GENERIC_POOL_SCRIPT="${GENERIC_POOL_SCRIPT:-$ROOT_DIR/scripts/generic_candidate_pool.py}"
 CHANNEL_LATENCY_SCRIPT="${CHANNEL_LATENCY_SCRIPT:-$ROOT_DIR/scripts/channel_latency_pool.py}"
+BESTCF_PROBE_SCRIPT="${BESTCF_PROBE_SCRIPT:-$ROOT_DIR/scripts/bestcf_probe.py}"
+BESTCF_PROBE_DIAGNOSTICS_PATH="${BESTCF_PROBE_DIAGNOSTICS_PATH:-$WORK_DIR/bestcf-probe-diagnostics.csv}"
 CHANNEL_LATENCY_TOP_PER_COUNTRY="${CHANNEL_LATENCY_TOP_PER_COUNTRY:-20}"
 ADAPTIVE_POOL_SCRIPT="${ADAPTIVE_POOL_SCRIPT:-$ROOT_DIR/scripts/adaptive_pool.py}"
 STATE_FILE="$WORK_DIR/last-success.txt"
@@ -981,16 +987,20 @@ start_cfst_for_port() {
   if [[ "$scope" == "previous" ]]; then
     download_test_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
   fi
-  local args=(-f "$selected_ip_path" -o "$csv_path" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$download_test_count" -dt "$download_test_time" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
+  local args=(-f "$selected_ip_path" -o "$csv_path" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
+  if [[ "$ENABLE_BESTCF_PROBE" == "1" ]]; then
+    args+=(-dd)
+  else
+    args+=(-dn "$download_test_count" -dt "$download_test_time")
+  fi
 
   if [[ "$port" != "443" ]]; then
     args+=(-tp "$port")
   fi
-  if [[ -n "$DOWNLOAD_TEST_URL" ]]; then
+  if [[ "$ENABLE_BESTCF_PROBE" != "1" && -n "$DOWNLOAD_TEST_URL" ]]; then
     args+=(-url "$DOWNLOAD_TEST_URL")
   fi
-  # Without -sl, -dn is a hard download-test cap. The merged CSV filter below
-  # still applies MIN_SPEED_MBPS, avoiding CFST's unbounded replacement queue.
+  # Speed policy is applied after merge. In BestCF mode CFST only owns latency.
   if [[ "$CFST_ENFORCE_SPEED_LIMIT" == "1" ]] && awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
     args+=(-sl "$MIN_SPEED_MBPS")
   fi
@@ -1010,6 +1020,33 @@ start_cfst_for_port() {
   fi
   printf '%s,%s,%s,%s,%s\n' "$port" "$scope" "$!" "$csv_path" "$selected_ip_path" >> "$WORK_DIR/cfst-processes.csv"
   LAST_CFST_RECORD="$port,$scope,$!,$csv_path,$selected_ip_path"
+}
+
+run_bestcf_probes() {
+  [[ "$ENABLE_BESTCF_PROBE" == "1" ]] || return 0
+  [[ -f "$BESTCF_PROBE_SCRIPT" ]] || { log "ERROR: BestCF probe helper not found: $BESTCF_PROBE_SCRIPT"; return 1; }
+  rm -f "$BESTCF_PROBE_DIAGNOSTICS_PATH"
+  local port scope selected_ip_path map_path safe_scope csv_path download_test_count download_test_time
+  while IFS=',' read -r port scope selected_ip_path map_path; do
+    safe_scope="${scope//[^A-Za-z0-9_-]/_}"
+    csv_path="$WORK_DIR/CloudflareSpeedTest-$port-$safe_scope.csv"
+    [[ -f "$csv_path" ]] || continue
+    download_test_count="$CFST_DOWNLOAD_TEST_COUNT"
+    download_test_time="$CFST_DOWNLOAD_TEST_TIME"
+    if [[ "$scope" == focus-* ]]; then
+      download_test_count="$FOCUS_CFST_DOWNLOAD_TEST_COUNT"
+      download_test_time="$FOCUS_CFST_DOWNLOAD_TEST_TIME"
+    elif [[ "$scope" == "previous" ]]; then
+      download_test_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
+    fi
+    python3 "$BESTCF_PROBE_SCRIPT" \
+      --csv "$csv_path" --map "$map_path" --diagnostics "$BESTCF_PROBE_DIAGNOSTICS_PATH" \
+      --port "$port" --scope "$scope" --limit "$download_test_count" --duration "$download_test_time" \
+      --concurrency "$BESTCF_PROBE_CONCURRENCY" --host-suffix "$BESTCF_PROBE_HOST_SUFFIX" \
+      --min-speed-mbps "$MIN_SPEED_MBPS" --country-speed-floors "$COUNTRY_MIN_SPEED_MB_PER_SEC" \
+      2> >(awk -v prefix="bestcf[$port/$scope] stderr: " '{ print prefix $0 }' | tee -a "$LOG_FILE" >&2) \
+      | tee -a "$LOG_FILE"
+  done < "$WORK_DIR/port-work-items.csv"
 }
 
 wait_cfst_record() {
@@ -1282,12 +1319,12 @@ filter_csv() {
     done < "$COUNTRY_SPEED_STATS_PATH"
   fi
   if ((filter_status != 0)); then
-    log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
+    log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. Inspect bestcf-probe-diagnostics.csv for identity/download failures."
     rm -f "$tmp_csv"
     return 1
   fi
   if [[ ! -s "$tmp_csv" ]]; then
-    log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. If cfst reports 0.00 MB/s, rerun with CFST_DEBUG=1."
+    log "ERROR: Filtering removed all CSV rows. Check MAX_LATENCY_MS=$MAX_LATENCY_MS, MIN_RECEIVED=$MIN_RECEIVED, and MIN_SPEED_MBPS=$MIN_SPEED_MBPS. Inspect bestcf-probe-diagnostics.csv for identity/download failures."
     rm -f "$tmp_csv"
     return 1
   fi
@@ -1469,7 +1506,9 @@ main() {
   while IFS=',' read -r port_value _scope selected_ip_path map_path; do
     apply_tcp_precheck "$port_value" "$selected_ip_path" "$map_path"
   done < "$WORK_DIR/port-work-items.csv"
-  local -a channel_args=(--work-items "$WORK_DIR/port-work-items.csv" --generic "$GENERIC_POOL_PATH" --cfst "$CFST_PATH" --workdir "$WORK_DIR" --url "$DOWNLOAD_TEST_URL" --max-latency "$MAX_LATENCY_MS" --latency-tests "$CFST_LATENCY_TEST_COUNT" --top-per-channel-country "$CHANNEL_LATENCY_TOP_PER_COUNTRY")
+  local channel_latency_url="$DOWNLOAD_TEST_URL"
+  [[ "$ENABLE_BESTCF_PROBE" == "1" ]] && channel_latency_url="$BESTCF_IDENTITY_TEST_URL"
+  local -a channel_args=(--work-items "$WORK_DIR/port-work-items.csv" --generic "$GENERIC_POOL_PATH" --cfst "$CFST_PATH" --workdir "$WORK_DIR" --url "$channel_latency_url" --max-latency "$MAX_LATENCY_MS" --latency-tests "$CFST_LATENCY_TEST_COUNT" --top-per-channel-country "$CHANNEL_LATENCY_TOP_PER_COUNTRY")
   if [[ "$USE_PROXY_FOR_CFST" == "1" ]]; then
     channel_args+=(--use-proxy-for-cfst)
   fi
@@ -1496,9 +1535,14 @@ main() {
       if [[ "$scope" == "previous" ]]; then
         download_test_count="$(grep -vcE '^[[:space:]]*(#|$)' "$selected_ip_path" || true)"
       fi
-      args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value-$safe_scope.csv" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -dn "$download_test_count" -dt "$download_test_time" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
+      args=(-f "$selected_ip_path" -o "$WORK_DIR/CloudflareSpeedTest-$port_value-$safe_scope.csv" -n "$CFST_THREADS" -t "$CFST_LATENCY_TEST_COUNT" -tl "$MAX_LATENCY_MS" -tlr "$CFST_LOSS_RATE_LIMIT" -p 0)
+      if [[ "$ENABLE_BESTCF_PROBE" == "1" ]]; then
+        args+=(-dd)
+      else
+        args+=(-dn "$download_test_count" -dt "$download_test_time")
+      fi
       [[ "$port_value" != "443" ]] && args+=(-tp "$port_value")
-      [[ -n "$DOWNLOAD_TEST_URL" ]] && args+=(-url "$DOWNLOAD_TEST_URL")
+      [[ "$ENABLE_BESTCF_PROBE" != "1" && -n "$DOWNLOAD_TEST_URL" ]] && args+=(-url "$DOWNLOAD_TEST_URL")
       if [[ "$CFST_ENFORCE_SPEED_LIMIT" == "1" ]] && awk "BEGIN { exit !($MIN_SPEED_MBPS > 0) }"; then
         args+=(-sl "$MIN_SPEED_MBPS")
       fi
@@ -1533,6 +1577,7 @@ main() {
   if (( cfst_failed != 0 )); then
     exit 1
   fi
+  run_bestcf_probes
   build_combined_candidates
   filter_csv
   if [[ -s "$PREVIOUS_CSV_PATH" && -f "$ADAPTIVE_POOL_SCRIPT" ]]; then
