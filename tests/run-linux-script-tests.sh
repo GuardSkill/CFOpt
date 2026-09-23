@@ -614,6 +614,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Linux runner must publish CMCC_BJ.csv"
   grep -q '\-AutoDetectNetworkIsp' "$workflow" \
     || fail "Windows runner must select CTC_CD.csv or CMCC_CD.csv from the detected carrier"
+  grep -q 'uses: actions/setup-python@v5' "$workflow" \
+    || fail "Windows workflow must install Python for ranking and BestCF probes"
   grep -q 'GITHUB_TOKEN_CFOPT:.*github.token' "$workflow" \
     || fail "workflow must publish with the scoped Actions token"
   grep -q 'permissions:' "$workflow" && grep -q 'contents: write' "$workflow" \
@@ -625,6 +627,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Sichuan runner must publish CMCC_SC.csv"
   grep -q 'GITHUB_TOKEN_CFOPT:.*github.token' "$sc_workflow" \
     || fail "Sichuan workflow must pass its scoped token to the runner process"
+  grep -q 'uses: actions/setup-python@v5' "$sc_workflow" \
+    || fail "Sichuan workflow must install Python for ranking and BestCF probes"
   grep -q "isp.Isp -ne 'ChinaMobile'" "$sc_workflow" \
     || fail "Sichuan runner must reject non-CMCC networks"
   [[ "$(grep -Fc 'shell: powershell -NoProfile -ExecutionPolicy Bypass -Command' "$sc_workflow")" -eq 2 ]] \

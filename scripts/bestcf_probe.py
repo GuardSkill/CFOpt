@@ -16,6 +16,26 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from adaptive_pool import COLO_COUNTRY
 
 
+class DirectHTTPSConnection(http.client.HTTPSConnection):
+    """Connect to the candidate IP while retaining the BestCF hostname for TLS."""
+
+    def __init__(self, ip, host, port, timeout):
+        super().__init__(host, port, timeout=timeout)
+        self.candidate_ip = ip
+
+    def connect(self):
+        # Resolving the per-IP wildcard hostname can block outside Python's
+        # socket timeout on Windows. The hostname encodes the destination IP,
+        # so connect to that IP directly and use the hostname only as TLS SNI.
+        raw_socket = socket.create_connection(
+            (self.candidate_ip, self.port), self.timeout, self.source_address
+        )
+        if self._tunnel_host:
+            self.sock = raw_socket
+            self._tunnel()
+        self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
+
+
 def candidate_host(ip, suffix):
     address = ipaddress.ip_address(ip)
     if isinstance(address, ipaddress.IPv4Address):
@@ -37,7 +57,7 @@ def classify_exception(error):
 
 def request_identity(ip, port, suffix, timeout):
     host = candidate_host(ip, suffix)
-    connection = http.client.HTTPSConnection(host, port, timeout=timeout)
+    connection = DirectHTTPSConnection(ip, host, port, timeout)
     started = time.monotonic()
     try:
         connection.request("GET", f"/ip.json?_t={time.time_ns()}", headers={"Cache-Control": "no-cache"})
@@ -59,7 +79,7 @@ def request_identity(ip, port, suffix, timeout):
 
 def request_download(ip, port, suffix, byte_count, duration, timeout):
     host = candidate_host(ip, suffix)
-    connection = http.client.HTTPSConnection(host, port, timeout=timeout)
+    connection = DirectHTTPSConnection(ip, host, port, timeout)
     total = 0
     started = time.monotonic()
     http_status = 0

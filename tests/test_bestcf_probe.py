@@ -2,6 +2,7 @@ import argparse
 import csv
 import importlib.util
 import pathlib
+import socket
 import sys
 import tempfile
 import unittest
@@ -21,6 +22,23 @@ class BestCfProbeTests(unittest.TestCase):
             probe.candidate_host("103.31.4.1", "bestcf.example"),
             "671F0401.bestcf.example",
         )
+
+    def test_direct_https_connection_bypasses_wildcard_dns_but_keeps_sni(self):
+        raw_socket = mock.Mock()
+        tls_socket = mock.Mock()
+        context = mock.Mock()
+        context.wrap_socket.return_value = tls_socket
+        connection = probe.DirectHTTPSConnection(
+            "203.0.113.9", "CB007109.bestcf.example", 8443, 3
+        )
+        connection._context = context
+        with mock.patch.object(socket, "create_connection", return_value=raw_socket) as connect:
+            connection.connect()
+        connect.assert_called_once_with(("203.0.113.9", 8443), 3, None)
+        context.wrap_socket.assert_called_once_with(
+            raw_socket, server_hostname="CB007109.bestcf.example"
+        )
+        self.assertIs(connection.sock, tls_socket)
 
     def test_probe_distinguishes_http_failure_timeout_and_low_speed(self):
         args = argparse.Namespace(
