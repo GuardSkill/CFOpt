@@ -614,6 +614,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Linux runner must publish CMCC_BJ.csv"
   grep -q '\-AutoDetectNetworkIsp' "$workflow" \
     || fail "Windows runner must select CTC_CD.csv or CMCC_CD.csv from the detected carrier"
+  ! grep -q -- '-DisableProxyipBest' "$workflow" \
+    || fail "Chengdu runner must update proxyip-best by default"
   grep -q 'name: Use preinstalled Python' "$workflow" \
     || fail "Chengdu workflow must expose its preinstalled Python to ranking and BestCF probes"
   grep -q 'uses: actions/checkout@v5' "$workflow" \
@@ -643,6 +645,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Sichuan CFST asset download must retry transient failures"
   grep -q "isp.Isp -ne 'ChinaMobile'" "$sc_workflow" \
     || fail "Sichuan runner must reject non-CMCC networks"
+  grep -q -- '-DisableProxyipBest' "$sc_workflow" \
+    || fail "Sichuan runner must not race Chengdu when publishing proxyip-best"
   [[ "$(grep -Fc 'shell: powershell -NoProfile -ExecutionPolicy Bypass -Command' "$sc_workflow")" -eq 3 ]] \
     || fail "All Sichuan PowerShell script steps must bypass the runner's restrictive local execution policy"
 }
