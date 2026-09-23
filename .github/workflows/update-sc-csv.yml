@@ -46,16 +46,47 @@ jobs:
 
       - name: Install CloudflareSpeedTest
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $release = Invoke-RestMethod -Headers @{ 'User-Agent' = 'CFOpt-Actions' } -Uri 'https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest'
+
+          $headers = @{
+            'Accept' = 'application/vnd.github+json'
+            'User-Agent' = 'CFOpt-Actions'
+            'Authorization' = "Bearer $env:GH_TOKEN"
+          }
+          $release = Invoke-RestMethod `
+            -Headers $headers `
+            -Uri 'https://api.github.com/repos/XIU2/CloudflareSpeedTest/releases/latest'
           $asset = @($release.assets | Where-Object { $_.name -eq 'cfst_windows_amd64.zip' })
-          if ($asset.Count -ne 1) { throw "Expected one Windows x64 CFST asset, got $($asset.Count)" }
-          New-Item -ItemType Directory -Force -Path '.cfopt-runner/bin' | Out-Null
-          Invoke-WebRequest -Uri $asset[0].browser_download_url -OutFile '.cfopt-runner/cfst.zip'
-          Expand-Archive -Path '.cfopt-runner/cfst.zip' -DestinationPath '.cfopt-runner/bin' -Force
-          $targetCfst = Join-Path $env:GITHUB_WORKSPACE '.cfopt-runner\bin\cfst.exe'
-          $extractedCfst = Get-ChildItem -LiteralPath '.cfopt-runner/bin' -Recurse -File -Filter 'cfst.exe' | Select-Object -First 1
+          if ($asset.Count -ne 1) {
+            $available = ($release.assets.name -join ', ')
+            throw "Expected one Windows x64 CFST asset, got $($asset.Count). Available assets: $available"
+          }
+
+          $binDir = Join-Path $env:GITHUB_WORKSPACE '.cfopt-runner\bin'
+          $zipPath = Join-Path $env:GITHUB_WORKSPACE '.cfopt-runner\cfst.zip'
+          New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          & curl.exe `
+            --fail `
+            --location `
+            --retry 5 `
+            --retry-delay 10 `
+            --retry-all-errors `
+            --user-agent 'CFOpt-Actions' `
+            --output $zipPath `
+            $asset[0].browser_download_url
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to download CloudflareSpeedTest asset; curl exit code $LASTEXITCODE"
+          }
+          if (-not (Test-Path -LiteralPath $zipPath) -or (Get-Item -LiteralPath $zipPath).Length -eq 0) {
+            throw 'CloudflareSpeedTest download was empty'
+          }
+
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $binDir -Force
+          $targetCfst = Join-Path $binDir 'cfst.exe'
+          $extractedCfst = Get-ChildItem -LiteralPath $binDir -Recurse -File -Filter 'cfst.exe' | Select-Object -First 1
           if (-not $extractedCfst) { throw 'CFST archive did not contain cfst.exe' }
           if ($extractedCfst.FullName -ne $targetCfst) {
             Copy-Item -LiteralPath $extractedCfst.FullName -Destination $targetCfst -Force

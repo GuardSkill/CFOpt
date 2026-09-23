@@ -618,6 +618,10 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Chengdu workflow must expose its preinstalled Python to ranking and BestCF probes"
   grep -q 'uses: actions/checkout@v5' "$workflow" \
     || fail "self-hosted workflow must use the Node 24 checkout action"
+  grep -q 'GH_TOKEN:.*github.token' "$workflow" \
+    || fail "Windows CFST release lookup must use the scoped Actions token"
+  grep -q -- '--retry-all-errors' "$workflow" \
+    || fail "Windows CFST asset download must retry transient failures"
   grep -q 'GITHUB_TOKEN_CFOPT:.*github.token' "$workflow" \
     || fail "workflow must publish with the scoped Actions token"
   grep -q 'permissions:' "$workflow" && grep -q 'contents: write' "$workflow" \
@@ -633,10 +637,14 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Sichuan workflow must install Python for ranking and BestCF probes"
   grep -q 'uses: actions/checkout@v5' "$sc_workflow" \
     || fail "Sichuan workflow must use the Node 24 checkout action"
+  grep -q 'GH_TOKEN:.*github.token' "$sc_workflow" \
+    || fail "Sichuan CFST release lookup must use the scoped Actions token"
+  grep -q -- '--retry-all-errors' "$sc_workflow" \
+    || fail "Sichuan CFST asset download must retry transient failures"
   grep -q "isp.Isp -ne 'ChinaMobile'" "$sc_workflow" \
     || fail "Sichuan runner must reject non-CMCC networks"
-  [[ "$(grep -Fc 'shell: powershell -NoProfile -ExecutionPolicy Bypass -Command' "$sc_workflow")" -eq 2 ]] \
-    || fail "Both Sichuan PowerShell steps must bypass the runner's restrictive local execution policy"
+  [[ "$(grep -Fc 'shell: powershell -NoProfile -ExecutionPolicy Bypass -Command' "$sc_workflow")" -eq 3 ]] \
+    || fail "All Sichuan PowerShell script steps must bypass the runner's restrictive local execution policy"
 }
 
 test_focus_scopes_use_fast_download_profile() {
