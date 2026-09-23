@@ -20,7 +20,26 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Detect preinstalled Python
+        id: preinstalled-python
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        run: |
+          $candidates = @(
+            (Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1),
+            'H:\CodeApp\Anaconda\python.exe',
+            "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"
+          ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+          $python = $candidates | Select-Object -First 1
+          if ($python) {
+            Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $python)
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'available=true'
+            & $python --version
+          } else {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value 'available=false'
+          }
+
       - name: Install Python for candidate ranking and BestCF probes
+        if: steps.preinstalled-python.outputs.available != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.13"
