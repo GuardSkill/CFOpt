@@ -614,8 +614,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Linux runner must publish CMCC_BJ.csv"
   grep -q '\-AutoDetectNetworkIsp' "$workflow" \
     || fail "Windows runner must select CTC_CD.csv or CMCC_CD.csv from the detected carrier"
-  grep -q 'uses: actions/setup-python@v5' "$workflow" \
-    || fail "Windows workflow must install Python for ranking and BestCF probes"
+  grep -q 'name: Use preinstalled Python' "$workflow" \
+    || fail "Chengdu workflow must expose its preinstalled Python to ranking and BestCF probes"
   grep -q 'uses: actions/checkout@v5' "$workflow" \
     || fail "self-hosted workflow must use the Node 24 checkout action"
   grep -q 'GITHUB_TOKEN_CFOPT:.*github.token' "$workflow" \
