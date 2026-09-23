@@ -133,7 +133,9 @@ def main():
         for address in ranked:
             lines.append(f"{address}#{country}")
 
-    Path(args.output).write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    # Keep the published list stable across Linux and Windows runners.
+    with Path(args.output).open("w", encoding="utf-8", newline="\n") as stream:
+        stream.write("\n".join(lines) + ("\n" if lines else ""))
 
 
 if __name__ == "__main__":
