@@ -29,7 +29,7 @@ jobs:
     runs-on: [self-hosted, windows, x64, cfopt, chengdu]
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -74,7 +74,7 @@ jobs:
     runs-on: [self-hosted, linux, x64, cfopt, beijing]
     timeout-minutes: 180
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
