@@ -1580,12 +1580,13 @@ main() {
   run_bestcf_probes
   build_combined_candidates
   filter_csv
-  if [[ -s "$PREVIOUS_CSV_PATH" && -f "$ADAPTIVE_POOL_SCRIPT" ]]; then
-    python3 "$ADAPTIVE_POOL_SCRIPT" rolling --previous "$PREVIOUS_CSV_PATH" --current "$CSV_PATH" --output "$CSV_PATH.rolling" --location "$TEST_LOCATION_NAME" --max-per-city "$MAX_PER_CITY" --replace-fraction "$ROLLING_REPLACE_FRACTION"
-    mv "$CSV_PATH.rolling" "$CSV_PATH"
-  else
-    log "No previous publication is available; publishing the current qualified result without a rolling merge."
-  fi
+  # filter_csv already applies the rolling previous-node quota, per-country
+  # Top N, minimum-count fallback, and final numbering. Running a second CSV
+  # parser here is redundant and previously turned valid Linux results into an
+  # empty file when its row-shape assumption diverged from the filter output.
+  local current_count
+  current_count=$(( $(wc -l < "$CSV_PATH") - 1 ))
+  log "Rolling publication selection kept $current_count currently qualified nodes; historical rows that failed this run were not restored."
   assert_publication_safety
 
   if [[ "$SKIP_UPLOAD" == "1" ]]; then

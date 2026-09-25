@@ -289,6 +289,10 @@ test_linux_full_retest_and_rolling_merge_do_not_revive_stale_nodes() {
 
   grep -q 'prepare_previous_work_item "$port_value"' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
     || fail "Linux main flow must schedule the dedicated full historical-node retest"
+  ! grep -q '"$ADAPTIVE_POOL_SCRIPT" rolling' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux main flow must not parse the already-filtered publication through a second rolling pass"
+  grep -q 'Rolling publication selection kept \$current_count currently qualified nodes' "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    || fail "Linux main flow must report the retained rows from the authoritative filter output"
 }
 
 test_linux_country_minimum_fills_by_latency_without_speed() {
