@@ -994,10 +994,10 @@ for rule in cmliussss_rules:
         raise SystemExit(f"{full}: missing lite baseline ruleset: {rule}")
 
 required_business_groups = [
-    "custom_proxy_group=CodeAgent`select`[]DE Pool`[]JP Pool`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT",
-    "custom_proxy_group=Polymarket`select`[]Polymarket GB + IE Pool`[]Polymarket DE + IE Pool`[]Polymarket DE + AT Pool`[]KR Proxy ↪`[]HK Proxy ↪`[]HK Pool`[]Auto`[]DIRECT",
-    "custom_proxy_group=OKX`select`[]OKX HK Proxy ↪`[]OKX HK Pool`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
-    "custom_proxy_group=Binance`select`[]Binance JP Proxy ↪`[]Binance KR Proxy ↪`[]Binance JP Pool`[]Binance HK Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]US Proxy ↪`[]KR Proxy ↪`[]DE Pool`[]JP Pool`[]TW Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=Polymarket`select`[]Polymarket DE + AT Pool`[]Polymarket GB + IE Pool`[]Polymarket DE + IE Pool`[]KR Proxy ↪`[]HK Proxy ↪`[]HK Pool`[]Auto`[]DIRECT",
+    "custom_proxy_group=OKX`select`[]OKX HK Pool`[]OKX HK Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT",
+    "custom_proxy_group=Binance`select`[]Binance JP Pool`[]Binance JP Proxy ↪`[]Binance KR Proxy ↪`[]Binance HK Proxy ↪`[]Auto`[]DIRECT",
     "custom_proxy_group=Twitter`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
     "custom_proxy_group=Steam`select`[]JP Pool`[]KR Pool`[]SG Pool`[]HK Pool`[]TW Pool`[]Auto`[]DIRECT",
 ]
@@ -1018,8 +1018,8 @@ for path in [full, lite, cmliussss]:
         raise SystemExit(f"{path}: missing high-traffic mainland media Direct rules")
     if content.index(media_rule) > content.index("ruleset=Binance,") or content.index(bili_rule) > content.index("ruleset=Binance,"):
         raise SystemExit(f"{path}: mainland media Direct rules must precede exchange proxy rules")
-    if "custom_proxy_group=CodeAgent`select`[]DE Pool`[]JP Pool`[]JP Proxy ↪`[]HK Proxy ↪`[]TW Proxy ↪`[]KR Proxy ↪`[]SG Proxy ↪`[]US Proxy ↪`[]Auto`[]DIRECT" not in content:
-        raise SystemExit(f"{path}: CodeAgent must include DE Pool, JP Pool, TW Proxy, and US Proxy")
+    if "custom_proxy_group=CodeAgent`select`[]JP Proxy ↪`[]HK Proxy ↪`[]US Proxy ↪`[]KR Proxy ↪`[]DE Pool`[]JP Pool`[]TW Proxy ↪`[]SG Proxy ↪`[]Auto`[]DIRECT" not in content:
+        raise SystemExit(f"{path}: CodeAgent must prioritize JP, HK, US, and KR Proxy pools in that order")
     codeagent_filters = {
         "JP Proxy ↪": "(🇯🇵 )?JP ↪ \\[",
         "HK Proxy ↪": "(🇭🇰 )?HK ↪ \\[",
