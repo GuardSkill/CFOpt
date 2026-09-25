@@ -1614,13 +1614,13 @@ function Wait-CfstProcesses {
         }
 
         if (Test-Path -LiteralPath $item.StdoutPath) {
-            Get-Content -LiteralPath $item.StdoutPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
-                Write-Log "cfst[$($item.Port)]: $_"
+            Get-Content -LiteralPath $item.StdoutPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
+                Write-Log "cfst[$($item.Port)/$($item.Scope)]: $_"
             }
         }
         if (Test-Path -LiteralPath $item.StderrPath) {
-            Get-Content -LiteralPath $item.StderrPath | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
-                Write-Log "cfst[$($item.Port)] stderr: $_"
+            Get-Content -LiteralPath $item.StderrPath -Encoding UTF8 | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | ForEach-Object {
+                Write-Log "cfst[$($item.Port)/$($item.Scope)] stderr: $_"
             }
         }
 
@@ -1971,15 +1971,54 @@ function Publish-FileToGitHub {
         $bodyMap.sha = $existingSha
     }
     $body = $bodyMap | ConvertTo-Json -Depth 5
+    $bodyPath = Join-Path $WorkDir ("github-upload-{0}.json" -f [guid]::NewGuid().ToString("N"))
+    $responsePath = Join-Path $WorkDir ("github-upload-response-{0}.json" -f [guid]::NewGuid().ToString("N"))
+    [System.IO.File]::WriteAllText($bodyPath, $body, (New-Object System.Text.UTF8Encoding($false)))
 
     Write-Log "Uploading $LocalPath to GitHub branch $Branch as $UploadTargetPath."
-    Invoke-GitHubRestMethodWithRetry -Parameters @{
-        Method = "Put"
-        Uri = $uri
-        Headers = $headers
-        Body = $body
-        ContentType = "application/json"
-    } | Out-Null
+    try {
+        $uploaded = $false
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            Remove-Item -LiteralPath $responsePath -Force -ErrorAction SilentlyContinue
+            $statusCode = & curl.exe `
+                --silent `
+                --show-error `
+                --location `
+                --http1.1 `
+                --connect-timeout 20 `
+                --max-time 180 `
+                --request PUT `
+                --header "Authorization: Bearer $token" `
+                --header "Accept: application/vnd.github+json" `
+                --header "X-GitHub-Api-Version: 2022-11-28" `
+                --header "User-Agent: CFOptAutoPush" `
+                --header "Content-Type: application/json" `
+                --data-binary "@$bodyPath" `
+                --output $responsePath `
+                --write-out "%{http_code}" `
+                $uri
+            $curlExitCode = $LASTEXITCODE
+            $responseText = if (Test-Path -LiteralPath $responsePath) { Get-Content -LiteralPath $responsePath -Raw -Encoding UTF8 } else { "" }
+            if ($curlExitCode -eq 0 -and $statusCode -in @("200", "201")) {
+                $uploaded = $true
+                break
+            }
+            $responseSummary = ($responseText -replace '\s+', ' ').Trim()
+            if ($responseSummary.Length -gt 500) { $responseSummary = $responseSummary.Substring(0, 500) }
+            if ($attempt -lt 5) {
+                Write-Log "WARN: GitHub upload attempt $attempt/5 failed: curl=$curlExitCode HTTP=$statusCode response=$responseSummary. Retrying."
+                Start-Sleep -Seconds (5 * $attempt)
+            }
+            else {
+                throw "GitHub upload failed after 5 attempts: curl=$curlExitCode HTTP=$statusCode response=$responseSummary"
+            }
+        }
+        if (-not $uploaded) { throw "GitHub upload did not complete." }
+    }
+    finally {
+        Remove-Item -LiteralPath $bodyPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $responsePath -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Assert-PublicationSafety {

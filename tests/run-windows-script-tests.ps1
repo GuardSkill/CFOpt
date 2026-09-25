@@ -89,6 +89,12 @@ try {
     $installerText = Get-Content -LiteralPath (Join-Path $rootDir 'scripts\windows\Install-CFOptAutoPushTask.ps1') -Raw
     $gitPublisherText = Get-Content -LiteralPath (Join-Path $rootDir 'scripts\windows\Invoke-CFOptDailyGit.ps1') -Raw
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
+    if ($runnerText -notmatch 'Get-Content -LiteralPath \$item\.StdoutPath -Encoding UTF8' -or $runnerText -notmatch 'Get-Content -LiteralPath \$item\.StderrPath -Encoding UTF8') {
+        throw "CFST logs must be decoded explicitly as UTF-8 on Windows PowerShell."
+    }
+    if ($runnerText -notmatch '--http1\.1' -or $runnerText -notmatch '--data-binary "@\$bodyPath"' -or $runnerText -notmatch 'GitHub upload failed after 5 attempts') {
+        throw "Windows GitHub uploads must use retrying HTTP/1.1 curl with a diagnostic response body."
+    }
     if ($runnerText -notmatch 'https://api\.ip\.sb/geoip') {
         throw "The Windows runner must use an HTTPS carrier probe that returns ASCII ISP data."
     }
