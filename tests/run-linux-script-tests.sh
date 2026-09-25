@@ -622,6 +622,10 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Chengdu workflow must expose its preinstalled Python to ranking and BestCF probes"
   grep -q 'uses: actions/checkout@v5' "$workflow" \
     || fail "self-hosted workflow must use the Node 24 checkout action"
+  [[ "$(grep -c 'fetch-depth: 1' "$workflow")" -eq 2 ]] \
+    || fail "Both self-hosted jobs must use a one-commit shallow checkout"
+  [[ "$(grep -c 'GIT_CONFIG_VALUE_0: HTTP/1.1' "$workflow")" -eq 2 ]] \
+    || fail "Both self-hosted jobs must force the more reliable HTTP/1.1 Git transport"
   grep -q 'GH_TOKEN:.*github.token' "$workflow" \
     || fail "Windows CFST release lookup must use the scoped Actions token"
   grep -q -- '--retry-all-errors' "$workflow" \
@@ -641,6 +645,10 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Sichuan workflow must install Python for ranking and BestCF probes"
   grep -q 'uses: actions/checkout@v5' "$sc_workflow" \
     || fail "Sichuan workflow must use the Node 24 checkout action"
+  grep -q 'fetch-depth: 1' "$sc_workflow" \
+    || fail "Sichuan runner must use a one-commit shallow checkout"
+  grep -q 'GIT_CONFIG_VALUE_0: HTTP/1.1' "$sc_workflow" \
+    || fail "Sichuan runner must force the more reliable HTTP/1.1 Git transport"
   grep -q 'GH_TOKEN:.*github.token' "$sc_workflow" \
     || fail "Sichuan CFST release lookup must use the scoped Actions token"
   grep -q -- '--retry-all-errors' "$sc_workflow" \

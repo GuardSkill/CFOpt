@@ -30,8 +30,14 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
+        env:
+          # Self-hosted China routes are more reliable over HTTP/1.1, and the
+          # benchmark publishes through the Contents API rather than Git.
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: http.version
+          GIT_CONFIG_VALUE_0: HTTP/1.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Use preinstalled Python
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -116,8 +122,12 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v5
+        env:
+          GIT_CONFIG_COUNT: "1"
+          GIT_CONFIG_KEY_0: http.version
+          GIT_CONFIG_VALUE_0: HTTP/1.1
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Install CloudflareSpeedTest
         shell: bash
