@@ -5,6 +5,8 @@ param(
     [string]$CfstPath = (Join-Path $WorkDir "cfst.exe"),
     [string]$Remote = "origin",
     [string]$Branch = "main",
+    [ValidateSet("", "ChinaMobile", "ChinaTelecom")]
+    [string]$NetworkIspFallback = "ChinaTelecom",
     [int]$PushAttempts = 3
 )
 
@@ -34,6 +36,7 @@ try {
         -CfstPath $CfstPath `
         -Force `
         -AutoDetectNetworkIsp `
+        -NetworkIspFallback $NetworkIspFallback `
         -SkipUpload
     if ($LASTEXITCODE -ne 0) {
         throw "CFOpt runner exited with code $LASTEXITCODE"

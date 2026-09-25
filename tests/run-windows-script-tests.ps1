@@ -59,6 +59,18 @@ try {
     if ((Resolve-NetworkIspFromProbeText -Text 'China Unicom AS4837') -ne 'Unknown') {
         throw "Unsupported ISPs must not be routed to a Mobile or Telecom CSV."
     }
+    $fallbackDetection = Get-DirectNetworkIsp -ProbeUrls @() -FallbackIsp 'ChinaTelecom'
+    if ($fallbackDetection.Isp -ne 'ChinaTelecom' -or -not $fallbackDetection.FallbackUsed -or $fallbackDetection.RecognizedProbeCount -ne 0) {
+        throw "An unavailable ISP probe must use the explicitly configured Telecom fallback."
+    }
+    try {
+        Get-DirectNetworkIsp -ProbeUrls @() | Out-Null
+        throw "Unavailable ISP probes were accepted without an explicit fallback."
+    }
+    catch {
+        if ($_.Exception.Message -eq 'Unavailable ISP probes were accepted without an explicit fallback.') { throw }
+        if ($_.Exception.Message -notmatch 'no recognized Mobile/Telecom result') { throw }
+    }
     $mobileProfile = Resolve-CFOptNetworkProfile -DetectedIsp 'ChinaMobile'
     if ($mobileProfile.TargetPath -ne 'CMCC_CD.csv' -or $mobileProfile.TestLocationName -ne 'CDCM' -or $mobileProfile.StateSuffix -ne 'CM') {
         throw "China Mobile must use the dedicated Chengdu Mobile CSV and state."
@@ -75,12 +87,19 @@ try {
         if ($_.Exception.Message -eq 'Unknown ISP was accepted for automatic publication.') { throw }
     }
     $installerText = Get-Content -LiteralPath (Join-Path $rootDir 'scripts\windows\Install-CFOptAutoPushTask.ps1') -Raw
+    $gitPublisherText = Get-Content -LiteralPath (Join-Path $rootDir 'scripts\windows\Invoke-CFOptDailyGit.ps1') -Raw
     $runnerText = Get-Content -LiteralPath $runnerPath -Raw
     if ($runnerText -notmatch 'https://api\.ip\.sb/geoip') {
         throw "The Windows runner must use an HTTPS carrier probe that returns ASCII ISP data."
     }
     if ($installerText -notmatch '\-AutoDetectNetworkIsp') {
         throw "The Windows scheduled task must enable ISP detection."
+    }
+    if ($installerText -notmatch '\-NetworkIspFallback ChinaTelecom') {
+        throw "The Chengdu scheduled task must fall back to Telecom when all ISP probes are unavailable."
+    }
+    if ($gitPublisherText -notmatch '\[string\]\$NetworkIspFallback = "ChinaTelecom"' -or $gitPublisherText -notmatch '\-NetworkIspFallback \$NetworkIspFallback') {
+        throw "The Chengdu Git publisher must pass its Telecom fallback to the benchmark runner."
     }
     if ($installerText -notmatch 'New-ScheduledTaskTrigger\s+-Daily\s+-At' -or $installerText -match 'New-ScheduledTaskTrigger\s+-Once') {
         throw "The Windows scheduled task must use a true daily trigger."

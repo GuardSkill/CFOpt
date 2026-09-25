@@ -106,7 +106,8 @@ jobs:
             -WorkDir "$env:RUNNER_TEMP\cfopt-cd" `
             -CfstPath "$env:GITHUB_WORKSPACE\.cfopt-runner\bin\cfst.exe" `
             -Force `
-            -AutoDetectNetworkIsp
+            -AutoDetectNetworkIsp `
+            -NetworkIspFallback ChinaTelecom
           if ($LASTEXITCODE -ne 0) { throw "CFOpt Windows runner exited with code $LASTEXITCODE" }
 
   linux-bj:

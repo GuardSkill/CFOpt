@@ -614,6 +614,8 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Linux runner must publish CMCC_BJ.csv"
   grep -q '\-AutoDetectNetworkIsp' "$workflow" \
     || fail "Windows runner must select CTC_CD.csv or CMCC_CD.csv from the detected carrier"
+  grep -q '\-NetworkIspFallback ChinaTelecom' "$workflow" \
+    || fail "Chengdu runner must fall back to Telecom when all ISP probes are unavailable"
   ! grep -q -- '-DisableProxyipBest' "$workflow" \
     || fail "Chengdu runner must update proxyip-best by default"
   grep -q 'name: Use preinstalled Python' "$workflow" \

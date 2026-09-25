@@ -16,6 +16,8 @@ param(
     [string]$TargetPath = "CTC_CD.csv",
     [switch]$AutoDetectNetworkIsp,
     [switch]$DetectNetworkIspOnly,
+    [ValidateSet("", "ChinaMobile", "ChinaTelecom")]
+    [string]$NetworkIspFallback = "",
     [string]$ChinaMobileTargetPath = "CMCC_CD.csv",
     [string]$ChinaTelecomTargetPath = "CTC_CD.csv",
     [string[]]$NetworkIspProbeUrls = @(
@@ -198,7 +200,11 @@ function Resolve-CFOptNetworkProfile {
 }
 
 function Get-DirectNetworkIsp {
-    param([string[]]$ProbeUrls = $NetworkIspProbeUrls)
+    param(
+        [string[]]$ProbeUrls = $NetworkIspProbeUrls,
+        [ValidateSet("", "ChinaMobile", "ChinaTelecom")]
+        [string]$FallbackIsp = ""
+    )
 
     Add-Type -AssemblyName System.Net.Http
     $observations = [System.Collections.Generic.List[object]]::new()
@@ -230,7 +236,18 @@ function Get-DirectNetworkIsp {
     $detectedIsps = @($recognized | ForEach-Object { $_.Isp } | Select-Object -Unique)
     if ($detectedIsps.Count -eq 0) {
         $detail = @($observations | ForEach-Object { "$($_.Url)=Unknown" }) + @($failures)
-        throw "Direct ISP detection produced no recognized Mobile/Telecom result: $($detail -join '; ')"
+        $detailText = $detail -join '; '
+        if (-not [string]::IsNullOrWhiteSpace($FallbackIsp)) {
+            return [pscustomobject]@{
+                Isp = $FallbackIsp
+                PublicIp = ""
+                RecognizedProbeCount = 0
+                SuccessfulProbeCount = $observations.Count
+                FallbackUsed = $true
+                DetectionDetail = $detailText
+            }
+        }
+        throw "Direct ISP detection produced no recognized Mobile/Telecom result: $detailText"
     }
     if ($detectedIsps.Count -gt 1) {
         $detail = $recognized | ForEach-Object { "$($_.Url)=$($_.Isp)" }
@@ -246,6 +263,8 @@ function Get-DirectNetworkIsp {
         PublicIp = $publicIp
         RecognizedProbeCount = $recognized.Count
         SuccessfulProbeCount = $observations.Count
+        FallbackUsed = $false
+        DetectionDetail = ""
     }
 }
 
@@ -2020,7 +2039,7 @@ if ($env:CFOPT_SOURCE_ONLY -ne "1") {
 try {
     New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
     if ($AutoDetectNetworkIsp -or $DetectNetworkIspOnly) {
-        $networkDetection = Get-DirectNetworkIsp
+        $networkDetection = Get-DirectNetworkIsp -FallbackIsp $NetworkIspFallback
         $networkProfile = Resolve-CFOptNetworkProfile `
             -DetectedIsp $networkDetection.Isp `
             -MobileTargetPath $ChinaMobileTargetPath `
@@ -2030,6 +2049,9 @@ try {
             $TestLocationName = $networkProfile.TestLocationName
         }
         $stateFile = Join-Path $WorkDir "last-success-$($networkProfile.StateSuffix).txt"
+        if ($networkDetection.FallbackUsed) {
+            Write-Log "WARN: Direct ISP probes could not identify the carrier; using configured fallback $($networkDetection.Isp). Probe detail: $($networkDetection.DetectionDetail)"
+        }
         Write-Log "Direct ISP detected: $($networkDetection.Isp); public_ip=$($networkDetection.PublicIp); recognized_probes=$($networkDetection.RecognizedProbeCount)/$($networkDetection.SuccessfulProbeCount); target=$TargetPath; test_location=$TestLocationName."
         if ($DetectNetworkIspOnly) {
             exit 0
