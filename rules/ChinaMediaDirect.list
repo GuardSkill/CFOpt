@@ -18,6 +18,37 @@ DOMAIN-SUFFIX,vv.video.qq.com
 DOMAIN-SUFFIX,wetv.vip
 DOMAIN-SUFFIX,wetvinfo.com
 
+# Douyin / Xigua / Toutiao video and ByteDance CDN
+DOMAIN-SUFFIX,byteimg.com
+DOMAIN-SUFFIX,bytedance.com
+DOMAIN-SUFFIX,bytedance.net
+DOMAIN-SUFFIX,bytedanceapi.com
+DOMAIN-SUFFIX,bytedanceoss.com
+DOMAIN-SUFFIX,bytedanceoss.net
+DOMAIN-SUFFIX,bytedancevod.com
+DOMAIN-SUFFIX,douyin.com
+DOMAIN-SUFFIX,douyinact.com
+DOMAIN-SUFFIX,douyinact.net
+DOMAIN-SUFFIX,douyincdn.com
+DOMAIN-SUFFIX,douyinclips.com
+DOMAIN-SUFFIX,douyinec.com
+DOMAIN-SUFFIX,douyinliving.com
+DOMAIN-SUFFIX,douyinpic.com
+DOMAIN-SUFFIX,douyinstatic.com
+DOMAIN-SUFFIX,douyinvod.com
+DOMAIN-SUFFIX,douyinvideo.net
+DOMAIN-SUFFIX,idouyinpic.com
+DOMAIN-SUFFIX,idouyinstatic.com
+DOMAIN-SUFFIX,idouyinvod.com
+DOMAIN-SUFFIX,iesdouyin.com
+DOMAIN-SUFFIX,iesdouyin.net
+DOMAIN-SUFFIX,ixigua.com
+DOMAIN-SUFFIX,ixiguavideo.com
+DOMAIN-SUFFIX,pstatp.com
+DOMAIN-SUFFIX,snssdk.com
+DOMAIN-SUFFIX,toutiao.com
+DOMAIN,v5-dy-o-abtest.zjcdn.com
+
 # iQIYI / iQIYI TV (GITV) / PPS
 DOMAIN-SUFFIX,71.am
 DOMAIN-SUFFIX,71.am.com
@@ -114,6 +145,17 @@ DOMAIN-SUFFIX,kwaigroup.com
 DOMAIN-SUFFIX,kwaitv.cn
 DOMAIN-SUFFIX,kwaitv.com
 DOMAIN-SUFFIX,yximgs.com
+
+# Mainland live video and community video
+DOMAIN-SUFFIX,acfun.cn
+DOMAIN-SUFFIX,acfun.com
+DOMAIN-SUFFIX,douyu.com
+DOMAIN-SUFFIX,huya.com
+DOMAIN-SUFFIX,pplive.com
+DOMAIN-SUFFIX,pptv.com
+DOMAIN-SUFFIX,sohu.com
+DOMAIN-SUFFIX,sohu-inc.com
+DOMAIN-SUFFIX,sohucs.com
 
 # Domestic music / audio traffic
 DOMAIN,netease.ugcvideoss.ourdvs.com

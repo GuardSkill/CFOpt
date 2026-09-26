@@ -1109,10 +1109,18 @@ required_direct_domains = {
     "DOMAIN-SUFFIX,v.qq.com",
     "DOMAIN-SUFFIX,vv.video.qq.com",
     "DOMAIN-SUFFIX,gitv.tv",
+    "DOMAIN-SUFFIX,douyin.com",
+    "DOMAIN-SUFFIX,douyinvod.com",
+    "DOMAIN-SUFFIX,ixigua.com",
     "DOMAIN-SUFFIX,iqiyi.com",
     "DOMAIN-SUFFIX,kumiao.tv",
     "DOMAIN-SUFFIX,mgtv.com",
     "DOMAIN-SUFFIX,kuaishou.com",
+    "DOMAIN-SUFFIX,yximgs.com",
+    "DOMAIN-SUFFIX,acfun.cn",
+    "DOMAIN-SUFFIX,douyu.com",
+    "DOMAIN-SUFFIX,huya.com",
+    "DOMAIN-SUFFIX,sohu.com",
     "DOMAIN-SUFFIX,aliyundrive.com",
 }
 media_rules = set(line.strip() for line in text(china_media).splitlines())
