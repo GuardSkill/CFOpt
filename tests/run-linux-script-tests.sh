@@ -1008,6 +1008,12 @@ for group in required_business_groups:
 
 for path in [full, lite, cmliussss]:
     content = text(path)
+    hf_mirror_rule = "ruleset=Direct,[]DOMAIN-SUFFIX,hf-mirror.com"
+    xethub_rule = "ruleset=Direct,[]DOMAIN-SUFFIX,xethub.hf.co"
+    if hf_mirror_rule not in content or xethub_rule not in content:
+        raise SystemExit(f"{path}: hf-mirror downloads and the XetHub object path must both route Direct")
+    if content.index(xethub_rule) < content.index(hf_mirror_rule) or content.index(xethub_rule) > content.index("ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/MainlandDirect.list"):
+        raise SystemExit(f"{path}: XetHub Direct rule must immediately follow the hf-mirror high-priority rule")
     if "github.com/GuardSkill/CFOpt/raw/refs/heads/main" in content:
         raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
     if "rules/Bilibili.list" in content and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in content:
