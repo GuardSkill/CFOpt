@@ -161,7 +161,10 @@ def compile_ini(text, read):
                 raise ValueError('Unsupported group definition')
             if parts[0] in definitions:
                 duplicates.append(parts[0])
-            definitions[parts[0]] = parts
+            else:
+                # Match the existing subconverter output: the first definition
+                # wins when an INI repeats the same policy-group name.
+                definitions[parts[0]] = parts
         elif key == 'ruleset':
             policy, source = value.split(',', 1)
             specs.append((policy, source))

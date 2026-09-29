@@ -132,6 +132,7 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual(routing['rules'], ['DOMAIN,local.test,Direct', 'IP-CIDR,1.1.1.0/24,Proxy,no-resolve', 'MATCH,Proxy'])
         groups, empty = server.make_groups(routing['definitions'], [{'name': 'JP [test]'}])
         self.assertEqual(len([g for g in groups if g['name'] == 'Direct']), 1)
+        self.assertEqual(next(g for g in groups if g['name'] == 'Direct')['proxies'], ['DIRECT'])
         self.assertEqual(next(g for g in groups if g['name'] == 'JP Pool')['proxies'], ['JP [test]'])
         self.assertEqual(next(g for g in groups if g['name'] == 'Chain')['proxies'], ['REJECT'])
         self.assertEqual(empty, ['Chain'])
