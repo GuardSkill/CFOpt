@@ -1606,7 +1606,7 @@ main() {
   if [[ -s "$PROXYIP_BEST_PATH" ]]; then
     publish_file_to_github "$PROXYIP_BEST_PATH" "$PROXYIP_BEST_TARGET_PATH" "Update $PROXYIP_BEST_TARGET_PATH"
   fi
-  date --iso-8601=seconds > "$STATE_FILE"
+  date -Iseconds > "$STATE_FILE"
   log "Completed successfully."
 }
 
