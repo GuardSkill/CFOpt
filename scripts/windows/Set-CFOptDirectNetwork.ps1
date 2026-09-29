@@ -22,20 +22,22 @@ if (-not (Test-Connection -ComputerName $DirectGateway -Count 1 -Quiet)) {
 
 # These two routes are more specific than a DHCP-provided default route. They
 # keep LAN routes intact while ensuring every public IPv4 destination bypasses
-# the OpenClash side router. PersistentStore survives reboots and DHCP renewals.
-foreach ($prefix in @('0.0.0.0/1', '128.0.0.0/1')) {
+# the OpenClash side router. route.exe -p is used because some Windows builds
+# reject New-NetRoute -PolicyStore PersistentStore with system error 87.
+$splitRoutes = @(
+    [pscustomobject]@{ Prefix = '0.0.0.0/1'; Network = '0.0.0.0' },
+    [pscustomobject]@{ Prefix = '128.0.0.0/1'; Network = '128.0.0.0' }
+)
+foreach ($route in $splitRoutes) {
     $matching = @(
-        Get-NetRoute -AddressFamily IPv4 -DestinationPrefix $prefix -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue |
+        Get-NetRoute -AddressFamily IPv4 -DestinationPrefix $route.Prefix -InterfaceIndex $adapter.ifIndex -ErrorAction SilentlyContinue |
             Where-Object { $_.NextHop -eq $DirectGateway }
     )
     if ($matching.Count -eq 0) {
-        New-NetRoute `
-            -AddressFamily IPv4 `
-            -DestinationPrefix $prefix `
-            -InterfaceIndex $adapter.ifIndex `
-            -NextHop $DirectGateway `
-            -RouteMetric 1 `
-            -PolicyStore PersistentStore | Out-Null
+        & route.exe -p ADD $route.Network MASK 128.0.0.0 $DirectGateway METRIC 1 IF $adapter.ifIndex | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "route.exe failed to add $($route.Prefix) through $DirectGateway (exit $LASTEXITCODE)."
+        }
     }
 }
 
