@@ -1378,7 +1378,12 @@ PY
   fi
 
   local content body_file response_file put_status
-  content="$(base64 -w 0 "$local_path")"
+  content="$(python3 - "$local_path" <<'PY'
+import base64,sys
+with open(sys.argv[1], "rb") as handle:
+    sys.stdout.write(base64.b64encode(handle.read()).decode("ascii"))
+PY
+)"
   body_file="$WORK_DIR/github-upload.json"
   response_file="$WORK_DIR/github-upload-response.json"
   python3 - "$message" "$content" "$BRANCH" "$sha" > "$body_file" <<'PY'
