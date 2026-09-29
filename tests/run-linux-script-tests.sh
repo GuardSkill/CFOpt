@@ -61,7 +61,7 @@ printf 'stub stdout\n'
 printf 'stub stderr\n' >&2
 {
   printf 'IP 地址,已发送,已接收,丢包率,平均延迟,下载速度(MB/s),地区码\n'
-  printf '104.16.132.229,1,1,0.00,100.00,1.00,HKG\n'
+  printf '104.16.132.229,1,1,0.00,100.00,1.00,HKG\r\n'
 } > "$out"
 SH
   chmod +x "$stub_cfst"
@@ -89,6 +89,7 @@ SH
   grep -q 'cfst\[443/focus-HK\]: stub stdout' "$tmp_dir/work/auto-push.log" || fail "prefixed stdout log was not captured"
   grep -q 'cfst\[443/focus-HK\] stderr: stub stderr' "$tmp_dir/work/auto-push.log" || fail "prefixed stderr log was not captured"
   grep -q 'HK \[BJ#01 1.0MB/s\]' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "generated CSV city should use one-decimal speed labels"
+  ! LC_ALL=C grep -q $'\r' "$tmp_dir/work/CloudflareSpeedTest.csv" || fail "generated CSV must not retain CR bytes from CFST CSV rows"
 }
 
 test_linux_defaults_are_not_overly_strict_for_local_runs() {
@@ -1010,10 +1011,12 @@ for path in [full, lite, cmliussss]:
     content = text(path)
     hf_mirror_rule = "ruleset=Direct,[]DOMAIN-SUFFIX,hf-mirror.com"
     xethub_rule = "ruleset=Direct,[]DOMAIN-SUFFIX,xethub.hf.co"
-    if hf_mirror_rule not in content or xethub_rule not in content:
-        raise SystemExit(f"{path}: hf-mirror downloads and the XetHub object path must both route Direct")
-    if content.index(xethub_rule) < content.index(hf_mirror_rule) or content.index(xethub_rule) > content.index("ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/MainlandDirect.list"):
-        raise SystemExit(f"{path}: XetHub Direct rule must immediately follow the hf-mirror high-priority rule")
+    deepdns_rule = "ruleset=Direct,[]DOMAIN-SUFFIX,deepdns.dpdns.org"
+    if hf_mirror_rule not in content or xethub_rule not in content or deepdns_rule not in content:
+        raise SystemExit(f"{path}: hf-mirror, XetHub, and deepdns.dpdns.org must route Direct")
+    mainland_direct_rule = "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/MainlandDirect.list"
+    if not content.index(hf_mirror_rule) < content.index(xethub_rule) < content.index(deepdns_rule) < content.index(mainland_direct_rule):
+        raise SystemExit(f"{path}: high-priority Direct domain rules must precede MainlandDirect in the expected order")
     if "github.com/GuardSkill/CFOpt/raw/refs/heads/main" in content:
         raise SystemExit(f"{path}: use raw.githubusercontent.com URLs for cmliussss compatibility")
     if "rules/Bilibili.list" in content and "ruleset=Direct,https://raw.githubusercontent.com/GuardSkill/CFOpt/main/rules/Bilibili.list" not in content:
@@ -1154,9 +1157,13 @@ import csv
 import sys
 
 with open(sys.argv[1], encoding="utf-8-sig", newline="") as handle:
-    header = next(csv.reader(handle))
-expected = ["IP地址", "端口", "数据中心", "城市", "TLS", "已发送", "已接收", "丢包率", "平均延迟", "下载速度(MB/s)"]
-raise SystemExit(0 if header == expected else 1)
+    rows = list(csv.reader(handle))
+expected_headers = [
+    ["IP", "Port", "DataCenter", "City", "TLS", "Sent", "Received", "LossRate", "AverageLatency", "DownloadSpeedMBps"],
+    ["IP地址", "端口", "数据中心", "城市", "TLS", "已发送", "已接收", "丢包率", "平均延迟", "下载速度(MB/s)"],
+]
+if not rows or rows[0] not in expected_headers or any(len(row) != len(rows[0]) for row in rows[1:]):
+    raise SystemExit(1)
 PY
     if grep -Eq '馃|北京测速|成都测速' "$csv"; then
       fail "tracked CSV contains mojibake or old location labels: $csv"

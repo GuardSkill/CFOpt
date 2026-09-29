@@ -1075,6 +1075,7 @@ build_combined_candidates() {
     local csv_path="$WORK_DIR/CloudflareSpeedTest-$port-$safe_scope.csv"
     [[ -f "$csv_path" ]] || continue
     awk -F',' -v port="$port" '
+      { sub(/\r$/, "", $0) }
       FNR == NR {
         if (NF >= 2) {
           mapped_source = (NF >= 3 && $3 != "") ? $3 : "unknown"
@@ -1131,6 +1132,7 @@ filter_csv() {
       next
     }
     {
+      sub(/\r$/, "", $0)
       port = $1
       city = $2
       source = $3
