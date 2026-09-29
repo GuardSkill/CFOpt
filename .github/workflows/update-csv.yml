@@ -25,7 +25,9 @@ concurrency:
 
 jobs:
   windows-cd:
-    if: github.event_name == 'schedule' || inputs.runner == 'all' || inputs.runner == 'windows-cd'
+    # Chengdu now runs from the isolated direct namespace on OpenWrt. Keep the
+    # Windows host only as an explicitly selected fallback.
+    if: github.event_name == 'workflow_dispatch' && inputs.runner == 'windows-cd'
     runs-on: [self-hosted, windows, x64, cfopt, chengdu]
     timeout-minutes: 180
     steps:

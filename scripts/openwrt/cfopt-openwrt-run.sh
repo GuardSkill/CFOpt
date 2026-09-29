@@ -53,6 +53,28 @@ mv "$new_repo" "$REPO_DIR"
 
 "$REPO_DIR/scripts/openwrt/setup-cfopt-netns.sh"
 
+egress="$(ip netns exec cfopt python3 - <<'PY'
+import json
+import urllib.request
+
+request = urllib.request.Request(
+    "https://api.ip.sb/geoip",
+    headers={"User-Agent": "CFOpt-OpenWrt"},
+)
+with urllib.request.urlopen(request, timeout=15) as response:
+    payload = json.load(response)
+print(" ".join(str(payload.get(key, "")) for key in ("ip", "city", "isp", "asn")))
+PY
+)"
+case "$egress" in
+    *Chengdu*China\ Telecom*4134*) ;;
+    *)
+        echo "Refusing benchmark through unexpected OpenWrt egress: $egress" >&2
+        exit 1
+        ;;
+esac
+echo "Verified direct OpenWrt benchmark egress: $egress"
+
 token="$(cat "$TOKEN_FILE")"
 ip netns exec cfopt env \
     HOME=/root \
@@ -63,7 +85,7 @@ ip netns exec cfopt env \
     TEST_LOCATION_NAME=CD \
     FORCE=1 \
     CFST_THREADS=32 \
-    TCP_PRECHECK_THREADS=48 \
+    TCP_PRECHECK_ENABLED=0 \
     BESTCF_PROBE_CONCURRENCY=2 \
     PROXYIP_BEST_WORKERS=24 \
     MAX_PARALLEL_CFST=1 \

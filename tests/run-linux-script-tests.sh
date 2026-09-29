@@ -972,10 +972,16 @@ test_openwrt_runner_uses_isolated_direct_namespace() {
     || fail "OpenWrt runner namespace must use the direct gateway"
   grep -q 'ip netns exec cfopt env' "$runner" \
     || fail "OpenWrt benchmark must run inside the direct namespace"
+  grep -q 'Refusing benchmark through unexpected OpenWrt egress' "$runner" \
+    || fail "OpenWrt runner must verify its direct Telecom egress"
   grep -q 'TARGET_PATH=CTC_CD.csv' "$runner" \
     || fail "OpenWrt runner must publish the Chengdu Telecom CSV"
+  grep -q 'TCP_PRECHECK_ENABLED=0' "$runner" \
+    || fail "OpenWrt runner must avoid the incompatible BusyBox TCP precheck"
   grep -q 'PROXYIP_BEST_WORKERS=24' "$runner" \
     || fail "OpenWrt runner must use a memory-conscious ProxyIP worker count"
+  grep -q 'CRON_SCHEDULE:-20 20 \* \* \*' "$installer" \
+    || fail "OpenWrt UTC cron must correspond to 04:20 Asia/Shanghai"
 }
 
 test_subconverter_group_order_and_pool_names() {

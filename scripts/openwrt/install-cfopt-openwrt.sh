@@ -4,7 +4,8 @@ set -eu
 SOURCE_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 BASE_DIR="${CFOPT_BASE_DIR:-/opt/cfopt}"
 TOKEN_FILE="${CFOPT_TOKEN_FILE:-/etc/cfopt/github-token}"
-CRON_SCHEDULE="${CFOPT_CRON_SCHEDULE:-20 4 * * *}"
+# The router uses UTC. 20:20 UTC is 04:20 Asia/Shanghai on the next day.
+CRON_SCHEDULE="${CFOPT_CRON_SCHEDULE:-20 20 * * *}"
 
 if [ "$(id -u)" -ne 0 ]; then
     echo "Run this installer as root." >&2
