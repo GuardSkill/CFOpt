@@ -960,6 +960,24 @@ if limits != {"HK": 50, "SG": 12}:
 PY
 }
 
+test_openwrt_runner_uses_isolated_direct_namespace() {
+  local setup="$ROOT_DIR/scripts/openwrt/setup-cfopt-netns.sh"
+  local runner="$ROOT_DIR/scripts/openwrt/cfopt-openwrt-run.sh"
+  local installer="$ROOT_DIR/scripts/openwrt/install-cfopt-openwrt.sh"
+  [[ -f "$setup" && -f "$runner" && -f "$installer" ]] \
+    || fail "OpenWrt runner scripts must exist"
+  grep -q 'type macvlan mode bridge' "$setup" \
+    || fail "OpenWrt runner must use a dedicated macvlan namespace"
+  grep -q 'route add default via.*GATEWAY' "$setup" \
+    || fail "OpenWrt runner namespace must use the direct gateway"
+  grep -q 'ip netns exec cfopt env' "$runner" \
+    || fail "OpenWrt benchmark must run inside the direct namespace"
+  grep -q 'TARGET_PATH=CTC_CD.csv' "$runner" \
+    || fail "OpenWrt runner must publish the Chengdu Telecom CSV"
+  grep -q 'PROXYIP_BEST_WORKERS=24' "$runner" \
+    || fail "OpenWrt runner must use a memory-conscious ProxyIP worker count"
+}
+
 test_subconverter_group_order_and_pool_names() {
   python3 - "$ROOT_DIR" <<'PY'
 from pathlib import Path
@@ -1397,6 +1415,7 @@ test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_http_latency
 test_proxyip_best_generator_rejects_tcp_only_candidates
 test_proxyip_best_generator_allows_country_specific_limits
+test_openwrt_runner_uses_isolated_direct_namespace
 test_subconverter_group_order_and_pool_names
 test_tracked_csv_node_labels_are_ascii_safe
 test_polymarket_rules_cover_core_api_domains
