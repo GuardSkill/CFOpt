@@ -553,6 +553,22 @@ def country(name):
     return m.group(1) if m else ''
 
 
+def endpoint(value):
+    value = str(value or '').strip().lower().rstrip('.')
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        try:
+            ascii_name = value.encode('idna').decode('ascii')
+        except UnicodeError as error:
+            raise ValueError('Invalid endpoint') from error
+        labels = ascii_name.split('.')
+        if (len(ascii_name) > 253 or len(labels) < 2 or
+                any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', label) for label in labels)):
+            raise ValueError('Invalid endpoint')
+        return ascii_name
+
+
 def build(c, isp='', region='', seed='', output_style=''):
     template = json.loads((ROOT / 'template.json').read_text())
     old = {n['name']: n for n in template['proxies']}
@@ -577,7 +593,7 @@ def build(c, isp='', region='', seed='', output_style=''):
             continue
         for row in rows[:c.get('max_nodes_per_source', 500)]:
             try:
-                address = str(ipaddress.ip_address(row['IP地址']))
+                address = endpoint(row['IP地址'])
                 port = int(row['端口'])
                 if not 1 <= port <= 65535 or row.get('TLS', '').lower() != 'true':
                     continue

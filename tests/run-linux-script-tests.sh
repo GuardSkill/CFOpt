@@ -6,6 +6,7 @@ PATH="$ROOT_DIR/tests/bin:$PATH"
 export TARGET_PATH="tests/fixtures/nonexistent.csv"
 export ENABLE_GENERIC_CANDIDATE_POOL=0  # Network-free fixtures; the helper has its own mocked tests.
 export ENABLE_BESTCF_PROBE=0            # Network-free fixtures; bestcf_probe.py has mocked unit tests.
+export ENABLE_DOMAIN_CANDIDATE_POOL=0   # Network-free fixtures; helper has mocked unit tests.
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2

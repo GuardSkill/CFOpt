@@ -81,7 +81,7 @@ class BuilderTests(unittest.TestCase):
                     'proxy-groups': [{'name': 'Proxy', 'proxies': ['JP old', 'HK old', 'DIRECT']},
                                      {'name': 'JP Pool', 'proxies': ['JP old']}], 'rules': ['MATCH,Proxy']}
         mobile = 'IP地址,端口,城市,TLS\n1.1.1.1,443,JP [BJ#01],true\n1.0.0.1,443,HK [BJ#01],true\n'
-        telecom = 'IP地址,端口,城市,TLS\n8.8.8.8,443,JP [CD#01],true\n'
+        telecom = 'IP地址,端口,城市,TLS\n8.8.8.8,443,JP [CD#01],true\nopenai.com,2096,SG [CD#01],true\ninvalid host,443,SG [CD#02],true\n'
         def fetch(url, ttl=300):
             return ({'https://usage.example/': '{}', 'https://mobile.example/': mobile,
                      'https://telecom.example/': telecom}[url]).encode()
@@ -98,7 +98,7 @@ class BuilderTests(unittest.TestCase):
                 self.assertEqual(sorted(status['host_counts'].values()), [1, 1])
                 result, status = server.build(self.c, 'CTC')
                 self.assertEqual(status['sources'], ['Telecom'])
-                self.assertEqual(result['proxies'][0]['server'], '8.8.8.8')
+                self.assertEqual([node['server'] for node in result['proxies']], ['8.8.8.8', 'openai.com'])
 
     def test_panel_accounts_and_shared_weight(self):
         c = copy.deepcopy(self.c)

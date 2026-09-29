@@ -9,7 +9,7 @@ param(
     [bool]$EnableBestCfProbe = $true,
     [string]$BestCfProbeHostSuffix = "bestcf.cmliussss.hidns.vip",
     [string]$BestCfIdentityTestUrl = "https://671F0401.bestcf.cmliussss.hidns.vip/ip.json",
-    [int]$BestCfProbeConcurrency = 4,
+    [int]$BestCfProbeConcurrency = 1,
     [string]$Owner = "GuardSkill",
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
@@ -33,7 +33,7 @@ param(
     [int]$MinReceived = 1,
     [double]$MinSpeedMbps = 0.03,
     [int]$MaxPerCity = 20,
-    [int]$MinNodesPerCountry = 10,
+    [int]$MinNodesPerCountry = 15,
     [int]$CfstThreads = 80,
     [int]$CfstLatencyTestCount = 2,
     [int]$CfstDownloadTestCount = 15,
@@ -73,6 +73,12 @@ param(
     [int]$GenericPoolTopPerSource = 128,
     [int]$ChannelLatencyTopPerCountry = 20,
     [string]$GenericPoolPython = 'python',
+    [bool]$EnableDomainCandidatePool = $true,
+    [string]$DomainCandidateUrl = 'https://raw.githubusercontent.com/cmliu/CF-Pages-BestCF/main/cf_domains.txt',
+    [int]$DomainCandidateTopPerCountry = 5,
+    [double]$DomainCandidateTimeout = 1.5,
+    [int]$DomainCandidateConcurrency = 32,
+    [int]$DomainCandidateAttempts = 3,
     [bool]$EnableGslegeCloudflareIp = $true,
     [string]$GslegeRawBaseUrl = "https://raw.githubusercontent.com/gslege/CloudflareIP/main",
     [string]$GslegeCountries = "JP,SG,US,DE,NL",
@@ -1499,6 +1505,60 @@ function Invoke-ChannelLatencyPool {
     if ($process.ExitCode -ne 0) { throw "Channel latency stage exited with code $($process.ExitCode)." }
 }
 
+function Invoke-DomainCandidatePool {
+    param([int[]]$SelectedPorts)
+
+    if (-not $EnableDomainCandidatePool) {
+        Write-Log 'Cloudflare domain candidate source disabled.'
+        return @()
+    }
+    if (-not $EnableBestCfProbe) {
+        Write-Log 'WARN: Cloudflare domain candidates require the BestCF probe; skipping domain source.'
+        return @()
+    }
+    $helper = Join-Path $repoRoot 'scripts\domain_candidate_pool.py'
+    $pythonCommand = Get-Command $GenericPoolPython -ErrorAction SilentlyContinue
+    if (-not (Test-Path -LiteralPath $helper) -or $null -eq $pythonCommand) {
+        Write-Log 'WARN: Domain candidate pool requires Python and scripts/domain_candidate_pool.py.'
+        return @()
+    }
+    $manifest = Join-Path $WorkDir 'domain-work-items.csv'
+    if (Test-Path -LiteralPath $manifest) { Remove-Item -LiteralPath $manifest -Force }
+    $stdoutPath = Join-Path $WorkDir 'domain-candidate-stdout.log'
+    $stderrPath = Join-Path $WorkDir 'domain-candidate-stderr.log'
+    Write-Log "Fetching and HTTPing Cloudflare domain candidates before IP benchmarks: $DomainCandidateUrl"
+    $arguments = Join-ProcessArguments -Arguments @(
+        $helper, '--url', $DomainCandidateUrl, '--workdir', $WorkDir,
+        '--ports', ($SelectedPorts -join ','), '--top-per-country', ([string]$DomainCandidateTopPerCountry),
+        '--max-latency', ([string]$MaxLatencyMs), '--timeout', $DomainCandidateTimeout.ToString('R', [System.Globalization.CultureInfo]::InvariantCulture),
+        '--concurrency', ([string]$DomainCandidateConcurrency), '--attempts', ([string]$DomainCandidateAttempts)
+    )
+    $process = Start-Process -FilePath $pythonCommand.Source -ArgumentList $arguments -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -NoNewWindow -Wait -PassThru
+    if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath | ForEach-Object { Write-Log $_ } }
+    if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath | ForEach-Object { Write-Log "domain-candidate stderr: $_" } }
+    if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $manifest)) {
+        Write-Log "WARN: Domain candidate source failed with exit code $($process.ExitCode); continuing with IP sources."
+        return @()
+    }
+
+    $items = New-Object System.Collections.Generic.List[object]
+    foreach ($line in (Get-Content -LiteralPath $manifest | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })) {
+        $parts = $line -split ',', 4
+        $portValue = 0
+        if ($parts.Count -ne 4 -or -not [int]::TryParse($parts[0], [ref]$portValue)) { continue }
+        $safeScope = $parts[1] -replace '[^A-Za-z0-9_-]', '_'
+        $items.Add([pscustomobject]@{
+            Port = $portValue
+            Scope = $parts[1]
+            SelectedIpPath = $parts[2]
+            MapPath = $parts[3]
+            CsvPath = Join-Path $WorkDir "CloudflareSpeedTest-$portValue-$safeScope.csv"
+            DownloadTestCount = $DomainCandidateTopPerCountry
+        }) | Out-Null
+    }
+    return @($items.ToArray())
+}
+
 function Get-CfstArguments {
     param([object]$Item)
 
@@ -2172,6 +2232,8 @@ try {
     }
     Write-Log "Configured ports: $($effectivePorts -join ', ')"
 
+    $domainWorkItems = @(Invoke-DomainCandidatePool -SelectedPorts $effectivePorts)
+
     $previousCsvEntries = @(Get-PreviousCsvEntries)
     $previousNodeKeys = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($entry in $previousCsvEntries) {
@@ -2225,6 +2287,10 @@ try {
 
     $running = @(Start-CfstProcesses -WorkItems $workItems)
     Wait-CfstProcesses -Running $running
+    if ($domainWorkItems.Count -gt 0) {
+        $workItems = @($domainWorkItems + $workItems)
+        Write-Log "Prepended $($domainWorkItems.Count) domain work items for priority download probing."
+    }
     Invoke-BestCfProbes -WorkItems $workItems
     Write-MergedFilteredCsv -WorkItems $workItems -PreviousNodeKeys $previousNodeKeys
     Merge-RollingPublicationCsv -PreviousCsvEntries $previousCsvEntries

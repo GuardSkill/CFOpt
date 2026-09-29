@@ -23,6 +23,16 @@ class BestCfProbeTests(unittest.TestCase):
             "671F0401.bestcf.example",
         )
 
+    def test_candidate_host_uses_wildcard_label_for_domain_endpoint(self):
+        self.assertEqual(
+            probe.candidate_host("openai.com", "bestcf.example"),
+            "671F0401.bestcf.example",
+        )
+
+    def test_eligible_rows_accepts_valid_domain_endpoint(self):
+        rows = [["openai.com", "2", "2", "0", "10", "0", "SIN"]]
+        self.assertEqual(probe.eligible_rows(rows, 1), rows)
+
     def test_direct_https_connection_bypasses_wildcard_dns_but_keeps_sni(self):
         raw_socket = mock.Mock()
         tls_socket = mock.Mock()

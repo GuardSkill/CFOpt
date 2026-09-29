@@ -17,18 +17,18 @@ from adaptive_pool import COLO_COUNTRY
 
 
 class DirectHTTPSConnection(http.client.HTTPSConnection):
-    """Connect to the candidate IP while retaining the BestCF hostname for TLS."""
+    """Connect to a candidate IP/domain while retaining the BestCF hostname for TLS."""
 
-    def __init__(self, ip, host, port, timeout):
+    def __init__(self, endpoint, host, port, timeout):
         super().__init__(host, port, timeout=timeout)
-        self.candidate_ip = ip
+        self.candidate_endpoint = endpoint
 
     def connect(self):
         # Resolving the per-IP wildcard hostname can block outside Python's
         # socket timeout on Windows. The hostname encodes the destination IP,
         # so connect to that IP directly and use the hostname only as TLS SNI.
         raw_socket = socket.create_connection(
-            (self.candidate_ip, self.port), self.timeout, self.source_address
+            (self.candidate_endpoint, self.port), self.timeout, self.source_address
         )
         if self._tunnel_host:
             self.sock = raw_socket
@@ -36,8 +36,13 @@ class DirectHTTPSConnection(http.client.HTTPSConnection):
         self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
 
 
-def candidate_host(ip, suffix):
-    address = ipaddress.ip_address(ip)
+def candidate_host(endpoint, suffix):
+    try:
+        address = ipaddress.ip_address(endpoint)
+    except ValueError:
+        # BestCF exposes a wildcard route; keep its known-good label for DNS
+        # endpoints and override only the TCP destination in connect().
+        return f"671F0401.{suffix}"
     if isinstance(address, ipaddress.IPv4Address):
         label = "".join(f"{part:02X}" for part in address.packed)
     else:
@@ -81,17 +86,26 @@ def request_download(ip, port, suffix, byte_count, duration, timeout):
     host = candidate_host(ip, suffix)
     connection = DirectHTTPSConnection(ip, host, port, timeout)
     total = 0
-    started = time.monotonic()
+    request_started = time.monotonic()
+    measured_started = None
     http_status = 0
     try:
-        connection.request("GET", f"/__down?bytes={byte_count}&_t={time.time_ns()}", headers={"Cache-Control": "no-cache"})
+        connection.request(
+            "GET",
+            f"/__down?bytes={byte_count}&_t={time.time_ns()}",
+            headers={"Cache-Control": "no-cache", "Accept-Encoding": "identity"},
+        )
         response = connection.getresponse()
         http_status = response.status
         if response.status != 200:
             response.read(4096)
-            return 0.0, total, time.monotonic() - started, http_status, "http_error", f"HTTP {response.status}"
+            return 0.0, total, time.monotonic() - request_started, http_status, "http_error", f"HTTP {response.status}"
+        # Measure streamed payload throughput, not DNS/TCP/TLS/TTFB setup.
+        # This mirrors CFData-WEB's windowed speed test and avoids penalizing
+        # otherwise fast endpoints for one-time connection establishment.
+        measured_started = time.monotonic()
         while True:
-            remaining = duration - (time.monotonic() - started)
+            remaining = duration - (time.monotonic() - measured_started)
             if remaining <= 0:
                 break
             if connection.sock:
@@ -105,12 +119,12 @@ def request_download(ip, port, suffix, byte_count, duration, timeout):
             if not chunk:
                 break
             total += len(chunk)
-        elapsed = max(0.001, time.monotonic() - started)
+        elapsed = max(0.001, time.monotonic() - measured_started)
         if not total:
             return 0.0, total, elapsed, http_status, "no_data", "HTTP 200 returned no body bytes"
         return total / elapsed / 1_000_000, total, elapsed, http_status, "ok", ""
     except Exception as error:  # Network failures are recorded in the sidecar.
-        elapsed = max(0.001, time.monotonic() - started)
+        elapsed = max(0.001, time.monotonic() - (measured_started or request_started))
         if total:
             return total / elapsed / 1_000_000, total, elapsed, http_status, "ok", ""
         return 0.0, total, elapsed, http_status, classify_exception(error), str(error)
@@ -192,7 +206,15 @@ def eligible_rows(rows, limit):
             continue
         try:
             received, loss, latency = float(row[2]), float(row[3]), float(row[4])
-            ipaddress.ip_address(row[0].strip())
+            endpoint = row[0].strip()
+            try:
+                ipaddress.ip_address(endpoint)
+            except ValueError:
+                if not endpoint or len(endpoint) > 253 or not all(
+                    label and len(label) <= 63 and label.replace("-", "a").isalnum()
+                    for label in endpoint.rstrip(".").split(".")
+                ):
+                    raise
         except (ValueError, TypeError):
             continue
         if received >= 1 and loss < 1 and latency >= 0:
@@ -286,7 +308,7 @@ def main():
     parser.add_argument("--duration", type=float, default=4)
     parser.add_argument("--download-bytes", type=int, default=20_000_000)
     parser.add_argument("--timeout", type=float, default=8)
-    parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--host-suffix", default="bestcf.cmliussss.hidns.vip")
     parser.add_argument("--min-speed-mbps", type=float, default=0.03)
     parser.add_argument("--country-speed-floors", default="")

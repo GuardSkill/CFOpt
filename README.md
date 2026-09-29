@@ -101,6 +101,8 @@ https://zoroaaa.github.io/cf-bestip/ip_*.txt
 
 默认还会读取 `gslege/CloudflareIP` 的 `JP/SG/US/DE/NL.txt`，每个地区最多取前 20 个种子，仅加入 `443` 端口并由本机重新测速，来源标记为 `gslege`。Windows 可用 `-EnableGslegeCloudflareIp:$false`，Linux 可用 `ENABLE_GSLEGE_CLOUDFLAREIP=0` 关闭。
 
+默认还会在每次运行时动态下载 [`cmliu/CF-Pages-BestCF`](https://github.com/cmliu/CF-Pages-BestCF) 的 `cf_domains.txt`，不会把域名清单固化在仓库。脚本先用域名自身的 `/cdn-cgi/trace` 做 HTTPing：首次请求确认客户端、Colo 和国家，随后串行请求 3 次并取最低延迟；按「国家、跨全部端口」选延迟 Top 5。域名工作项会排在 IP 工作项前进入同源 `/ip.json` 与 `/__down` 下载复测，最终域名和 IP 在同一国家共同竞争最多 20、保底 15 个名额。Windows 可用 `EnableDomainCandidatePool`、`DomainCandidateUrl`、`DomainCandidateTopPerCountry` 等参数调整；Linux 对应 `ENABLE_DOMAIN_CANDIDATE_POOL`、`DOMAIN_CANDIDATE_URL`、`DOMAIN_CANDIDATE_TOP_PER_COUNTRY`。
+
 Windows 和 Linux 流程都会对所有地区进行独立热前缀挖掘：从上一轮优胜节点、`cf-bestip`、`gslege` 和 `ip164746` 种子中，按“地区+端口”学习活跃 `/24`；每池最多使用 4 个前缀，每个前缀按日期轮换生成 4 个新地址，再进入本机 TCP 粗筛和 CFST。它不是重复使用成品 IP，而是在优胜网段内持续探索新地址，来源标记为 `hot-mine`。Windows 使用 `EnableHotPrefixMining` 等参数，Linux 使用对应的 `ENABLE_HOT_PREFIX_MINING`、`HOT_PREFIX_SAMPLES` 和 `HOT_PREFIX_MAX_PREFIXES_PER_COUNTRY_PORT` 环境变量。
 
 Windows 和 Linux 流程还会从电信入口候选段分层抽样，默认包括 `104.16.0.0/13`、`104.24.0.0/14`、`172.64.0.0/13` 以及 WARP/Tunnel/合作段中指定的 `/24`。每段默认轮换抽取 32 个 IPv4，并在 `443/2053/2083/2087/2096/8443` 每个已配置端口测试一次；不按 focus 重复，来源为 `ct-pool`。这只验证其作为 CF TLS/下载入口的实际表现，不启用 IPv6 或 7844 专用协议测试。通过 `EnableCtEntryPool`、`CtEntryCidrs` 和 `CtEntrySamplesPerCidr` 配置。
@@ -208,6 +210,7 @@ Linux / 北京测速：
 - `unknown`：历史数据或异常情况下无法识别来源。
 - `ip164746`：`ip.164746.xyz/ipTop10.html` 的预筛候选，仅用于 JP/443。
 - `gslege`：`gslege/CloudflareIP` 的地区预筛种子，仅用于 443。
+- `domain-bestcf`：`CF-Pages-BestCF/cf_domains.txt` 的动态 CF 域名，按本机 `/cdn-cgi/trace` 国家和延迟选取。
 - `hot-mine`：按地区和端口从优胜 `/24` 中轮换生成、由成都本机发现的新候选。
 - `ct-pool`：从电信入口候选 CIDR 分层抽样并进行多端口 TLS/下载验证。
 
@@ -222,15 +225,15 @@ IntervalDays=1
 每次运行会先下载 GitHub 上当前目标 CSV，把旧节点重新加入 CFST 输入进行复测。最终每个地区执行滚动保鲜：
 
 - 本轮不达标的旧节点会被淘汰。
-- 最终每个国家/地区最多保留 20 个、尽量至少保留 10 个，不区分新旧节点。先应用正常下载速度门槛；不足 10 个时，从本轮延迟和丢包达标的同地区节点中按延迟从低到高补足，补位节点允许下载速度为 0。Windows 可通过 `MinNodesPerCountry`、Linux 可通过 `MIN_NODES_PER_COUNTRY` 调整保底数量。
-- 如果本轮连延迟合格的候选也不足 10 个，则只发布实际可用的数量；不会恢复本轮未返回结果的历史节点，也不会伪造节点。
+- 最终每个国家/地区的域名与 IP 共享最多 20 个、尽量至少保留 15 个名额，不区分新旧节点。先应用正常下载速度门槛；不足 15 个时，从本轮延迟和丢包达标的同地区节点中按延迟从低到高补足，补位节点允许下载速度为 0。Windows 可通过 `MinNodesPerCountry`、Linux 可通过 `MIN_NODES_PER_COUNTRY` 调整保底数量。
+- 如果本轮连延迟合格的候选也不足 15 个，则只发布实际可用的数量；不会恢复本轮未返回结果的历史节点，也不会伪造节点。
 - 发布安全阈值按整份 CSV 的总量判断，防止整机网络波动造成全局异常缩水；单个地区可以正常清除大批已过期节点。
 
 ### 调参
 
 Windows 和 Linux 默认会在 CFST 延迟测试前做一次本机 TCP 粗筛。只有候选数超过 120 的工作项才会粗筛；连接超时为 800ms，并发数为 128，每个地区和来源最多保留 30 个新候选。上一轮节点会进入独立的 `previous` 工作项，并由 BestCF 阶段全部下载复测；这样旧节点必须在本轮重新通过延迟、丢包和下载测试才能发布。
 
-默认启用 BestCF 同源测速：候选 IP 被编码为专属测试域名，先请求 `/ip.json` 确认 Colo/国家，再请求同一域名的 `/__down?bytes=20000000` 流式计速。详细结果写入工作目录的 `bestcf-probe-diagnostics.csv`，其中会分别标记 `http_error`、`timeout`、`dns_error`、`tls_error`、`no_data` 和有实际响应数据但未达到门槛的 `low_speed`，并列出渠道预判与最终确认国家的差异。无法通过 `/ip.json` 确认身份的节点不会进入发布保底；已经确认国家但下载失败的节点仍可按低延迟规则补位。可用 Windows `EnableBestCfProbe` / Linux `ENABLE_BESTCF_PROBE` 关闭并退回 CFST 内置下载模式；测速域后缀可通过 `BestCfProbeHostSuffix` / `BESTCF_PROBE_HOST_SUFFIX` 覆盖。
+默认启用 BestCF 同源测速：候选 IP 被编码为专属测试域名，候选域名则保留动态 DNS 入口；两者都先请求 `/ip.json` 确认最终 Colo/国家，再请求同一域名的 `/__down?bytes=20000000` 流式计速。借鉴 `CFData-WEB` 的窗口测速方式，收到 HTTP 200 响应头后才开始统计响应体吞吐，DNS/TCP/TLS/TTFB 不计入下载速度；默认真实下载并发为 1，避免多个候选争抢同一条 runner 带宽。详细结果写入工作目录的 `bestcf-probe-diagnostics.csv`，其中会分别标记 `http_error`、`timeout`、`dns_error`、`tls_error`、`no_data` 和有实际响应数据但未达到门槛的 `low_speed`，并列出渠道预判与最终确认国家的差异。无法通过 `/ip.json` 确认身份的节点不会进入发布保底；已经确认国家但下载失败的节点仍可按低延迟规则补位。
 
 临时关闭粗筛或调整参数：
 
@@ -303,7 +306,15 @@ GITHUB_TOKEN_CFOPT="你的 GitHub token" AUTORUN_BACKEND=cron bash -c "$(curl -f
 
 ### 国家下载速度下限
 
-默认的国家下载速度下限为 `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`。TW 默认不设国家下载速度下限。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。速度大于等于下限即为达标，脚本优先发布达标节点；仅当该地区不足默认 10 个时，才用本轮延迟、丢包合格的低延迟节点补位，补位节点不要求下载达标。
+默认的国家下载速度下限为 `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`。TW 默认不设国家下载速度下限。Windows 使用参数 `CountryMinSpeedMBPerSec`，Linux 使用环境变量 `COUNTRY_MIN_SPEED_MB_PER_SEC`；数值的单位是 CFST 原始 `MB/s`，而不是 Mbps。速度大于等于下限即为达标，脚本优先发布达标节点；仅当该地区不足默认 15 个时，才用本轮延迟、丢包合格的低延迟节点补位，补位节点不要求下载达标。
+
+### 项目来源与借鉴
+
+- [`XIU2/CloudflareSpeedTest`](https://github.com/XIU2/CloudflareSpeedTest)：CF IP 的 TCP 延迟、丢包与基础测速执行器。
+- [`cmliu/CF-Pages-BestCF`](https://github.com/cmliu/CF-Pages-BestCF)：动态 CF 官方域名清单，以及 `/cdn-cgi/trace` 首次确认、3 次 HTTPing 取最低延迟的域名筛选思路。
+- [`PoemMisty/CFData-WEB`](https://github.com/PoemMisty/CFData-WEB)：TCPing/HTTP TTFB 分层、HTTPing 3 次采样、响应头后开始窗口计速、准确测速使用单下载线程的做法。
+- [`zoroaaa/cf-bestip`](https://github.com/zoroaaa/cf-bestip)、[`gslege/CloudflareIP`](https://github.com/gslege/CloudflareIP)、[`ZhiXuanWang/cf-speed-dns`](https://github.com/ZhiXuanWang/cf-speed-dns)：地区种子与预筛候选来源；所有结果仍由本机重新验证。
+- CMLiu 的 BestCF/Edge Tunnel 接口与 `cf.090227.xyz`：同源 `/ip.json`、`/__down`、移动候选及 ProxyIP 数据源。`zip.cm.edu.kg`、RIPEstat AS13335/AS209242 与 vps789 作为其他候选数据源。
 
 默认重点测速范围（focus scope）是 `SG,HK,TW,JP,KR,US,DE,GB`；其中 US 与 TW 会作为独立重点范围测速。脚本先按国家和 IP 去重并保留本轮速度最高的测量，再执行国家下限。新旧节点一视同仁。最终 CSV 的城市栏不再显示来源，而显示一位小数的下载速度，例如 `DE [CD#01 13.1MB/s]`。
 
@@ -384,6 +395,8 @@ The runners also fetch the pre-ranked Top 10 list from `https://ip.164746.xyz/ip
 
 The runners also load the first 20 seeds per country from `gslege/CloudflareIP` for `JP/SG/US/DE/NL`. They are injected only on port `443`, tagged as `gslege`, and re-benchmarked locally. Disable with `-EnableGslegeCloudflareIp:$false` or `ENABLE_GSLEGE_CLOUDFLAREIP=0`.
 
+Every run also fetches the current `cf_domains.txt` from [`cmliu/CF-Pages-BestCF`](https://github.com/cmliu/CF-Pages-BestCF). Each domain is classified through `/cdn-cgi/trace`, measured three times by HTTP TTFB, and ranked across all ports; the latency Top 5 per country are priority-probed through `/ip.json` and `/__down`. Domain and IP endpoints share the same final Top 20 and minimum 15 slots per country.
+
 `vps789` CT candidates are disabled by default because the API currently returns very few usable entries. Enable it manually with `-EnableVps789Ct` on Windows or `ENABLE_VPS789_CT=1` on Linux.
 
 ### Ports and Filters
@@ -431,7 +444,7 @@ Possible sources are `ip.zip`, `cf-bestip`, `ip164746`, `gslege`, `vps789`, `pre
 
 ### Rolling Retest
 
-Each run fetches the current published CSV and fully retests every old node in a dedicated per-port job. Missing historical rows are never restored. Each country/group keeps at most 20 nodes and, when enough latency-qualified candidates exist, at least 10 regardless of whether they are old or new. The normal speed policy is applied first; a group below 10 is filled by lowest latency from candidates that passed receive, loss, and latency checks, even when their measured download speed is zero. Configure the floor with Windows `MinNodesPerCountry` or Linux `MIN_NODES_PER_COUNTRY`.
+Each run fetches the current published CSV and fully retests every old IP node in a dedicated per-port job; domain endpoints are freshly rediscovered from the current upstream list. Missing historical rows are never restored. Each country/group keeps at most 20 domain/IP endpoints and, when enough latency-qualified candidates exist, at least 15. The normal speed policy is applied first; a group below 15 is filled by lowest latency from candidates that passed receive, loss, and latency checks, even when their measured download speed is zero.
 
 The publication safety ratio applies to the total CSV size, protecting against broad probe-host network failures while allowing one expired region to shrink normally.
 
@@ -439,7 +452,7 @@ The publication safety ratio applies to the total CSV size, protecting against b
 
 Windows and Linux perform a local TCP precheck before CFST latency testing. It runs only when a work item has more than 120 candidates, uses an 800ms timeout with 128 concurrent connects, and retains at most 30 new candidates per region/source group. Previous nodes use a separate full-history job and are all download-tested by the BestCF stage, so every retained historical node has a fresh result.
 
-The default is now a same-origin BestCF probe. Each candidate IP is encoded into its own test hostname; `/ip.json` confirms Colo/country and `/__down?bytes=20000000` measures streamed throughput through that same hostname. `bestcf-probe-diagnostics.csv` distinguishes `http_error`, `timeout`, `dns_error`, `tls_error`, `no_data`, and successful transfers that are genuinely below policy as `low_speed`, while also recording source-country versus confirmed-country differences. Candidates whose identity cannot be confirmed by `/ip.json` are ineligible even for the minimum-count fallback; confirmed candidates whose download fails may still fill that fallback by latency. Disable it with Windows `EnableBestCfProbe` or Linux `ENABLE_BESTCF_PROBE` to restore CFST's built-in download mode. Override the service with `BestCfProbeHostSuffix` / `BESTCF_PROBE_HOST_SUFFIX` when using a compatible self-hosted endpoint.
+The default is a same-origin BestCF probe for both IP and domain endpoints. `/ip.json` confirms the final Colo/country and `/__down?bytes=20000000` measures streamed payload throughput. Following CFData-WEB's windowed method, timing begins after the HTTP 200 response headers, excludes DNS/TCP/TLS/TTFB, disables compression, and defaults to one download worker to avoid bandwidth contention.
 
 Disable it for one run:
 
@@ -467,7 +480,7 @@ FORCE=1 CFST_DEBUG=1 ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 
 ### Country Download Speed Floors
 
-The default country download-speed floors are `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`. TW has no country speed floor by default. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Values use CFST raw `MB/s`, not Mbps. A value greater than or equal to the floor passes, and passing nodes are preferred. Only when a region has fewer than the default 10 nodes does the runner fill it with the lowest-latency candidates that passed receive, loss, and latency checks, regardless of download speed.
+The default country download-speed floors are `JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5`. TW has no country speed floor by default. Use the Windows `CountryMinSpeedMBPerSec` parameter or the Linux `COUNTRY_MIN_SPEED_MB_PER_SEC` environment variable. Speed greater than or equal to the configured floor passes. A region below the default 15 endpoints is filled with its lowest-latency qualified domain/IP candidates regardless of download speed.
 
 The default focus scope is `SG,HK,TW,JP,KR,US,DE,GB`; TW and US are benchmarked as dedicated focus scopes. The runner first deduplicates each country/IP to its fastest current measurement, then applies the country floor. Old and new candidates compete equally. The final CSV city field shows one-decimal measured speed instead of source, for example `DE [CD#01 13.1MB/s]`.
 
@@ -495,4 +508,8 @@ Disable Linux country floors:
 FORCE=1 COUNTRY_MIN_SPEED_MB_PER_SEC='' ./scripts/linux/invoke-cfopt-auto-push-linux.sh
 ```
 
-The default outer CFST concurrency is one process (`MaxParallelCfst=1` / `MAX_PARALLEL_CFST=1`). BestCF download probes use four workers by default (`BestCfProbeConcurrency=4` / `BESTCF_PROBE_CONCURRENCY=4`); increase that only when the runner has enough spare bandwidth.
+The default outer CFST concurrency is one process (`MaxParallelCfst=1` / `MAX_PARALLEL_CFST=1`). BestCF download probes use one worker by default (`BestCfProbeConcurrency=1` / `BESTCF_PROBE_CONCURRENCY=1`) so measured candidates do not divide the runner's bandwidth.
+
+### Upstream projects and ideas
+
+CFOpt documents every incorporated source or measurement idea: `XIU2/CloudflareSpeedTest` supplies the base scanner; `cmliu/CF-Pages-BestCF` supplies the live domain list and three-sample trace HTTPing approach; `PoemMisty/CFData-WEB` inspired TCP/HTTP latency separation and post-header single-worker windowed downloads; `zoroaaa/cf-bestip`, `gslege/CloudflareIP`, `cf-speed-dns`, CMLiu BestCF/Edge Tunnel services, `zip.cm.edu.kg`, RIPEstat, and vps789 provide candidate data that CFOpt always re-tests locally.

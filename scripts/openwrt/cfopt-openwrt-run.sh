@@ -86,7 +86,7 @@ ip netns exec cfopt env \
     FORCE=1 \
     CFST_THREADS=32 \
     TCP_PRECHECK_ENABLED=0 \
-    BESTCF_PROBE_CONCURRENCY=2 \
+    BESTCF_PROBE_CONCURRENCY=1 \
     PROXYIP_BEST_WORKERS=24 \
     MAX_PARALLEL_CFST=1 \
     bash "$REPO_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"

@@ -12,7 +12,7 @@ DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://671F0401.bestcf.cmliussss.hidns.
 ENABLE_BESTCF_PROBE="${ENABLE_BESTCF_PROBE:-1}"
 BESTCF_PROBE_HOST_SUFFIX="${BESTCF_PROBE_HOST_SUFFIX:-bestcf.cmliussss.hidns.vip}"
 BESTCF_IDENTITY_TEST_URL="${BESTCF_IDENTITY_TEST_URL:-https://671F0401.bestcf.cmliussss.hidns.vip/ip.json}"
-BESTCF_PROBE_CONCURRENCY="${BESTCF_PROBE_CONCURRENCY:-4}"
+BESTCF_PROBE_CONCURRENCY="${BESTCF_PROBE_CONCURRENCY:-1}"
 COUNTRIES_CSV="${COUNTRIES_CSV:-HK,TW,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"
 OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
@@ -26,7 +26,7 @@ MIN_RECEIVED="${MIN_RECEIVED:-1}"
 MIN_SPEED_MBPS="${MIN_SPEED_MBPS:-0.03}"
 COUNTRY_MIN_SPEED_MB_PER_SEC="${COUNTRY_MIN_SPEED_MB_PER_SEC-JP=10,US=2,KR=3,HK=2,DE=5,GB=3,SG=5}"
 MAX_PER_CITY="${MAX_PER_CITY:-20}"
-MIN_NODES_PER_COUNTRY="${MIN_NODES_PER_COUNTRY:-10}"
+MIN_NODES_PER_COUNTRY="${MIN_NODES_PER_COUNTRY:-15}"
 ROLLING_REPLACE_FRACTION="${ROLLING_REPLACE_FRACTION:-0.20}"
 MIN_PUBLISH_RETENTION_RATIO="${MIN_PUBLISH_RETENTION_RATIO:-0.6}"
 CFST_THREADS="${CFST_THREADS:-80}"
@@ -44,6 +44,12 @@ TCP_PRECHECK_TIMEOUT_MS="${TCP_PRECHECK_TIMEOUT_MS:-800}"
 TCP_PRECHECK_THREADS="${TCP_PRECHECK_THREADS:-128}"
 TCP_PRECHECK_MAX_CANDIDATES="${TCP_PRECHECK_MAX_CANDIDATES:-30}"
 USE_PROXY_FOR_CFST="${USE_PROXY_FOR_CFST:-0}"
+ENABLE_DOMAIN_CANDIDATE_POOL="${ENABLE_DOMAIN_CANDIDATE_POOL:-1}"
+DOMAIN_CANDIDATE_URL="${DOMAIN_CANDIDATE_URL:-https://raw.githubusercontent.com/cmliu/CF-Pages-BestCF/main/cf_domains.txt}"
+DOMAIN_CANDIDATE_TOP_PER_COUNTRY="${DOMAIN_CANDIDATE_TOP_PER_COUNTRY:-5}"
+DOMAIN_CANDIDATE_TIMEOUT="${DOMAIN_CANDIDATE_TIMEOUT:-1.5}"
+DOMAIN_CANDIDATE_CONCURRENCY="${DOMAIN_CANDIDATE_CONCURRENCY:-32}"
+DOMAIN_CANDIDATE_ATTEMPTS="${DOMAIN_CANDIDATE_ATTEMPTS:-3}"
 FOCUS_COUNTRIES_CSV="${FOCUS_COUNTRIES_CSV:-SG,HK,TW,JP,KR,US,DE,GB}"
 TEST_LOCATION_NAME="${TEST_LOCATION_NAME:-}"
 ENABLE_CFBESTIP="${ENABLE_CFBESTIP:-1}"
@@ -112,6 +118,8 @@ CT_ENTRY_PATH="$WORK_DIR/ct-entry-candidates.csv"
 GENERIC_POOL_PATH="$WORK_DIR/generic-candidates.csv"
 GENERIC_POOL_SCRIPT="${GENERIC_POOL_SCRIPT:-$ROOT_DIR/scripts/generic_candidate_pool.py}"
 CHANNEL_LATENCY_SCRIPT="${CHANNEL_LATENCY_SCRIPT:-$ROOT_DIR/scripts/channel_latency_pool.py}"
+DOMAIN_CANDIDATE_SCRIPT="${DOMAIN_CANDIDATE_SCRIPT:-$ROOT_DIR/scripts/domain_candidate_pool.py}"
+DOMAIN_WORK_ITEMS_PATH="$WORK_DIR/domain-work-items.csv"
 BESTCF_PROBE_SCRIPT="${BESTCF_PROBE_SCRIPT:-$ROOT_DIR/scripts/bestcf_probe.py}"
 BESTCF_PROBE_DIAGNOSTICS_PATH="${BESTCF_PROBE_DIAGNOSTICS_PATH:-$WORK_DIR/bestcf-probe-diagnostics.csv}"
 CHANNEL_LATENCY_TOP_PER_COUNTRY="${CHANNEL_LATENCY_TOP_PER_COUNTRY:-20}"
@@ -1459,6 +1467,32 @@ generate_proxyip_best() {
   log "Generated proxyip best list: $PROXYIP_BEST_PATH"
 }
 
+generate_domain_candidate_pool() {
+  : > "$DOMAIN_WORK_ITEMS_PATH"
+  [[ "$ENABLE_DOMAIN_CANDIDATE_POOL" == "1" ]] || {
+    log "Cloudflare domain candidate source disabled."
+    return 0
+  }
+  [[ "$ENABLE_BESTCF_PROBE" == "1" ]] || {
+    log "WARN: Cloudflare domain candidates require the BestCF probe; skipping domain source."
+    return 0
+  }
+  [[ -f "$DOMAIN_CANDIDATE_SCRIPT" ]] || {
+    log "WARN: Domain candidate helper not found: $DOMAIN_CANDIDATE_SCRIPT"
+    return 0
+  }
+  log "Fetching and HTTPing Cloudflare domain candidates before IP benchmarks: $DOMAIN_CANDIDATE_URL"
+  if ! python3 "$DOMAIN_CANDIDATE_SCRIPT" \
+    --url "$DOMAIN_CANDIDATE_URL" --workdir "$WORK_DIR" \
+    --ports "$(IFS=,; echo "${ports[*]}")" \
+    --top-per-country "$DOMAIN_CANDIDATE_TOP_PER_COUNTRY" \
+    --max-latency "$MAX_LATENCY_MS" --timeout "$DOMAIN_CANDIDATE_TIMEOUT" \
+    --concurrency "$DOMAIN_CANDIDATE_CONCURRENCY" --attempts "$DOMAIN_CANDIDATE_ATTEMPTS"; then
+    log "WARN: Domain candidate source failed; continuing with IP sources."
+    : > "$DOMAIN_WORK_ITEMS_PATH"
+  fi
+}
+
 main() {
   mkdir -p "$WORK_DIR"
   log "Starting CFOpt Linux auto push."
@@ -1471,7 +1505,7 @@ main() {
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"
-  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$HOT_MINE_PATH" "$CT_ENTRY_PATH" "$GENERIC_POOL_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$WORK_DIR/cfbestip-all.txt" "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
+  rm -f "$WORK_DIR/port-work-items.csv" "$WORK_DIR/cfst-processes.csv" "$DOMAIN_WORK_ITEMS_PATH" "$COMBINED_CANDIDATES_PATH" "$CSV_PATH" "$VPS789_CT_IP_PATH" "$VPS789_CT_CSV_PATH" "$IP164746_PATH" "$GSLEGE_PATH" "$HOT_MINE_PATH" "$CT_ENTRY_PATH" "$GENERIC_POOL_PATH" "$WORK_DIR/ip164746.raw" "$WORK_DIR"/gslege-*.raw "$WORK_DIR/cfbestip-all.txt" "$PREVIOUS_CSV_PATH" "$PREVIOUS_NODES_PATH" "$PREVIOUS_NODE_KEYS_PATH"
 
   update_zip_cache
   fetch_previous_csv_nodes
@@ -1483,6 +1517,7 @@ main() {
 
   mapfile -t ports < <(effective_ports)
   log "Configured ports: ${ports[*]}"
+  generate_domain_candidate_pool
   if [[ "$ENABLE_GENERIC_CANDIDATE_POOL" == "1" && "$CANDIDATE_POOL_MODE" != "legacy" && -f "$GENERIC_POOL_SCRIPT" ]]; then
     if ! python3 "$GENERIC_POOL_SCRIPT" --ports "$(IFS=,; echo "${ports[*]}")" --output "$GENERIC_POOL_PATH" --max-prefixes "$GENERIC_POOL_MAX_PREFIXES" --top-per-source "$GENERIC_POOL_TOP_PER_SOURCE"; then
       log "WARN: Generic candidate pool failed; continuing without it."
@@ -1583,6 +1618,11 @@ main() {
   done
   if (( cfst_failed != 0 )); then
     exit 1
+  fi
+  if [[ -s "$DOMAIN_WORK_ITEMS_PATH" ]]; then
+    cat "$DOMAIN_WORK_ITEMS_PATH" "$WORK_DIR/port-work-items.csv" > "$WORK_DIR/port-work-items.with-domains.csv"
+    mv "$WORK_DIR/port-work-items.with-domains.csv" "$WORK_DIR/port-work-items.csv"
+    log "Prepended $(wc -l < "$DOMAIN_WORK_ITEMS_PATH" | tr -d ' ') domain work items for priority download probing."
   fi
   run_bestcf_probes
   build_combined_candidates
