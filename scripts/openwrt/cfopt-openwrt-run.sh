@@ -44,7 +44,10 @@ for candidate in "$extract_root"/*; do
 done
 test -n "$extracted_repo"
 mv "$extracted_repo" "$new_repo"
-test -x "$new_repo/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+test -f "$new_repo/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+chmod 755 \
+    "$new_repo/scripts/linux/invoke-cfopt-auto-push-linux.sh" \
+    "$new_repo/scripts/openwrt/setup-cfopt-netns.sh"
 rm -rf "$REPO_DIR"
 mv "$new_repo" "$REPO_DIR"
 
