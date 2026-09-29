@@ -95,6 +95,9 @@ try {
     if ($runnerText -notmatch '--http1\.1' -or $runnerText -notmatch '--data-binary "@\$bodyPath"' -or $runnerText -notmatch 'GitHub upload failed after 5 attempts') {
         throw "Windows GitHub uploads must use retrying HTTP/1.1 curl with a diagnostic response body."
     }
+    if ($runnerText -notmatch 'GitHub metadata attempt \$attempt/5 failed' -or $runnerText -notmatch 'GitHub metadata read failed after 5 attempts' -or $runnerText -match 'Invoke-GitHubRestMethodWithRetry') {
+        throw "Windows GitHub metadata reads must use retrying HTTP/1.1 curl instead of Invoke-RestMethod."
+    }
     if ($runnerText -notmatch 'https://api\.ip\.sb/geoip') {
         throw "The Windows runner must use an HTTPS carrier probe that returns ASCII ISP data."
     }

@@ -1906,58 +1906,60 @@ function Publish-FileToGitHub {
     $token = Get-GitHubToken
     $encodedPath = ($UploadTargetPath -split "/" | ForEach-Object { [uri]::EscapeDataString($_) }) -join "/"
     $uri = "https://api.github.com/repos/$Owner/$Repo/contents/$encodedPath"
-    $headers = @{
-        Authorization = "Bearer $token"
-        Accept = "application/vnd.github+json"
-        "X-GitHub-Api-Version" = "2022-11-28"
-        "User-Agent" = "CFOptAutoPush"
-    }
-
-    function Invoke-GitHubRestMethodWithRetry {
-        param(
-            [hashtable]$Parameters,
-            [int]$MaxAttempts = 3,
-            [int]$InitialDelaySeconds = 2
-        )
-
-        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-            try {
-                return Invoke-RestMethod @Parameters
-            }
-            catch {
-                if ($attempt -ge $MaxAttempts) {
-                    throw
-                }
-
-                Write-Log "WARN: GitHub request failed on attempt $attempt/$($MaxAttempts): $($_.Exception.Message). Retrying."
-                Start-Sleep -Seconds ($InitialDelaySeconds * $attempt)
-            }
-        }
-    }
-
     Write-Log "Reading current GitHub file metadata: $Owner/$Repo/$UploadTargetPath"
     $existingSha = $null
+    $metadataPath = Join-Path $WorkDir ("github-metadata-{0}.json" -f [guid]::NewGuid().ToString("N"))
     try {
-        $existing = Invoke-GitHubRestMethodWithRetry -Parameters @{
-            Method = "Get"
-            Uri = "$uri`?ref=$Branch"
-            Headers = $headers
-        }
-        $existingSha = $existing.sha
-        Write-Log "GitHub file exists. Upload will update existing file."
-    }
-    catch {
-        $statusCode = $null
-        if ($_.Exception.Response) {
-            $statusCode = [int]$_.Exception.Response.StatusCode
-        }
+        $metadataRead = $false
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            Remove-Item -LiteralPath $metadataPath -Force -ErrorAction SilentlyContinue
+            $statusCode = & curl.exe `
+                --silent `
+                --show-error `
+                --location `
+                --http1.1 `
+                --connect-timeout 20 `
+                --max-time 120 `
+                --request GET `
+                --header "Authorization: Bearer $token" `
+                --header "Accept: application/vnd.github+json" `
+                --header "X-GitHub-Api-Version: 2022-11-28" `
+                --header "User-Agent: CFOptAutoPush" `
+                --output $metadataPath `
+                --write-out "%{http_code}" `
+                "$uri`?ref=$Branch"
+            $curlExitCode = $LASTEXITCODE
+            $metadataText = if (Test-Path -LiteralPath $metadataPath) { Get-Content -LiteralPath $metadataPath -Raw -Encoding UTF8 } else { "" }
+            if ($curlExitCode -eq 0 -and $statusCode -eq "200") {
+                $existing = $metadataText | ConvertFrom-Json
+                if ([string]::IsNullOrWhiteSpace([string]$existing.sha)) {
+                    throw "GitHub metadata response did not contain a file SHA."
+                }
+                $existingSha = [string]$existing.sha
+                $metadataRead = $true
+                Write-Log "GitHub file exists. Upload will update existing file."
+                break
+            }
+            if ($curlExitCode -eq 0 -and $statusCode -eq "404") {
+                $metadataRead = $true
+                Write-Log "GitHub file was not found. Upload will create a new file."
+                break
+            }
 
-        if ($statusCode -eq 404) {
-            Write-Log "GitHub file was not found. Upload will create a new file."
+            $responseSummary = ($metadataText -replace '\s+', ' ').Trim()
+            if ($responseSummary.Length -gt 500) { $responseSummary = $responseSummary.Substring(0, 500) }
+            if ($attempt -lt 5) {
+                Write-Log "WARN: GitHub metadata attempt $attempt/5 failed: curl=$curlExitCode HTTP=$statusCode response=$responseSummary. Retrying."
+                Start-Sleep -Seconds (5 * $attempt)
+            }
+            else {
+                throw "GitHub metadata read failed after 5 attempts: curl=$curlExitCode HTTP=$statusCode response=$responseSummary"
+            }
         }
-        else {
-            throw
-        }
+        if (-not $metadataRead) { throw "GitHub metadata read did not complete." }
+    }
+    finally {
+        Remove-Item -LiteralPath $metadataPath -Force -ErrorAction SilentlyContinue
     }
 
     $bytes = [System.IO.File]::ReadAllBytes($LocalPath)
