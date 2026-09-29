@@ -29,11 +29,21 @@ fi
 mkdir -p "$BASE_DIR" "$WORK_DIR"
 archive_path="/tmp/cfopt-main.tar.gz"
 new_repo="$BASE_DIR/repo.new"
-rm -rf "$new_repo" "$archive_path"
-mkdir -p "$new_repo"
+extract_root="/tmp/cfopt-repo-extract"
+rm -rf "$new_repo" "$extract_root" "$archive_path"
+mkdir -p "$extract_root"
 curl --fail --location --retry 5 --retry-delay 3 --retry-all-errors \
     --output "$archive_path" "$ARCHIVE_URL"
-tar -xzf "$archive_path" --strip-components=1 -C "$new_repo"
+tar -xzf "$archive_path" -C "$extract_root"
+extracted_repo=""
+for candidate in "$extract_root"/*; do
+    if [ -d "$candidate" ]; then
+        extracted_repo="$candidate"
+        break
+    fi
+done
+test -n "$extracted_repo"
+mv "$extracted_repo" "$new_repo"
 test -x "$new_repo/scripts/linux/invoke-cfopt-auto-push-linux.sh"
 rm -rf "$REPO_DIR"
 mv "$new_repo" "$REPO_DIR"
