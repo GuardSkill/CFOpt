@@ -1,4 +1,4 @@
-IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps
+IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)
 104.20.0.4,443,FRA,DE [CD#01 5.3MB/s],true,2,2,0,213.78,5.26
 104.24.33.16,2053,FRA,DE [CD#02 5.3MB/s],true,2,2,0,216.07,5.35
 104.25.190.63,2096,FRA,DE [CD#03 5.5MB/s],true,2,2,0,224.16,5.48

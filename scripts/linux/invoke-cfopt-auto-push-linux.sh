@@ -1206,7 +1206,7 @@ filter_csv() {
         accepted[++accepted_count] = sprintf("%s\t%020.6f\t%020.6f\t%d\t%d\t%d\t%s", city, parts[3] + 0, parts[2] + 0, parts[4] + 0, protected, speed_ok, parts[6])
       }
       if (accepted_count < 1) exit 2
-      print "IP,Port,DataCenter,City,TLS,Sent,Received,LossRate,AverageLatency,DownloadSpeedMBps"
+      print "IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)"
       for (i = 1; i <= accepted_count; i++) {
         for (j = i + 1; j <= accepted_count; j++) {
           if (accepted[j] < accepted[i]) {
