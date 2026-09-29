@@ -63,6 +63,21 @@ try {
     if ($fallbackDetection.Isp -ne 'ChinaTelecom' -or -not $fallbackDetection.FallbackUsed -or $fallbackDetection.RecognizedProbeCount -ne 0) {
         throw "An unavailable ISP probe must use the explicitly configured Telecom fallback."
     }
+    $directDefaultRoute = @([pscustomobject]@{ DestinationPrefix = '0.0.0.0/0'; NextHop = '192.168.0.1' })
+    if (-not (Test-DirectGatewayRoute -Gateway '192.168.0.1' -Routes $directDefaultRoute)) {
+        throw 'A direct default route must satisfy the direct-network gateway check.'
+    }
+    $directSplitRoutes = @(
+        [pscustomobject]@{ DestinationPrefix = '0.0.0.0/1'; NextHop = '192.168.0.1' },
+        [pscustomobject]@{ DestinationPrefix = '128.0.0.0/1'; NextHop = '192.168.0.1' },
+        [pscustomobject]@{ DestinationPrefix = '0.0.0.0/0'; NextHop = '192.168.0.2' }
+    )
+    if (-not (Test-DirectGatewayRoute -Gateway '192.168.0.1' -Routes $directSplitRoutes)) {
+        throw 'A complete pair of direct split routes must override the side-router default route.'
+    }
+    if (Test-DirectGatewayRoute -Gateway '192.168.0.1' -Routes @($directSplitRoutes[0])) {
+        throw 'An incomplete direct split route pair was accepted.'
+    }
     try {
         Get-DirectNetworkIsp -ProbeUrls @() | Out-Null
         throw "Unavailable ISP probes were accepted without an explicit fallback."
@@ -106,6 +121,9 @@ try {
     }
     if ($installerText -notmatch '\-NetworkIspFallback ChinaTelecom') {
         throw "The Chengdu scheduled task must fall back to Telecom when all ISP probes are unavailable."
+    }
+    if ($installerText -notmatch '\-ExpectedDirectGateway 192\.168\.0\.1' -or $installerText -notmatch '\-RejectFakeIpDns') {
+        throw 'The Chengdu scheduled task must reject the OpenClash gateway and Fake-IP DNS.'
     }
     if ($gitPublisherText -notmatch '\[string\]\$NetworkIspFallback = "ChinaTelecom"' -or $gitPublisherText -notmatch '\-NetworkIspFallback \$NetworkIspFallback') {
         throw "The Chengdu Git publisher must pass its Telecom fallback to the benchmark runner."

@@ -113,7 +113,9 @@ jobs:
             -CfstPath "$env:GITHUB_WORKSPACE\.cfopt-runner\bin\cfst.exe" `
             -Force `
             -AutoDetectNetworkIsp `
-            -NetworkIspFallback ChinaTelecom
+            -NetworkIspFallback ChinaTelecom `
+            -ExpectedDirectGateway 192.168.0.1 `
+            -RejectFakeIpDns
           if ($LASTEXITCODE -ne 0) { throw "CFOpt Windows runner exited with code $LASTEXITCODE" }
 
   linux-bj:

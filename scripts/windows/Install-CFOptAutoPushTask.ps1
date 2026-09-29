@@ -99,7 +99,7 @@ if ($PublishWithGit) {
     $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$GitPublisherPath`" -RepoRoot `"$repoRoot`" -WorkDir `"$WorkDir`" -RunnerPath `"$ScriptPath`" -CfstPath `"$CfstPath`""
 }
 else {
-    $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`" -Force -AutoDetectNetworkIsp -NetworkIspFallback ChinaTelecom"
+    $argument = "-NoProfile -ExecutionPolicy Bypass -File `"$ScriptPath`" -WorkDir `"$WorkDir`" -CfstPath `"$CfstPath`" -Force -AutoDetectNetworkIsp -NetworkIspFallback ChinaTelecom -ExpectedDirectGateway 192.168.0.1 -RejectFakeIpDns"
 }
 
 $action = New-ScheduledTaskAction -Execute $powershell -Argument $argument -WorkingDirectory $repoRoot

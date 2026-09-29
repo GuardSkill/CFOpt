@@ -25,6 +25,8 @@ param(
         "http://ip-api.com/json/?fields=status,query,isp,org,as",
         "https://myip.ipip.net"
     ),
+    [string]$ExpectedDirectGateway = "",
+    [switch]$RejectFakeIpDns,
     [int]$IntervalDays = 0,
     [int]$IntervalHours = 4,
     [int]$MaxLatencyMs = 420,
@@ -152,6 +154,55 @@ function Get-EffectiveFocusCountries {
             ForEach-Object { $_.Trim().ToUpperInvariant() } |
             Select-Object -Unique
     )
+}
+
+function Test-DirectGatewayRoute {
+    param(
+        [Parameter(Mandatory = $true)][string]$Gateway,
+        [Parameter(Mandatory = $true)][object[]]$Routes
+    )
+
+    $matchingPrefixes = @(
+        $Routes |
+            Where-Object { [string]$_.NextHop -eq $Gateway } |
+            ForEach-Object { [string]$_.DestinationPrefix }
+    )
+    return (
+        $matchingPrefixes -contains '0.0.0.0/0' -or
+        (($matchingPrefixes -contains '0.0.0.0/1') -and ($matchingPrefixes -contains '128.0.0.0/1'))
+    )
+}
+
+function Assert-DirectNetworkPath {
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedDirectGateway)) {
+        $internetRoutes = @(
+            Get-NetRoute -AddressFamily IPv4 -ErrorAction Stop |
+                Where-Object { $_.DestinationPrefix -in @('0.0.0.0/0', '0.0.0.0/1', '128.0.0.0/1') }
+        )
+        if (-not (Test-DirectGatewayRoute -Gateway $ExpectedDirectGateway -Routes $internetRoutes)) {
+            $routeDetail = @(
+                $internetRoutes |
+                    ForEach-Object { "$($_.DestinationPrefix) via $($_.NextHop) on $($_.InterfaceAlias)" }
+            ) -join '; '
+            throw "Direct-network safety check failed: no complete IPv4 Internet route through expected gateway $ExpectedDirectGateway. Active routes: $routeDetail"
+        }
+    }
+
+    if ($RejectFakeIpDns) {
+        $answers = @(
+            Resolve-DnsName -Name 'api.ip.sb' -Type A -DnsOnly -ErrorAction Stop |
+                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_.IPAddress) } |
+                ForEach-Object { [string]$_.IPAddress }
+        )
+        $fakeAnswers = @($answers | Where-Object { $_ -match '^198\.(18|19)\.' })
+        if ($fakeAnswers.Count -gt 0) {
+            throw "Direct-network safety check failed: system DNS returned OpenClash Fake-IP address(es) for api.ip.sb: $($fakeAnswers -join ', '). Configure the runner to use the primary router DNS."
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedDirectGateway) -or $RejectFakeIpDns) {
+        Write-Log "Direct-network safety check passed: gateway=$ExpectedDirectGateway; fake_ip_dns_rejected=$([bool]$RejectFakeIpDns)."
+    }
 }
 
 function Resolve-NetworkIspFromProbeText {
@@ -2079,6 +2130,7 @@ $countryMinSpeedByCode = ConvertFrom-CountryMinSpeedMap `
 if ($env:CFOPT_SOURCE_ONLY -ne "1") {
 try {
     New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+    Assert-DirectNetworkPath
     if ($AutoDetectNetworkIsp -or $DetectNetworkIspOnly) {
         $networkDetection = Get-DirectNetworkIsp -FallbackIsp $NetworkIspFallback
         $networkProfile = Resolve-CFOptNetworkProfile `

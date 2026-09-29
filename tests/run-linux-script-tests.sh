@@ -621,6 +621,10 @@ test_self_hosted_workflow_publishes_renamed_csvs() {
     || fail "Windows runner must select CTC_CD.csv or CMCC_CD.csv from the detected carrier"
   grep -q '\-NetworkIspFallback ChinaTelecom' "$workflow" \
     || fail "Chengdu runner must fall back to Telecom when all ISP probes are unavailable"
+  grep -q '\-ExpectedDirectGateway 192.168.0.1' "$workflow" \
+    || fail "Chengdu runner must require the primary direct gateway"
+  grep -q '\-RejectFakeIpDns' "$workflow" \
+    || fail "Chengdu runner must reject OpenClash Fake-IP DNS"
   ! grep -q -- '-DisableProxyipBest' "$workflow" \
     || fail "Chengdu runner must update proxyip-best by default"
   grep -q 'name: Use preinstalled Python' "$workflow" \
