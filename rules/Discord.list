@@ -1,0 +1,9 @@
+# Discord core services and invite/media domains
+DOMAIN-SUFFIX,discord.com
+DOMAIN-SUFFIX,discordapp.com
+DOMAIN-SUFFIX,discord.gg
+DOMAIN-SUFFIX,discord.media
+DOMAIN-SUFFIX,discord.new
+DOMAIN-SUFFIX,discord.co
+DOMAIN-SUFFIX,discord.dev
+DOMAIN-SUFFIX,discordstatus.com
