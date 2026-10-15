@@ -12,8 +12,8 @@ class BuilderTests(unittest.TestCase):
     def test_subscription_link_origin_validation(self):
         c = {'subscription_token': 'secret&x', 'public_base_url': 'https://sub.example/'}
         links = server.subscription_links(c)
-        self.assertEqual(links['自动/默认订阅'], 'https://sub.example/sub?token=secret%26x&style=pools')
-        self.assertTrue(links['移动订阅'].endswith('&isp=CMCC'))
+        self.assertEqual(links['自动/默认订阅'], 'https://sub.example/admin/sub/secret%26x/AUTO/pools')
+        self.assertTrue(links['移动订阅'].endswith('/CMCC/pools'))
         for value in ['javascript:alert(1)', 'https://user:pass@sub.example', 'https://sub.example/path', 'https://sub.example?x=1']:
             with self.assertRaises(ValueError):
                 server.public_base_url(value)
@@ -196,7 +196,7 @@ class BuilderTests(unittest.TestCase):
 
     def test_subscription_links_pin_selected_style(self):
         c = {'public_base_url': 'https://sub.example', 'subscription_token': 'secret', 'output_style': 'pools'}
-        self.assertIn('style=pools', server.subscription_links(c)['电信订阅'])
+        self.assertTrue(server.subscription_links(c)['电信订阅'].endswith('/CTC/pools'))
 
     def test_subscription_userinfo_maps_requests_to_kib(self):
         c = {'hosts': [{'usage_account': 1}, {'usage_account': 2}],
@@ -212,6 +212,52 @@ class BuilderTests(unittest.TestCase):
         with patch.object(server, 'panel_accounts', side_effect=OSError()):
             self.assertEqual(server.subscription_userinfo(c),
                              'upload=0; download=0; total=716800; expire=4102329600')
+
+    def test_custom_endpoint_selection_fast_then_latency_fallback(self):
+        header = 'IP地址,端口,城市,TLS,平均延迟,下载速度(MB/s)\n'
+        rows = []
+        for region in server.CUSTOM_REGIONS:
+            if region == 'KR':
+                rows += [f'1.1.1.1,443,{region} [x],true,10,9',
+                         f'1.0.0.1,8443,{region} [x],true,20,8',
+                         f'8.8.8.8,2053,{region} [x],true,30,20']
+            else:
+                rows += [f'1.1.1.1,443,{region} [x],true,30,11',
+                         f'1.0.0.1,8443,{region} [x],true,10,12',
+                         f'8.8.8.8,2053,{region} [x],true,5,9']
+        settings = {'sources': [{'name': 'test', 'url': 'https://csv.example/a'}],
+                    'speed_threshold': 10, 'per_region': 2}
+        with patch.object(server, 'fetch', return_value=(header + '\n'.join(rows)).encode()):
+            selected, failed = server.select_custom_endpoints(settings)
+        self.assertEqual(failed, [])
+        self.assertEqual([x['latency'] for x in selected['JP']], [10, 30])
+        # Only one KR row exceeds 10 MB/s, so it falls back to the two lowest-ping rows.
+        self.assertEqual([x['latency'] for x in selected['KR']], [10, 20])
+
+    def test_custom_build_uses_stable_names_and_manual_groups(self):
+        c = {'rule_template_url': 'https://rules.example/config.ini',
+             'custom_subscription': {
+                 'filename': '美国自建节点.yaml', 'speed_threshold': 10, 'per_region': 2,
+                 'rule_template_url': 'https://rules.example/config.ini', 'rule_cache_seconds': 300,
+                 'sources': [{'name': 'test', 'url': 'https://csv.example/a'}],
+                 'nodes': [{'name': 'CF-CDN-本地优选', 'uuid': '00000000-0000-4000-8000-000000000000',
+                            'servername': 'node.example.com', 'path': '/test-only', 'enabled': True}]}}
+        selected = {region: [{'server': f'1.1.1.{i + 1}', 'port': 2087, 'latency': i + 1,
+                              'speed': 20, 'source': 'test'} for i in range(2)]
+                    for region in server.CUSTOM_REGIONS}
+        routing = ([{'name': 'Proxy', 'type': 'select', 'proxies': []},
+                    {'name': 'Direct', 'type': 'select', 'proxies': []}],
+                   ['DOMAIN-SUFFIX,example.com,Proxy', 'MATCH,Proxy'], False)
+        with tempfile.TemporaryDirectory() as directory, patch.object(server, 'ROOT', Path(directory)), \
+                patch.object(server, 'select_custom_endpoints', return_value=(selected, [])), \
+                patch.object(server, 'custom_routing', return_value=routing):
+            (Path(directory) / 'template.json').write_text('{}')
+            result, status = server.build_custom(c)
+        self.assertEqual(len(result['proxies']), 10)
+        self.assertEqual(result['proxies'][0]['name'], 'CF-CDN-本地优选 · 🇯🇵 JP 优选 1')
+        self.assertNotIn('1.1.1.1', result['proxies'][0]['name'])
+        self.assertEqual(result['proxies'][0]['ws-opts']['headers']['Host'], 'node.example.com')
+        self.assertEqual(status['nodes'], 10)
 
 
 if __name__ == '__main__':

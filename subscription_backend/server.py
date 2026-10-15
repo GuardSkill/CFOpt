@@ -26,6 +26,7 @@ DEFAULT_PUBLIC_URL = 'http://net.deepdns.dpdns.org'
 DEFAULT_PROXYIP_URL = 'https://raw.githubusercontent.com/GuardSkill/CFOpt/main/proxyip-best.txt'
 CHAIN_ROUTES = {'DE': ['IE', 'AT'], 'GB': ['IE'], **{c: [c] for c in ('HK', 'JP', 'KR', 'SG', 'TW', 'US')}}
 FLAGS = {c: ''.join(chr(127397 + ord(x)) for x in c) for c in ('DE', 'GB', 'IE', 'AT', 'HK', 'JP', 'KR', 'SG', 'TW', 'US')}
+CUSTOM_REGIONS = ('JP', 'KR', 'HK', 'SG', 'TW')
 CLASSIC_GROUPS = [
     ('Proxy', 'all', 'https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/icon/qure/color/Proxy.png'),
     ('OpenAI', 'proxy-direct-all', 'https://raw.githubusercontent.com/HotKids/Rules/master/Quantumult/X/Images/Color/ChatGPT.png'),
@@ -45,10 +46,10 @@ CLASSIC_GROUPS = [
 ADMIN_CSS = '''
 *:before,*:after{box-sizing:border-box}
 select{width:100%;padding:11px 13px;margin-top:6px;border:1px solid #dce2ec;border-radius:8px;background:#fbfcff;color:#24314a;font-size:14px;font-family:inherit}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#f3f5fa;color:#24314a;padding:38px 40px 80px 270px;max-width:1600px}body:before{content:"CFOpt / Network";position:fixed;left:0;top:0;width:225px;height:100vh;background:#142139;color:#f8fafc;font-size:22px;font-weight:700;padding:34px 22px;box-shadow:6px 0 28px #17243b12}nav{position:fixed;left:16px;top:110px;width:190px;z-index:1}nav a{display:block;text-decoration:none;padding:12px 16px;color:#bfcbe2;margin:7px 0;border-radius:8px}nav a:hover{color:white;background:#293a57}h1{font-size:32px;letter-spacing:-1px;margin:0 0 8px}h1+p{color:#68768d;margin-bottom:24px}.eyebrow{color:#6576d8;letter-spacing:2px;font-size:12px;font-weight:700}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:24px 0}.metric{background:white;border:1px solid #e0e5ef;border-radius:14px;padding:18px 22px}.metric span{display:block;font-size:28px;font-weight:700;color:#283855}.metric small{font-size:12px;color:#77859b}fieldset,details{min-width:0;background:white;border:1px solid #e0e5ef;border-radius:14px;padding:22px 26px;margin:24px 0;box-shadow:0 4px 18px #1b315306;scroll-margin:20px}legend{font-weight:700;font-size:17px;color:#233854;padding:0 8px}label{display:block;margin:14px 0;color:#51627c;font-size:13px;font-weight:600}input:not([type=checkbox]),textarea{width:100%;padding:11px 13px;margin-top:6px;border:1px solid #dce2ec;border-radius:8px;background:#fbfcff;color:#24314a;font-size:14px;font-family:inherit;transition:border-color .15s}input:focus,textarea:focus{outline:3px solid #6379ea18;border-color:#6379ea}input[readonly]{font-family:ui-monospace,monospace;color:#486396;background:#f3f6fd}input[type=checkbox]{accent-color:#6277df;width:18px;height:18px;vertical-align:middle}table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;color:#8b96a9;font-weight:500}td{padding:5px 8px;border-bottom:1px solid #eef1f6}td:first-child{width:58px}td:last-child{width:150px}button{cursor:pointer;background:#6075dd;color:white;border:0;border-radius:8px;padding:11px 22px;font-weight:600;font-size:14px;box-shadow:0 3px 8px #6075dd20}button:hover{background:#4d62cb}button[data-copy]{background:#eef2ff;color:#5268c3;box-shadow:none;padding:8px 15px}small{color:#7c899d;font-size:12px}summary{cursor:pointer;color:#65738d}.status-box{background:#eef3fc;border-radius:10px;padding:18px}.pool-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.pool-row{display:flex;justify-content:space-between;gap:10px;background:white;padding:8px 12px;border-radius:7px;font-size:12px}.pool-row b{color:#5d72d2}#status-message{color:#65758d}form>button{min-width:210px}fieldset fieldset{box-shadow:none;background:#fafbfe}a{color:#5e74d5}@media(max-width:1050px){body{padding:30px 22px 60px 225px}body:before{width:200px}nav{width:166px}.metrics{grid-template-columns:repeat(2,1fr)}.pool-list{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){body{padding:22px 14px}body:before,nav{display:none}h1{font-size:26px}fieldset{padding:16px}.metrics{gap:10px}.metric{padding:14px}td{padding:4px}td:last-child{width:85px}.pool-list{grid-template-columns:1fr}}
+*{box-sizing:border-box}html{scroll-behavior:smooth}body{font:15px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;background:#f3f5fa;color:#24314a;padding:38px 40px 80px 270px;max-width:1600px}body:before{content:"CFOpt / Network";position:fixed;left:0;top:0;width:225px;height:100vh;background:#142139;color:#f8fafc;font-size:22px;font-weight:700;padding:34px 22px;box-shadow:6px 0 28px #17243b12}nav{position:fixed;left:16px;top:110px;width:190px;z-index:1}nav a{display:block;text-decoration:none;padding:12px 16px;color:#bfcbe2;margin:7px 0;border-radius:8px}nav a:hover,nav a.active{color:white;background:#293a57}h1{font-size:32px;letter-spacing:-1px;margin:0 0 8px}h1+p{color:#68768d;margin-bottom:24px}.eyebrow{color:#6576d8;letter-spacing:2px;font-size:12px;font-weight:700}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:24px 0}.metric{background:white;border:1px solid #e0e5ef;border-radius:14px;padding:18px 22px}.metric span{display:block;font-size:28px;font-weight:700;color:#283855}.metric small{font-size:12px;color:#77859b}fieldset,details{min-width:0;background:white;border:1px solid #e0e5ef;border-radius:14px;padding:22px 26px;margin:24px 0;box-shadow:0 4px 18px #1b315306;scroll-margin:20px}legend{font-weight:700;font-size:17px;color:#233854;padding:0 8px}label{display:block;margin:14px 0;color:#51627c;font-size:13px;font-weight:600}input:not([type=checkbox]),textarea{width:100%;padding:11px 13px;margin-top:6px;border:1px solid #dce2ec;border-radius:8px;background:#fbfcff;color:#24314a;font-size:14px;font-family:inherit;transition:border-color .15s}input:focus,textarea:focus{outline:3px solid #6379ea18;border-color:#6379ea}input[readonly]{font-family:ui-monospace,monospace;color:#486396;background:#f3f6fd}input[type=checkbox]{accent-color:#6277df;width:18px;height:18px;vertical-align:middle}table{width:100%;border-collapse:collapse}th{text-align:left;font-size:12px;color:#8b96a9;font-weight:500}td{padding:5px 8px;border-bottom:1px solid #eef1f6}td:first-child{width:58px}td:last-child{width:150px}button{cursor:pointer;background:#6075dd;color:white;border:0;border-radius:8px;padding:11px 22px;font-weight:600;font-size:14px;box-shadow:0 3px 8px #6075dd20}button:hover{background:#4d62cb}button[data-copy]{background:#eef2ff;color:#5268c3;box-shadow:none;padding:8px 15px}small{color:#7c899d;font-size:12px}summary{cursor:pointer;color:#65738d}.status-box{background:#eef3fc;border-radius:10px;padding:18px}.pool-list{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.pool-row{display:flex;justify-content:space-between;gap:10px;background:white;padding:8px 12px;border-radius:7px;font-size:12px}.pool-row b{color:#5d72d2}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px}.wide{grid-column:1/-1}#status-message{color:#65758d}form>button{min-width:210px}fieldset fieldset{box-shadow:none;background:#fafbfe}a{color:#5e74d5}@media(max-width:1050px){body{padding:30px 22px 60px 225px}body:before{width:200px}nav{width:166px}.metrics{grid-template-columns:repeat(2,1fr)}.pool-list{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){body{padding:22px 14px}body:before,nav{display:none}h1{font-size:26px}fieldset{padding:16px}.metrics,.grid{grid-template-columns:1fr}.metrics{gap:10px}.metric{padding:14px}td{padding:4px}td:last-child{width:85px}.pool-list{grid-template-columns:1fr}}
 '''
-ADMIN_JS = """document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',async()=>{const e=document.getElementById(b.dataset.copy);e.focus();e.select();let ok=false;try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(e.value);ok=true;}else{ok=document.execCommand('copy');}}catch(_){}document.getElementById('copy-result').textContent=ok?'已复制订阅地址':'地址已选中，请按 Ctrl+C 复制';}));
-async function loadStatus(){const msg=document.getElementById('status-message');msg.textContent='正在验证节点、规则和 Pool…';try{const r=await fetch('/admin/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();document.getElementById('metric-nodes').textContent=s.nodes;document.getElementById('metric-chains').textContent=s.chain_nodes;document.getElementById('metric-rules').textContent=s.rules;document.getElementById('metric-groups').textContent=Object.keys(s.pool_counts||{}).length;const box=document.getElementById('pool-counts');box.replaceChildren();for(const [name,count] of Object.entries(s.pool_counts||{})){const row=document.createElement('div');row.className='pool-row';const label=document.createElement('span');label.textContent=name;const n=document.createElement('b');n.textContent=count+' 节点';row.append(label,n);box.append(row);}msg.textContent=(s.dynamic_usage?'账户用量加权已生效':'用量不可用或过期，等权回退')+' · '+(s.rules_stale?'规则使用上次成功快照':'GitHub 规则已生效')+' · '+(s.proxyip_stale?'ProxyIP 使用旧快照':'ProxyIP 已加载')+(s.empty_groups.length?' · 空池：'+s.empty_groups.join('、'):' · 所有策略池有节点');}catch(_){msg.textContent='生成验证失败，请检查 CSV、ProxyIP 与规则来源；不会自动丢弃旧配置。';}}
+ADMIN_JS = """document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',async()=>{const e=document.getElementById(b.dataset.copy);e.focus();e.select();let ok=false;try{if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(e.value);ok=true;}else{ok=document.execCommand('copy');}}catch(_){}const result=document.getElementById('copy-result');if(result)result.textContent=ok?'已复制订阅地址':'地址已选中，请按 Ctrl+C 复制';}));
+async function loadStatus(){const msg=document.getElementById('status-message');if(!msg)return;msg.textContent='正在验证节点、规则和优选入口…';try{const r=await fetch(msg.dataset.endpoint||'/admin/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();const set=(id,value)=>{const e=document.getElementById(id);if(e)e.textContent=value};set('metric-nodes',s.nodes);set('metric-chains',s.chain_nodes||0);set('metric-rules',s.rules);set('metric-groups',Object.keys(s.pool_counts||{}).length);const box=document.getElementById('pool-counts');if(box){box.replaceChildren();for(const [name,count] of Object.entries(s.pool_counts||{})){const row=document.createElement('div');row.className='pool-row';const label=document.createElement('span');label.textContent=name;const n=document.createElement('b');n.textContent=count+' 节点';row.append(label,n);box.append(row);}}if(s.selected_entries){msg.textContent='已生成 '+s.nodes+' 个节点 · '+s.selected_entries.map(x=>x.region+' '+x.count+' 个').join(' · ')+' · '+(s.rules_stale?'规则使用上次成功快照':'GitHub 规则已生效');}else{msg.textContent=(s.dynamic_usage?'账户用量加权已生效':'用量不可用或过期，等权回退')+' · '+(s.rules_stale?'规则使用上次成功快照':'GitHub 规则已生效')+' · '+(s.proxyip_stale?'ProxyIP 使用旧快照':'ProxyIP 已加载')+(s.empty_groups.length?' · 空池：'+s.empty_groups.join('、'):' · 所有策略池有节点');}}catch(_){msg.textContent='生成验证失败，请检查基础节点、CSV 与规则来源；旧配置没有被替换。';}}
 document.getElementById('refresh-status')?.addEventListener('click',loadStatus);loadStatus();"""
 
 
@@ -130,8 +131,16 @@ def public_base_url(value):
 
 def subscription_links(c):
     base = public_base_url(c.get('public_base_url', DEFAULT_PUBLIC_URL))
-    query = urllib.parse.urlencode({'token': c['subscription_token'], 'style': c.get('output_style', 'pools')})
-    return {name: base + '/sub?' + query + suffix for name, suffix in [('自动/默认订阅', ''), ('移动订阅', '&isp=CMCC'), ('电信订阅', '&isp=CTC')]}
+    token = urllib.parse.quote(c['subscription_token'], safe='')
+    style = c.get('output_style', 'pools')
+    return {name: f'{base}/admin/sub/{token}/{isp or "AUTO"}/{style}'
+            for name, isp in [('自动/默认订阅', ''), ('移动订阅', 'CMCC'), ('电信订阅', 'CTC')]}
+
+
+def custom_subscription_link(c):
+    base = public_base_url(c.get('public_base_url', DEFAULT_PUBLIC_URL))
+    token = urllib.parse.quote(c['subscription_token'], safe='')
+    return f'{base}/admin/custom/sub/{token}'
 
 
 def subscription_filename(c, isp=''):
@@ -199,7 +208,8 @@ def compile_ini(text, read):
                 raise ValueError('Invalid rule')
     if not rules or not rules[-1].startswith('MATCH,'):
         raise ValueError('Missing final rule')
-    return {'definitions': list(definitions.values()), 'rules': rules, 'duplicate_groups': duplicates, 'ruleset_count': len(specs)}
+    return {'definitions': list(definitions.values()), 'rules': rules, 'duplicate_groups': duplicates,
+            'ruleset_count': len(specs), 'policies': list(dict.fromkeys(policy for policy, _ in specs))}
 
 
 def remote_routing(c, nodes):
@@ -359,10 +369,101 @@ def admin_page(c):
     page += field('trusted_proxies', '可信 Tunnel 来源 IP（逗号分隔）', ','.join(c.get('trusted_proxies', [])))
     page += '</fieldset><button>验证并保存配置</button></form><details><summary>高级 JSON 编辑（含敏感配置）</summary><form method="post" action="/admin"><textarea name="config" style="width:100%;height:400px">' + html.escape(json.dumps({k: v for k, v in c.items() if k not in ('admin_password', 'subscription_token')}, ensure_ascii=False, indent=2)) + '</textarea><p><button>验证并保存 JSON</button></p></form></details>'
     page = re.sub(r'<style>.*?</style>', '<style>' + ADMIN_CSS + '</style>', page, count=1, flags=re.S)
-    page = page.replace('<h1>CFOpt 订阅管理</h1>', '<nav><a href="#subscriptions">订阅地址</a><a href="#routing">节点与规则</a><a href="#proxyip">国家 ProxyIP</a><a href="#hosts">域名与用量</a><a href="#sources">优选 CSV</a><a href="#diagnostics">Pool 验证</a></nav><div class="eyebrow">PRIVATE NETWORK CONSOLE</div><h1>CFOpt 订阅管理</h1><div class="metrics"><div class="metric"><small>生成节点</small><span id="metric-nodes">—</span></div><div class="metric"><small>ProxyIP 链式节点</small><span id="metric-chains">—</span></div><div class="metric"><small>路由规则</small><span id="metric-rules">—</span></div><div class="metric"><small>策略组</small><span id="metric-groups">—</span></div></div>')
+    page = page.replace('<h1>CFOpt 订阅管理</h1>', '<nav><a class="active" href="/admin">动态 EdgeTunnel</a><a href="/admin/custom">自建节点订阅</a><a href="#subscriptions">订阅地址</a><a href="#routing">节点与规则</a><a href="#proxyip">国家 ProxyIP</a><a href="#hosts">域名与用量</a><a href="#sources">优选 CSV</a><a href="#diagnostics">Pool 验证</a></nav><div class="eyebrow">PRIVATE NETWORK CONSOLE</div><h1>CFOpt 订阅管理</h1><div class="metrics"><div class="metric"><small>生成节点</small><span id="metric-nodes">—</span></div><div class="metric"><small>ProxyIP 链式节点</small><span id="metric-chains">—</span></div><div class="metric"><small>路由规则</small><span id="metric-rules">—</span></div><div class="metric"><small>策略组</small><span id="metric-groups">—</span></div></div>')
     page = page.replace('<fieldset><legend>订阅地址', '<fieldset id="subscriptions"><legend>订阅地址', 1).replace('<fieldset><legend>节点与远程', '<fieldset id="routing"><legend>节点与远程', 1).replace('<fieldset><legend>优选 CSV', '<fieldset id="sources"><legend>优选 CSV', 1)
     page += '<fieldset id="diagnostics"><legend>生成与 Pool 验证</legend><p id="status-message" role="status">等待检查</p><button id="refresh-status" type="button">重新验证</button><div class="status-box"><div id="pool-counts" class="pool-list"></div></div></fieldset>'
     return page
+
+
+def custom_admin_page(c):
+    settings = custom_defaults(c)
+    def field(name, label, value='', kind='text', extra=''):
+        return (f'<label>{html.escape(label)}<input type="{kind}" name="{name}" '
+                f'value="{html.escape(str(value), quote=True)}" {extra}></label>')
+    link = custom_subscription_link(c)
+    page = ('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>自建节点订阅</title><style>' + ADMIN_CSS + '</style>'
+            '<nav><a href="/admin">动态 EdgeTunnel</a><a class="active" href="/admin/custom">自建节点订阅</a>'
+            '<a href="#custom-link">订阅地址</a><a href="#base-nodes">基础节点</a><a href="#custom-csv">优选 CSV</a>'
+            '<a href="#custom-rules">分流规则</a><a href="#diagnostics">生成验证</a></nav>'
+            '<div class="eyebrow">PRIVATE NETWORK CONSOLE</div><h1>自建节点订阅</h1>'
+            '<p>把基础 VLESS WS TLS 节点展开为 JP、KR、HK、SG、TW 各 2 个优选入口；出口仍由你的基础节点决定。</p>'
+            '<div class="metrics"><div class="metric"><small>生成节点</small><span id="metric-nodes">—</span></div>'
+            '<div class="metric"><small>固定地区</small><span>5</span></div><div class="metric"><small>每区入口</small><span>2</span></div>'
+            '<div class="metric"><small>策略组</small><span id="metric-groups">—</span></div></div>'
+            '<fieldset id="custom-link"><legend>自建节点订阅地址</legend>'
+            f'<label>可直接导入 Clash Party<input id="custom-subscription" readonly value="{html.escape(link, quote=True)}"></label>'
+            '<button type="button" data-copy="custom-subscription">复制地址</button><p id="copy-result" role="status"></p>'
+            '<small>固定槽位名称不会包含实时速度或 IP，CSV 更新后仍可保留 Clash 的手动选择。</small></fieldset>'
+            '<form method="post" action="/admin/custom"><input type="hidden" name="mode" value="custom">')
+    page += '<fieldset id="base-nodes"><legend>基础 VLESS WS TLS 节点</legend><small>server 和 port 将由 CSV 优选入口替换，不需要填写。支持以后添加多个基础节点。</small>'
+    nodes = settings['nodes'] + [{'name': '', 'uuid': '', 'servername': '', 'path': '', 'enabled': True}] * 2
+    page += f'<input type="hidden" name="custom_node_count" value="{len(nodes)}">'
+    for i, node in enumerate(nodes):
+        checked = 'checked' if node.get('enabled', True) else ''
+        verify = 'checked' if node.get('skip_cert_verify', False) else ''
+        page += f'<fieldset><legend>基础节点 {i + 1}</legend><div class="grid">'
+        page += f'<label><input type="checkbox" name="custom_node_enabled_{i}" {checked}> 启用</label>'
+        page += f'<label><input type="checkbox" name="custom_node_skip_{i}" {verify}> 跳过证书验证</label>'
+        page += field(f'custom_node_name_{i}', '节点名称', node.get('name', ''))
+        page += field(f'custom_node_uuid_{i}', 'UUID', node.get('uuid', ''), 'password')
+        page += field(f'custom_node_servername_{i}', 'TLS Server Name / WS Host', node.get('servername', ''))
+        page += field(f'custom_node_fingerprint_{i}', '客户端指纹', node.get('client_fingerprint', 'chrome'))
+        page += '<div class="wide">' + field(f'custom_node_path_{i}', 'WebSocket Path', node.get('path', '')) + '</div>'
+        page += '</div></fieldset>'
+    page += '</fieldset><fieldset id="custom-csv"><legend>入口优选 CSV</legend>'
+    page += '<small>合并所有列表后按地区去重。优先取速度超过阈值且 Ping 最低的 2 个；不足 2 个时回退为该地区 Ping 最低的 2 个。CSV 速度列单位是 MB/s。</small>'
+    page += field('custom_speed_threshold', '速度阈值（MB/s）', settings['speed_threshold'], 'number', 'step="0.1" min="0"')
+    sources = settings['sources'] + [{'name': '', 'url': ''}] * 2
+    page += f'<input type="hidden" name="custom_source_count" value="{len(sources)}">'
+    for i, source in enumerate(sources):
+        page += '<div class="grid">' + field(f'custom_source_name_{i}', '列表名称', source.get('name', ''))
+        page += field(f'custom_source_url_{i}', 'HTTPS CSV 地址', source.get('url', '')) + '</div>'
+    page += '</fieldset><fieldset id="custom-rules"><legend>分流与文件名</legend>'
+    page += field('custom_filename', '订阅文件名', settings['filename'])
+    page += field('custom_rule_url', 'GitHub 路由模板 INI 地址', settings['rule_template_url'])
+    page += field('custom_rule_cache', '规则缓存秒数（60–86400）', settings['rule_cache_seconds'], 'number')
+    page += '<small>读取 INI 的域名/IP 分流规则，但不使用其中的国家匹配或自动测速 Pool。每个业务策略组都直接列出全部生成节点和 DIRECT，均为手动 select。</small>'
+    page += '</fieldset><button>验证并保存自建节点配置</button></form>'
+    page += ('<fieldset id="diagnostics"><legend>生成验证</legend><p id="status-message" data-endpoint="/admin/custom/status" role="status">等待检查</p>'
+             '<button id="refresh-status" type="button">重新验证</button><div class="status-box"><div id="pool-counts" class="pool-list"></div></div></fieldset>'
+             '<script src="/admin.js" defer></script>')
+    return page
+
+
+def form_custom_config(c, fields):
+    new = copy.deepcopy(c)
+    value = lambda key: fields.get(key, [''])[0].strip()
+    nodes = []
+    count = int(value('custom_node_count'))
+    if not 1 <= count <= 64:
+        raise ValueError('Too many custom nodes')
+    for i in range(count):
+        name = value(f'custom_node_name_{i}')
+        if not name:
+            continue
+        nodes.append({'name': name, 'uuid': value(f'custom_node_uuid_{i}'),
+                      'servername': value(f'custom_node_servername_{i}'),
+                      'path': value(f'custom_node_path_{i}'),
+                      'client_fingerprint': value(f'custom_node_fingerprint_{i}') or 'chrome',
+                      'skip_cert_verify': f'custom_node_skip_{i}' in fields,
+                      'enabled': f'custom_node_enabled_{i}' in fields})
+    sources = []
+    count = int(value('custom_source_count'))
+    if not 1 <= count <= 64:
+        raise ValueError('Too many custom sources')
+    for i in range(count):
+        url = value(f'custom_source_url_{i}')
+        if not url:
+            continue
+        sources.append({'name': value(f'custom_source_name_{i}'), 'url': url})
+    new['custom_subscription'] = {
+        'filename': value('custom_filename'), 'speed_threshold': float(value('custom_speed_threshold')),
+        'per_region': 2, 'rule_template_url': value('custom_rule_url'),
+        'rule_cache_seconds': int(value('custom_rule_cache')), 'sources': sources, 'nodes': nodes,
+    }
+    validate_custom_settings(new)
+    return new
 
 
 def form_config(c, fields):
@@ -569,6 +670,169 @@ def endpoint(value):
         return ascii_name
 
 
+def custom_defaults(c):
+    configured = c.get('custom_subscription', {})
+    sources = configured.get('sources')
+    if sources is None:
+        sources = [{'name': s.get('name', 'CSV'), 'url': s.get('url', '')}
+                   for s in c.get('sources', []) if s.get('url')]
+    return {
+        'filename': configured.get('filename', '自建节点.yaml'),
+        'speed_threshold': configured.get('speed_threshold', 10),
+        'per_region': configured.get('per_region', 2),
+        'rule_template_url': configured.get('rule_template_url', c.get('rule_template_url', DEFAULT_RULE_URL)),
+        'rule_cache_seconds': configured.get('rule_cache_seconds', c.get('rule_cache_seconds', 300)),
+        'sources': sources,
+        'nodes': configured.get('nodes', []),
+    }
+
+
+def validate_custom_settings(c):
+    settings = custom_defaults(c)
+    filename = str(settings['filename']).strip()
+    if (not filename.lower().endswith(('.yaml', '.yml')) or not 1 <= len(filename) <= 120 or
+            re.search(r'[\\/:*?"<>|\x00-\x1f]', filename)):
+        raise ValueError('Invalid custom subscription filename')
+    threshold = float(settings['speed_threshold'])
+    per_region = int(settings['per_region'])
+    ttl = int(settings['rule_cache_seconds'])
+    if not 0 <= threshold <= 100000 or per_region != 2 or not 60 <= ttl <= 86400:
+        raise ValueError('Invalid custom selection settings')
+    if not settings['rule_template_url']:
+        raise ValueError('Custom rule URL required')
+    if not settings['sources'] or len(settings['sources']) > 64:
+        raise ValueError('Custom CSV sources required')
+    for source in settings['sources']:
+        if not str(source.get('name', '')).strip() or not str(source.get('url', '')).strip():
+            raise ValueError('Custom CSV name and URL required')
+    enabled = [n for n in settings['nodes'] if n.get('enabled', True)]
+    if not enabled or len(settings['nodes']) > 64:
+        raise ValueError('At least one custom base node required')
+    names = set()
+    for node in enabled:
+        name = str(node.get('name', '')).strip()
+        uuid = str(node.get('uuid', '')).strip()
+        sni = endpoint(node.get('servername', ''))
+        path = str(node.get('path', '')).strip()
+        if not name or len(name) > 80 or name in names or not re.fullmatch(r'[0-9a-fA-F-]{32,36}', uuid):
+            raise ValueError('Invalid custom node name or UUID')
+        if not path.startswith('/') or any(ord(ch) < 32 for ch in path):
+            raise ValueError('Invalid custom WS path')
+        names.add(name)
+        node['name'], node['uuid'], node['servername'], node['path'] = name, uuid, sni, path
+    settings.update({'filename': filename, 'speed_threshold': threshold, 'per_region': per_region,
+                     'rule_cache_seconds': ttl})
+    return settings
+
+
+def select_custom_endpoints(settings):
+    candidates = {region: [] for region in CUSTOM_REGIONS}
+    failed = []
+    for source in settings['sources']:
+        try:
+            rows = csv.DictReader(io.StringIO(fetch(source['url']).decode('utf-8-sig')))
+            for row in rows:
+                region = country(row.get('城市', ''))
+                if region not in candidates or row.get('TLS', '').lower() != 'true':
+                    continue
+                address = endpoint(row.get('IP地址', ''))
+                port = int(row.get('端口', 0))
+                latency = float(row.get('平均延迟', ''))
+                speed = float(row.get('下载速度(MB/s)', ''))
+                if 1 <= port <= 65535 and latency >= 0 and speed >= 0:
+                    candidates[region].append({'server': address, 'port': port, 'latency': latency,
+                                               'speed': speed, 'source': source['name']})
+        except Exception:
+            failed.append(source['name'])
+    selected = {}
+    for region, rows in candidates.items():
+        unique = {}
+        for row in rows:
+            key = (row['server'], row['port'])
+            if key not in unique or (row['latency'], -row['speed']) < (unique[key]['latency'], -unique[key]['speed']):
+                unique[key] = row
+        all_rows = sorted(unique.values(), key=lambda x: (x['latency'], -x['speed'], x['server'], x['port']))
+        fast = [row for row in all_rows if row['speed'] > settings['speed_threshold']]
+        selected[region] = (fast if len(fast) >= settings['per_region'] else all_rows)[:settings['per_region']]
+        if len(selected[region]) < settings['per_region']:
+            raise ValueError('Not enough custom endpoints for ' + region)
+    return selected, failed
+
+
+def custom_routing(settings, nodes):
+    url = settings['rule_template_url']
+    ttl = settings['rule_cache_seconds']
+    snapshot = ROOT / ('custom-routing-' + hashlib.sha256(url.encode()).hexdigest() + '.json')
+    stale = False
+    try:
+        routing = compile_ini(fetch(url, ttl).decode('utf-8-sig'), lambda u: fetch(u, ttl).decode('utf-8-sig'))
+        with LOCK:
+            temp = snapshot.with_suffix('.tmp')
+            temp.write_text(json.dumps(routing, ensure_ascii=False), encoding='utf-8')
+            os.chmod(temp, 0o600)
+            os.replace(temp, snapshot)
+    except Exception:
+        if not snapshot.exists():
+            raise
+        routing = json.loads(snapshot.read_text(encoding='utf-8'))
+        stale = True
+    policies = set(routing.get('policies', []))
+    ordered = [parts[0] for parts in routing['definitions'] if parts[0] in policies]
+    ordered.extend(policy for policy in routing.get('policies', []) if policy not in ordered and policy not in ('DIRECT', 'REJECT'))
+    names = [node['name'] for node in nodes]
+    groups = []
+    for name in ordered:
+        if name in ('DIRECT', 'REJECT', 'Direct'):
+            continue
+        choices = (['DIRECT'] + names) if name.lower() == 'direct' else (names + ['DIRECT'])
+        groups.append({'name': name, 'type': 'select', 'proxies': choices})
+    # Rules may target Direct as a policy group in the source INI. Keep it a
+    # selectable group as requested, with DIRECT as the safe default.
+    if 'Direct' in policies:
+        groups.append({'name': 'Direct', 'type': 'select', 'proxies': ['DIRECT'] + names})
+    valid = {g['name'] for g in groups} | {'DIRECT', 'REJECT'}
+    def rule_policy(rule):
+        parts = rule.split(',')
+        return parts[1] if parts[0] in ('MATCH', 'FINAL') else parts[2]
+    if any(rule_policy(rule) not in valid for rule in routing['rules']):
+        raise ValueError('Custom routing contains an unavailable policy')
+    return groups, routing['rules'], stale
+
+
+def build_custom(c):
+    settings = validate_custom_settings(c)
+    selected, failed = select_custom_endpoints(settings)
+    nodes = []
+    for base_node in settings['nodes']:
+        if not base_node.get('enabled', True):
+            continue
+        for region in CUSTOM_REGIONS:
+            for slot, candidate in enumerate(selected[region], 1):
+                nodes.append({
+                    'name': f"{base_node['name']} · {FLAGS[region]} {region} 优选 {slot}",
+                    'type': 'vless', 'server': candidate['server'], 'port': candidate['port'],
+                    'uuid': base_node['uuid'], 'tls': True,
+                    'skip-cert-verify': bool(base_node.get('skip_cert_verify', False)),
+                    'servername': base_node['servername'],
+                    'client-fingerprint': base_node.get('client_fingerprint', 'chrome') or 'chrome',
+                    'network': 'ws', 'ws-opts': {'path': base_node['path'],
+                                                 'headers': {'Host': base_node['servername']}},
+                })
+    groups, rules, stale = custom_routing(settings, nodes)
+    try:
+        result = json.loads((ROOT / 'template.json').read_text())
+    except Exception:
+        result = {}
+    result['proxies'], result['proxy-groups'], result['rules'] = nodes, groups, rules
+    counts = {group['name']: len(nodes) for group in groups}
+    selected_status = [{'region': region, 'count': len(rows),
+                        'entries': [{'server': r['server'], 'port': r['port'], 'latency': r['latency'],
+                                     'speed': r['speed'], 'source': r['source']} for r in rows]}
+                       for region, rows in selected.items()]
+    return result, {'nodes': len(nodes), 'rules': len(rules), 'pool_counts': counts,
+                    'selected_entries': selected_status, 'failed_sources': failed, 'rules_stale': stale}
+
+
 def build(c, isp='', region='', seed='', output_style=''):
     template = json.loads((ROOT / 'template.json').read_text())
     old = {n['name']: n for n in template['proxies']}
@@ -679,6 +943,14 @@ class Handler(BaseHTTPRequestHandler):
         c = config()
         url = urllib.parse.urlsplit(self.path)
         query = dict(urllib.parse.parse_qsl(url.query))
+        route = url.path.strip('/').split('/')
+        path_subscription = len(route) == 5 and route[:2] == ['admin', 'sub']
+        path_status = len(route) == 5 and route[:2] == ['admin', 'status']
+        path_token = urllib.parse.unquote(route[2]) if path_subscription or path_status else ''
+        path_isp = route[3] if path_subscription or path_status else ''
+        path_style = route[4] if path_subscription or path_status else ''
+        custom_subscription = len(route) == 4 and route[:3] == ['admin', 'custom', 'sub']
+        custom_token = urllib.parse.unquote(route[3]) if custom_subscription else ''
         if url.path == '/health':
             return self.reply(200, {'ok': True})
         if url.path == '/admin.js':
@@ -689,10 +961,38 @@ class Handler(BaseHTTPRequestHandler):
             if not self.admin(c):
                 return
             return self.reply(200, admin_page(c), 'text/html')
+        if url.path == '/admin/custom':
+            if not self.admin(c):
+                return
+            return self.reply(200, custom_admin_page(c), 'text/html')
+        if url.path == '/admin/custom/status':
+            if not self.admin(c):
+                return
+            try:
+                _, status = build_custom(c)
+                return self.reply(200, status)
+            except Exception:
+                return self.reply(503, {'error': 'Custom generation failed'})
+        if custom_subscription:
+            if not hmac.compare_digest(custom_token, c['subscription_token']):
+                return self.reply(404, {'error': 'Not found'})
+            try:
+                result, _ = build_custom(c)
+                filename = validate_custom_settings(c)['filename']
+                quoted = urllib.parse.quote(filename)
+                ascii_name = re.sub(r'[^A-Za-z0-9._-]', '_', filename) or 'custom-nodes.yaml'
+                headers = {'Content-Disposition': f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}",
+                           'profile-title': urllib.parse.quote(filename.rsplit('.', 1)[0]),
+                           'Subscription-Userinfo': subscription_userinfo(c)}
+                return self.reply(200, result, headers=headers)
+            except Exception:
+                return self.reply(503, {'error': 'Generation failed; keep existing profile and check configuration/sources'})
         admin_status = url.path == '/admin/status'
         if admin_status and not self.admin(c):
             return
-        if not admin_status and (url.path not in ('/sub', '/status') or not hmac.compare_digest(query.get('token', ''), c['subscription_token'])):
+        legacy_subscription = url.path in ('/sub', '/status') and hmac.compare_digest(query.get('token', ''), c['subscription_token'])
+        routed_subscription = (path_subscription or path_status) and hmac.compare_digest(path_token, c['subscription_token'])
+        if not admin_status and not (legacy_subscription or routed_subscription):
             return self.reply(404, {'error': 'Not found'})
         # Forwarded headers are trusted only from explicitly configured tunnel peers.
         client = self.client_address[0]
@@ -713,9 +1013,10 @@ class Handler(BaseHTTPRequestHandler):
             pass
         # Explicit route overrides are available to subscription-token holders.
         try:
-            selected_isp = query.get('isp', isp)
-            result, status = build(c, selected_isp, query.get('region', region), client, query.get('style', ''))
-            if url.path in ('/status', '/admin/status'):
+            selected_isp = query.get('isp', isp) if not routed_subscription else ('' if path_isp == 'AUTO' else path_isp)
+            selected_style = query.get('style', '') if not routed_subscription else path_style
+            result, status = build(c, selected_isp, query.get('region', region), client, selected_style)
+            if url.path in ('/status', '/admin/status') or path_status:
                 return self.reply(200, status)
             filename = subscription_filename(c, selected_isp)
             quoted = urllib.parse.quote(filename)
@@ -729,7 +1030,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         c = config()
-        if self.path != '/admin' or not self.admin(c):
+        if self.path not in ('/admin', '/admin/custom') or not self.admin(c):
             return
         origin = self.headers.get('Origin')
         if self.headers.get('Sec-Fetch-Site') == 'cross-site' or (origin and urllib.parse.urlsplit(origin).netloc != self.headers.get('Host')):
@@ -739,11 +1040,17 @@ class Handler(BaseHTTPRequestHandler):
             if not 0 < length <= 65536:
                 raise ValueError()
             fields = urllib.parse.parse_qs(self.rfile.read(length).decode())
-            new = form_config(c, fields) if fields.get('mode') == ['form'] else json.loads(fields['config'][0])
+            if self.path == '/admin/custom':
+                new = form_custom_config(c, fields)
+            else:
+                new = form_config(c, fields) if fields.get('mode') == ['form'] else json.loads(fields['config'][0])
             if new.get('public_base_url'):
                 new['public_base_url'] = public_base_url(new['public_base_url'])
             new['admin_password'], new['subscription_token'] = c['admin_password'], c['subscription_token']
-            build(new)  # Validate before replacing known-good config.
+            if self.path == '/admin/custom':
+                build_custom(new)
+            else:
+                build(new)  # Validate before replacing known-good config.
             with LOCK:
                 temp = ROOT / 'config.json.tmp'
                 temp.write_text(json.dumps(new, ensure_ascii=False, indent=2))
