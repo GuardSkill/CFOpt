@@ -154,6 +154,12 @@ def allowed_admin_origin(c, origin, host):
         origins = {str(host or '').lower()}
         public = urllib.parse.urlsplit(public_base_url(c.get('public_base_url', DEFAULT_PUBLIC_URL)))
         origins.add(public.netloc.lower())
+        for value in c.get('admin_allowed_origins', []):
+            try:
+                allowed = urllib.parse.urlsplit(public_base_url(value))
+                origins.add(allowed.netloc.lower())
+            except (ValueError, TypeError):
+                continue
         return parsed.netloc.lower() in origins
     except (ValueError, TypeError):
         return False

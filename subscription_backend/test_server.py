@@ -24,6 +24,8 @@ class BuilderTests(unittest.TestCase):
         self.assertTrue(server.allowed_admin_origin(c, 'http://192.168.0.122:19090', '192.168.0.122:19090'))
         self.assertFalse(server.allowed_admin_origin(c, 'https://evil.example', '192.168.0.122:19090'))
         self.assertFalse(server.allowed_admin_origin(c, 'javascript:alert(1)', '192.168.0.122:19090'))
+        c['admin_allowed_origins'] = ['https://usage.deepdns.dpdns.org']
+        self.assertTrue(server.allowed_admin_origin(c, 'https://usage.deepdns.dpdns.org', '192.168.0.122:19090'))
 
     def test_all_default_ini_pools_with_real_chain_names(self):
         codes = ['DE', 'GB', 'HK', 'JP', 'KR', 'SG', 'TW', 'US']
