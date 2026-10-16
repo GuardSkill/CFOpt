@@ -18,6 +18,13 @@ class BuilderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 server.public_base_url(value)
 
+    def test_admin_origin_allows_configured_public_reverse_proxy_origin(self):
+        c = {'public_base_url': 'https://net.deepdns.dpdns.org'}
+        self.assertTrue(server.allowed_admin_origin(c, 'https://net.deepdns.dpdns.org', '192.168.0.122:19090'))
+        self.assertTrue(server.allowed_admin_origin(c, 'http://192.168.0.122:19090', '192.168.0.122:19090'))
+        self.assertFalse(server.allowed_admin_origin(c, 'https://evil.example', '192.168.0.122:19090'))
+        self.assertFalse(server.allowed_admin_origin(c, 'javascript:alert(1)', '192.168.0.122:19090'))
+
     def test_all_default_ini_pools_with_real_chain_names(self):
         codes = ['DE', 'GB', 'HK', 'JP', 'KR', 'SG', 'TW', 'US']
         ordinary = [{'name': f'{server.FLAGS[c]} {c} [CD#01 20MB/s]', 'servername': 'a.example',

@@ -143,6 +143,22 @@ def custom_subscription_link(c):
     return f'{base}/admin/custom/sub/{token}'
 
 
+def allowed_admin_origin(c, origin, host):
+    """Allow same-host writes and the explicitly configured public origin."""
+    if not origin:
+        return True
+    try:
+        parsed = urllib.parse.urlsplit(origin)
+        if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+            return False
+        origins = {str(host or '').lower()}
+        public = urllib.parse.urlsplit(public_base_url(c.get('public_base_url', DEFAULT_PUBLIC_URL)))
+        origins.add(public.netloc.lower())
+        return parsed.netloc.lower() in origins
+    except (ValueError, TypeError):
+        return False
+
+
 def subscription_filename(c, isp=''):
     key = {'CMCC': 'cmcc', 'CTC': 'ctc'}.get(isp, 'default')
     value = c.get('subscription_filenames', {}).get(key, 'yuanclash.yaml').strip()
@@ -1032,8 +1048,8 @@ class Handler(BaseHTTPRequestHandler):
         c = config()
         if self.path not in ('/admin', '/admin/custom') or not self.admin(c):
             return
-        origin = self.headers.get('Origin')
-        if self.headers.get('Sec-Fetch-Site') == 'cross-site' or (origin and urllib.parse.urlsplit(origin).netloc != self.headers.get('Host')):
+        origin = self.headers.get('Origin', '')
+        if not allowed_admin_origin(c, origin, self.headers.get('Host', '')):
             return self.reply(403, {'error': 'Cross-origin write rejected'})
         try:
             length = int(self.headers.get('Content-Length', '0'))
