@@ -22,6 +22,7 @@ class BuilderTests(unittest.TestCase):
         c = {'public_base_url': 'https://net.deepdns.dpdns.org'}
         self.assertTrue(server.allowed_admin_origin(c, 'https://net.deepdns.dpdns.org', '192.168.0.122:19090'))
         self.assertTrue(server.allowed_admin_origin(c, 'http://192.168.0.122:19090', '192.168.0.122:19090'))
+        self.assertTrue(server.allowed_admin_origin(c, 'http://192.168.0.122', '192.168.0.122:19090'))
         self.assertFalse(server.allowed_admin_origin(c, 'https://evil.example', '192.168.0.122:19090'))
         self.assertFalse(server.allowed_admin_origin(c, 'javascript:alert(1)', '192.168.0.122:19090'))
         c['admin_allowed_origins'] = ['https://usage.deepdns.dpdns.org']
@@ -61,6 +62,8 @@ class BuilderTests(unittest.TestCase):
                 self.assertTrue(stale)
                 self.assertEqual(pool, {'JP': ['8.8.8.8:443']})
     def setUp(self):
+        server.USAGE_CACHE.clear()
+        server.USAGE_RETRY_AFTER.clear()
         self.c = {'node_uri': 'vless://test-id@a.example:443?security=tls&type=ws&path=%2Fws%3Fed%3D2560&ech=cloudflare-ech.com',
                   'usage_url': 'https://usage.example/', 'hosts': [{'name': 'a.example'}, {'name': 'b.example'}],
                   'sources': [{'name': 'Mobile', 'url': 'https://mobile.example/', 'isp': 'CMCC', 'default': True},
@@ -81,6 +84,7 @@ class BuilderTests(unittest.TestCase):
             self.assertEqual(weights[0][1], 0)
             self.assertGreater(weights[1][1], 0)
         usage['hosts']['a.example']['updated_at'] = 1
+        server.USAGE_CACHE.clear()
         with patch.object(server, 'fetch', return_value=json.dumps(usage).encode()):
             weights, _ = server.host_weights(self.c)
             self.assertEqual(weights[0][1], 1)
@@ -267,6 +271,40 @@ class BuilderTests(unittest.TestCase):
         self.assertNotIn('1.1.1.1', result['proxies'][0]['name'])
         self.assertEqual(result['proxies'][0]['ws-opts']['headers']['Host'], 'node.example.com')
         self.assertEqual(status['nodes'], 10)
+
+
+class UsageCacheTests(unittest.TestCase):
+    def setUp(self):
+        server.USAGE_CACHE.clear()
+        server.USAGE_RETRY_AFTER.clear()
+
+    def test_hour_cache_and_five_minute_failure_cooldown(self):
+        with patch.object(server.time, 'monotonic', return_value=1000) as clock, patch.object(server, 'fetch') as fetch:
+            fetch.return_value = b'{"hosts": {}}'
+            server.usage_json('https://usage.example/data')
+            clock.return_value = 4599
+            server.usage_json('https://usage.example/data')
+            self.assertEqual(fetch.call_count, 1)
+            clock.return_value = 4601
+            fetch.side_effect = OSError('offline')
+            with self.assertRaises(OSError):
+                server.usage_json('https://usage.example/data')
+            clock.return_value = 4900
+            with self.assertRaises(ValueError):
+                server.usage_json('https://usage.example/data')
+            self.assertEqual(fetch.call_count, 2)
+            clock.return_value = 4901
+            fetch.side_effect = None
+            server.usage_json('https://usage.example/data')
+            self.assertEqual(fetch.call_count, 3)
+
+    def test_concurrent_refresh_is_shared(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with patch.object(server, 'fetch', return_value=b'{"hosts": {}}') as fetch:
+            with ThreadPoolExecutor(max_workers=8) as pool:
+                results = list(pool.map(lambda _: server.usage_json('https://usage.example/data'), range(20)))
+            self.assertEqual(fetch.call_count, 1)
+            self.assertEqual(len(results), 20)
 
 
 if __name__ == '__main__':

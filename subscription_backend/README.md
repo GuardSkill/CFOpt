@@ -60,4 +60,6 @@ python -m unittest discover -s subscription_backend -p test_server.py
 
 ## 安全边界
 
+用量 API 和账户信息成功响应缓存 1 小时，失败后至少等待 5 分钟再尝试；并发请求共用刷新结果。缓存保存在服务进程内，重启会清空。无人请求订阅或管理验证时不会主动轮询。CSV 和规则缓存不受此设置影响。
+
 `.dockerignore` 只允许 `server.py` 和 Dockerfile 进入镜像构建上下文；`.gitignore` 排除 `data/`、配置、访问凭据、生成订阅、备份和探测结果。公网部署时仍应使用 HTTPS，并为 `/admin` 增加额外访问控制。

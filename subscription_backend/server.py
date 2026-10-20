@@ -21,6 +21,11 @@ from pathlib import Path
 ROOT = Path(os.environ.get('CFOPT_DATA_DIR', str(Path(__file__).resolve().parent)))
 LOCK = threading.RLock()
 CACHE = {}
+USAGE_LOCK = threading.RLock()
+USAGE_CACHE = {}
+USAGE_RETRY_AFTER = {}
+USAGE_CACHE_SECONDS = 3600
+USAGE_RETRY_SECONDS = 300
 DEFAULT_RULE_URL = 'https://raw.githubusercontent.com/GuardSkill/CFOpt/main/CFOpt_Subconverter_lite_cmliussss.ini'
 DEFAULT_PUBLIC_URL = 'http://net.deepdns.dpdns.org'
 DEFAULT_PROXYIP_URL = 'https://raw.githubusercontent.com/GuardSkill/CFOpt/main/proxyip-best.txt'
@@ -151,7 +156,8 @@ def allowed_admin_origin(c, origin, host):
         parsed = urllib.parse.urlsplit(origin)
         if parsed.scheme not in ('http', 'https') or not parsed.netloc:
             return False
-        origins = {str(host or '').lower()}
+        request_host = str(host or '').lower()
+        origins = {request_host}
         public = urllib.parse.urlsplit(public_base_url(c.get('public_base_url', DEFAULT_PUBLIC_URL)))
         origins.add(public.netloc.lower())
         for value in c.get('admin_allowed_origins', []):
@@ -160,7 +166,13 @@ def allowed_admin_origin(c, origin, host):
                 origins.add(allowed.netloc.lower())
             except (ValueError, TypeError):
                 continue
-        return parsed.netloc.lower() in origins
+        if parsed.netloc.lower() in origins:
+            return True
+        # Some browsers/proxies omit the port in Origin. Treat the same
+        # hostname as the direct admin origin; the admin endpoint still
+        # requires Basic authentication.
+        request_hostname = urllib.parse.urlsplit('//'+request_host).hostname
+        return bool(request_hostname and parsed.hostname and parsed.hostname.lower() == request_hostname.lower())
     except (ValueError, TypeError):
         return False
 
@@ -572,14 +584,39 @@ def config():
         return json.loads((ROOT / 'config.json').read_text())
 
 
+def usage_json(url, headers=None, expected_type=dict):
+    # Serialise refreshes so simultaneous subscriptions share one result.
+    key = (url, hashlib.sha256(json.dumps(headers or {}, sort_keys=True).encode()).hexdigest())
+    with USAGE_LOCK:
+        now = time.monotonic()
+        item = USAGE_CACHE.get(key)
+        if item and now - item[0] < USAGE_CACHE_SECONDS:
+            return copy.deepcopy(item[1])
+        if now < USAGE_RETRY_AFTER.get(key, 0):
+            raise ValueError('Usage refresh is in retry cooldown')
+        try:
+            # Only validated JSON enters the hour cache. Invalid HTML/JSON
+            # must be fetched again after the five-minute cooldown.
+            raw = fetch(url, 0, headers=headers) if headers else fetch(url, 0)
+            data = json.loads(raw)
+            if not isinstance(data, expected_type):
+                raise ValueError('Invalid usage response')
+        except Exception:
+            USAGE_RETRY_AFTER[key] = time.monotonic() + USAGE_RETRY_SECONDS
+            raise
+        USAGE_CACHE[key] = (time.monotonic(), data)
+        USAGE_RETRY_AFTER.pop(key, None)
+        return copy.deepcopy(data)
+
+
 def panel_accounts(c):
     panel = c.get('usage_panel')
     if not panel:
         return []
     # Public usage request performs the panel's normal throttled refresh; never force.
-    fetch(c['usage_url'])
-    data = json.loads(fetch(panel['url'].rstrip('/') + '/admin/config.json',
-                            headers={'Cookie': 'admin_token=' + panel['admin_cookie']}))
+    usage_json(c['usage_url'])
+    data = usage_json(panel['url'].rstrip('/') + '/admin/config.json',
+                      headers={'Cookie': 'admin_token=' + panel['admin_cookie']}, expected_type=list)
     if not isinstance(data, list):
         raise ValueError('UsagePanel did not return account data')
     return data
@@ -615,14 +652,14 @@ def subscription_userinfo(c):
 def host_weights(c):
     usage = {}
     try:
-        data = json.loads(fetch(c['usage_url']))
+        data = usage_json(c['usage_url'])
         # Explicit host keyed contract only; account totals are NOT host usage.
         for host, value in data.get('hosts', {}).items():
             if isinstance(value, dict):
                 stamp = value.get('updated_at', data.get('updated_at', 0))
                 if stamp > 1e12:
                     stamp /= 1000
-                if not stamp or abs(time.time() - stamp) > 1800:
+                if not stamp or abs(time.time() - stamp) > USAGE_CACHE_SECONDS + 1800:
                     continue
                 used, limit = float(value['used']), float(value['limit'])
                 if used >= 0 and limit > 0:
@@ -643,7 +680,7 @@ def host_weights(c):
         stamp = float(account.get('UpdateTime', 0)) / 1000
         try:
             used, limit = float(value['total']), float(value['max'])
-            if value.get('success') and 0 <= time.time() - stamp <= 1800 and used >= 0 and limit > 0:
+            if value.get('success') and 0 <= time.time() - stamp <= USAGE_CACHE_SECONDS + 1800 and used >= 0 and limit > 0:
                 usage[host['name']] = used / limit
         except (ValueError, KeyError, TypeError):
             continue
