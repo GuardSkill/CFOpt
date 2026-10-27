@@ -33,7 +33,11 @@ class DirectHTTPSConnection(http.client.HTTPSConnection):
         if self._tunnel_host:
             self.sock = raw_socket
             self._tunnel()
-        self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
+        try:
+            self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
+        except Exception:
+            raw_socket.close()
+            raise
 
 
 def candidate_host(endpoint, suffix):
@@ -60,20 +64,35 @@ def classify_exception(error):
     return "connect_error"
 
 
-def request_identity(ip, port, suffix, timeout):
-    host = candidate_host(ip, suffix)
+def endpoint_host(ip, suffix, endpoint=None):
+    return endpoint["host"] if endpoint else candidate_host(ip, suffix)
+
+
+def request_identity(ip, port, suffix, timeout, endpoint=None):
+    host = endpoint_host(ip, suffix, endpoint)
     connection = DirectHTTPSConnection(ip, host, port, timeout)
     started = time.monotonic()
     try:
-        connection.request("GET", f"/ip.json?_t={time.time_ns()}", headers={"Cache-Control": "no-cache"})
+        path = endpoint["identity_path"] if endpoint else "/ip.json"
+        separator = "&" if "?" in path else "?"
+        connection.request("GET", f"{path}{separator}_t={time.time_ns()}", headers={"Cache-Control": "no-cache"})
         response = connection.getresponse()
         payload = response.read(1024 * 1024)
         latency_ms = max(1, round((time.monotonic() - started) * 1000))
         if response.status != 200:
             return None, latency_ms, response.status, "identity_http_error", f"HTTP {response.status}"
         try:
-            data = json.loads(payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            if endpoint and endpoint["identity_format"] == "trace":
+                data = dict(line.split("=", 1) for line in payload.decode("utf-8").splitlines() if "=" in line)
+                # loc is the client's country, NOT the destination colo's country.
+                if data.get("h", "").lower() != host.lower() or not data.get("ip") or data.get("colo") not in COLO_COUNTRY:
+                    return None, latency_ms, response.status, "identity_invalid_trace", "Missing or unknown trace identity"
+                data["country"] = COLO_COUNTRY[data["colo"]]
+            else:
+                data = json.loads(payload.decode("utf-8"))
+                if not isinstance(data, dict):
+                    raise ValueError("Identity must be a JSON object")
+        except (UnicodeDecodeError, ValueError) as error:
             return None, latency_ms, response.status, "identity_invalid_json", str(error)
         return data, latency_ms, response.status, "ok", ""
     except Exception as error:  # Network failures are data, not fatal script errors.
@@ -82,17 +101,19 @@ def request_identity(ip, port, suffix, timeout):
         connection.close()
 
 
-def request_download(ip, port, suffix, byte_count, duration, timeout):
-    host = candidate_host(ip, suffix)
+def request_download(ip, port, suffix, byte_count, duration, timeout, endpoint=None):
+    host = endpoint_host(ip, suffix, endpoint)
     connection = DirectHTTPSConnection(ip, host, port, timeout)
     total = 0
     request_started = time.monotonic()
     measured_started = None
     http_status = 0
     try:
+        path = (endpoint["download_path"] if endpoint else "/__down?bytes={bytes}").replace("{bytes}", str(byte_count))
+        separator = "&" if "?" in path else "?"
         connection.request(
             "GET",
-            f"/__down?bytes={byte_count}&_t={time.time_ns()}",
+            f"{path}{separator}_t={time.time_ns()}",
             headers={"Cache-Control": "no-cache", "Accept-Encoding": "identity"},
         )
         response = connection.getresponse()
@@ -100,18 +121,21 @@ def request_download(ip, port, suffix, byte_count, duration, timeout):
         if response.status != 200:
             response.read(4096)
             return 0.0, total, time.monotonic() - request_started, http_status, "http_error", f"HTTP {response.status}"
+        content_type = response.getheader("Content-Type", "").lower()
+        if "text/html" in content_type or "application/json" in content_type:
+            return 0.0, total, time.monotonic() - request_started, http_status, "invalid_body", "Download returned HTML/JSON instead of payload"
         # Measure streamed payload throughput, not DNS/TCP/TLS/TTFB setup.
         # This mirrors CFData-WEB's windowed speed test and avoids penalizing
         # otherwise fast endpoints for one-time connection establishment.
         measured_started = time.monotonic()
         while True:
             remaining = duration - (time.monotonic() - measured_started)
-            if remaining <= 0:
+            if remaining <= 0 or total >= byte_count:
                 break
             if connection.sock:
                 connection.sock.settimeout(max(0.2, min(timeout, remaining)))
             try:
-                chunk = response.read1(64 * 1024)
+                chunk = response.read1(min(64 * 1024, byte_count - total))
             except (TimeoutError, socket.timeout):
                 if total:
                     break
@@ -147,8 +171,10 @@ def parse_floors(value):
 
 def probe(row, expected_country, args, floors):
     ip = row[0].strip()
+    endpoint = getattr(args, "endpoint_profile", None)
+    endpoint_args = (endpoint,) if endpoint else ()
     identity, identity_latency, identity_http, identity_status, identity_error = request_identity(
-        ip, args.port, args.host_suffix, args.timeout
+        ip, args.port, args.host_suffix, args.timeout, *endpoint_args
     )
     colo = ""
     country = ""
@@ -157,7 +183,7 @@ def probe(row, expected_country, args, floors):
         country = COLO_COUNTRY.get(colo, "") or str(identity.get("country") or "").strip().upper()
 
     speed, downloaded, elapsed, download_http, download_status, download_error = request_download(
-        ip, args.port, args.host_suffix, args.download_bytes, args.duration, args.timeout
+        ip, args.port, args.host_suffix, args.download_bytes, args.duration, args.timeout, *endpoint_args
     )
     status = download_status
     error = download_error
@@ -310,9 +336,13 @@ def main():
     parser.add_argument("--timeout", type=float, default=8)
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--host-suffix", default="bestcf.cmliussss.hidns.vip")
+    parser.add_argument("--endpoint-profile", help="Health-checked paired identity/download profile JSON; fixed for this run")
     parser.add_argument("--min-speed-mbps", type=float, default=0.03)
     parser.add_argument("--country-speed-floors", default="")
     args = parser.parse_args()
+    if args.endpoint_profile:
+        from probe_endpoints import validate_profile
+        args.endpoint_profile = validate_profile(json.loads(pathlib.Path(args.endpoint_profile).read_text(encoding="utf-8-sig")))
     if not 1 <= args.port <= 65535 or not 1 <= args.limit <= 10000 or not 1 <= args.concurrency <= 32:
         parser.error("invalid port, limit, or concurrency")
     counts = run(args)

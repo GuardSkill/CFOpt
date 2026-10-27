@@ -10,6 +10,9 @@ param(
     [string]$BestCfProbeHostSuffix = "bestcf.cmliussss.hidns.vip",
     [string]$BestCfIdentityTestUrl = "https://671F0401.bestcf.cmliussss.hidns.vip/ip.json",
     [int]$BestCfProbeConcurrency = 1,
+    [string]$ProbeEndpointProvider = "auto",
+    [string]$ProbeEndpointRegistry = "",
+    [string]$ProbeEndpointReferences = "104.16.0.1,172.64.0.1,103.31.4.1",
     [string]$Owner = "GuardSkill",
     [string]$Repo = "CFOpt",
     [string]$Branch = "main",
@@ -1604,6 +1607,25 @@ function Get-CfstArguments {
     return $arguments
 }
 
+function Initialize-ProbeEndpoint {
+    if (-not $EnableBestCfProbe) { return }
+    $helper = Join-Path $repoRoot 'scripts\probe_endpoints.py'
+    $python = Get-Command $GenericPoolPython -ErrorAction Stop
+    $script:probeEndpointProfilePath = Join-Path $WorkDir 'selected-probe-endpoint.json'
+    $diagnostics = Join-Path $WorkDir 'probe-endpoint-health.json'
+    $registry = $ProbeEndpointRegistry
+    if ([string]::IsNullOrWhiteSpace($registry)) { $registry = Join-Path $repoRoot 'config\probe-endpoints.json' }
+    $arguments = @($helper, '--registry', $registry, '--provider', $ProbeEndpointProvider,
+        '--references', $ProbeEndpointReferences, '--output', $script:probeEndpointProfilePath,
+        '--diagnostics', $diagnostics)
+    & $python.Source @arguments | ForEach-Object { Write-Log $_ }
+    if ($LASTEXITCODE -ne 0) { throw "Probe endpoint health check failed; no full benchmark or upload. See $diagnostics" }
+    $profile = Get-Content -LiteralPath $script:probeEndpointProfilePath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $script:BestCfIdentityTestUrl = "https://$($profile.host)$($profile.identity_path)"
+    $script:DownloadTestUrl = "https://$($profile.host)$($profile.download_path.Replace('{bytes}', '20000000'))"
+    Write-Log "Paired probe provider fixed for this run: $($profile.name); identity and download host=$($profile.host)."
+}
+
 function Invoke-BestCfProbes {
     param([object[]]$WorkItems)
 
@@ -1631,6 +1653,9 @@ function Invoke-BestCfProbes {
             '--host-suffix', $BestCfProbeHostSuffix, '--min-speed-mbps', $MinSpeedMbps.ToString('R', [System.Globalization.CultureInfo]::InvariantCulture),
             '--country-speed-floors', $CountryMinSpeedMBPerSec
         )
+        if (-not [string]::IsNullOrWhiteSpace($script:probeEndpointProfilePath)) {
+            $arguments += ' ' + (Join-ProcessArguments -Arguments @('--endpoint-profile', $script:probeEndpointProfilePath))
+        }
         $process = Start-Process -FilePath $pythonCommand.Source -ArgumentList $arguments -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -NoNewWindow -Wait -PassThru
         if (Test-Path -LiteralPath $stdoutPath) { Get-Content -LiteralPath $stdoutPath | ForEach-Object { Write-Log $_ } }
         if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath | ForEach-Object { Write-Log "bestcf[$($item.Port)/$($item.Scope)] stderr: $_" } }
@@ -2215,6 +2240,8 @@ try {
     if (-not (Test-IntervalGate)) {
         exit 0
     }
+
+    Initialize-ProbeEndpoint
 
     if (Test-Path -LiteralPath $extractDir) {
         Remove-Item -LiteralPath $extractDir -Recurse -Force

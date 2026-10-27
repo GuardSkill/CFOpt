@@ -42,6 +42,7 @@ jobs:
           fetch-depth: 1
 
       - name: Use preinstalled Python
+        id: python
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         run: |
           $candidates = @(
@@ -55,6 +56,17 @@ jobs:
           }
           Add-Content -LiteralPath $env:GITHUB_PATH -Value (Split-Path -Parent $python)
           & $python --version
+
+      - name: Refresh ProxyIP independently before the long CSV benchmark
+        id: proxyip
+        continue-on-error: true
+        shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
+        env:
+          GITHUB_TOKEN_CFOPT: ${{ github.token }}
+        run: |
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Update-ProxyipBest.ps1' `
+            -WorkDir "$env:RUNNER_TEMP\cfopt-cd\proxyip-refresh"
+          if ($LASTEXITCODE -ne 0) { throw "Independent ProxyIP refresh exited with code $LASTEXITCODE" }
 
       - name: Install CloudflareSpeedTest
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
@@ -120,9 +132,28 @@ jobs:
             -Force `
             -AutoDetectNetworkIsp `
             -NetworkIspFallback ChinaTelecom `
+            -DisableProxyipBest `
             -ExpectedDirectGateway $directGateway `
             -RejectFakeIpDns
           if ($LASTEXITCODE -ne 0) { throw "CFOpt Windows runner exited with code $LASTEXITCODE" }
+
+      - name: Preserve Windows benchmark diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chengdu-windows-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/cfopt-cd/**/*.log
+            ${{ runner.temp }}/cfopt-cd/**/*.csv
+            ${{ runner.temp }}/cfopt-cd/probe-endpoint-health.json
+            ${{ runner.temp }}/cfopt-cd/selected-probe-endpoint.json
+
+      - name: Report independent ProxyIP failure without skipping CSV benchmarking
+        if: always() && steps.proxyip.outcome == 'failure'
+        shell: powershell
+        run: throw 'Independent ProxyIP refresh failed; inspect its step and diagnostics artifact. CSV benchmark ran separately.'
 
   linux-bj:
     if: github.event_name == 'schedule' || inputs.runner == 'all' || inputs.runner == 'linux-bj'

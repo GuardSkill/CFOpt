@@ -1,0 +1,37 @@
+[
+  {
+    "name": "bestcf",
+    "host": "671F0401.bestcf.cmliussss.hidns.vip",
+    "identity_path": "/ip.json",
+    "identity_format": "json",
+    "download_path": "/__down?bytes={bytes}"
+  },
+  {
+    "name": "cloudflare-speed",
+    "host": "speed.cloudflare.com",
+    "identity_path": "/cdn-cgi/trace",
+    "identity_format": "trace",
+    "download_path": "/__down?bytes={bytes}"
+  },
+  {
+    "name": "7rs",
+    "host": "w.7rs.net",
+    "identity_path": "/cdn-cgi/trace",
+    "identity_format": "trace",
+    "download_path": "/speedtest/?bytes={bytes}"
+  },
+  {
+    "name": "down2",
+    "host": "down2.178965.xyz",
+    "identity_path": "/cdn-cgi/trace",
+    "identity_format": "trace",
+    "download_path": "/download/100MB.zip"
+  },
+  {
+    "name": "netwet",
+    "host": "testfileorg.netwet.net",
+    "identity_path": "/cdn-cgi/trace",
+    "identity_format": "trace",
+    "download_path": "/500MB-CZIPtestfile.org.zip"
+  }
+]
