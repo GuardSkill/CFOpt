@@ -66,3 +66,8 @@ No personal access token is stored in these files.
 This change enables automatic provider selection for the Windows script.
 The Linux script retains its existing provider behavior; the shared Python
 probe remains backward-compatible when no profile is supplied.
+
+Windows dispatches refresh ProxyIP independently before CSV benchmarking. A
+ProxyIP failure does not skip CSV work, but is reported in the overall job.
+`refresh_proxyip=false` skips this step when a fresh list was already published.
+`Update-ProxyipBest.ps1` rejects stale output and lists with fewer than 10 entries.

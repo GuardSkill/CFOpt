@@ -15,6 +15,11 @@ on:
           - all
           - windows-cd
           - linux-bj
+      refresh_proxyip:
+        description: Refresh ProxyIP before the Windows benchmark
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: write
@@ -59,6 +64,7 @@ jobs:
 
       - name: Refresh ProxyIP independently before the long CSV benchmark
         id: proxyip
+        if: inputs.refresh_proxyip
         continue-on-error: true
         shell: powershell -NoProfile -ExecutionPolicy Bypass -Command ". '{0}'"
         env:

@@ -2050,6 +2050,7 @@ function Publish-FileToGitHub {
         for ($attempt = 1; $attempt -le 5; $attempt++) {
             Remove-Item -LiteralPath $metadataPath -Force -ErrorAction SilentlyContinue
             $statusCode = & curl.exe `
+                --ssl-revoke-best-effort `
                 --silent `
                 --show-error `
                 --location `
@@ -2119,6 +2120,7 @@ function Publish-FileToGitHub {
         for ($attempt = 1; $attempt -le 5; $attempt++) {
             Remove-Item -LiteralPath $responsePath -Force -ErrorAction SilentlyContinue
             $statusCode = & curl.exe `
+                --ssl-revoke-best-effort `
                 --silent `
                 --show-error `
                 --location `
