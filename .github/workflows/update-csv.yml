@@ -81,6 +81,7 @@ jobs:
           $zipPath = Join-Path $env:GITHUB_WORKSPACE '.cfopt-runner\cfst.zip'
           New-Item -ItemType Directory -Force -Path $binDir | Out-Null
           & curl.exe `
+            --ssl-revoke-best-effort `
             --fail `
             --location `
             --retry 5 `
@@ -110,13 +111,16 @@ jobs:
           GITHUB_TOKEN_CFOPT: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # Allow each runner to declare its own verified direct LAN gateway.
+          $directGateway = $env:CFOPT_DIRECT_GATEWAY
+          if ([string]::IsNullOrWhiteSpace($directGateway)) { $directGateway = '192.168.0.1' }
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File '.\scripts\windows\Invoke-CFOptAutoPush.ps1' `
             -WorkDir "$env:RUNNER_TEMP\cfopt-cd" `
             -CfstPath "$env:GITHUB_WORKSPACE\.cfopt-runner\bin\cfst.exe" `
             -Force `
             -AutoDetectNetworkIsp `
             -NetworkIspFallback ChinaTelecom `
-            -ExpectedDirectGateway 192.168.0.1 `
+            -ExpectedDirectGateway $directGateway `
             -RejectFakeIpDns
           if ($LASTEXITCODE -ne 0) { throw "CFOpt Windows runner exited with code $LASTEXITCODE" }
 

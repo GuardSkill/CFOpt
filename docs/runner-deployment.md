@@ -70,6 +70,12 @@ Get-Service 'actions.runner.*'
 
 如果当前没有管理员权限，去掉 `--runasservice` 和 `--windowslogonaccount` 后注册，并先运行 `.\run.cmd` 验证；长期运行时应改为服务，或创建“用户登录时”启动且隐藏窗口的计划任务。
 
+不同机器的直连网关可能不同。在 runner 安装目录的 `.env` 中设置
+`CFOPT_DIRECT_GATEWAY=192.168.3.1`（替换成该机器实际验证过的直连网关），
+然后重启 runner。Windows workflow 会读取此值；未设置时仍使用旧机器的
+`192.168.0.1`。此配置不会修改 Windows 路由或 DNS，Fake-IP 检查仍然启用。
+非管理员部署只在用户登录后上线，不等同于开机即运行的系统服务。
+
 Windows job 会调用：
 
 ```powershell

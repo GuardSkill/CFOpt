@@ -27,7 +27,7 @@ try {
     [System.IO.File]::WriteAllLines($mapPath, $map, [System.Text.Encoding]::ASCII)
 
     $env:CFOPT_SOURCE_ONLY = "1"
-    . $runnerPath
+    . $runnerPath -WorkDir $tempDir -CfstPath (Join-Path $tempDir 'cfst.exe')
     $originalTokenEnvName = $TokenEnvName
     $testTokenEnvName = "CFOPT_TEST_TOKEN_$([guid]::NewGuid().ToString('N'))"
     try {
