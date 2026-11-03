@@ -1396,6 +1396,26 @@ test_adaptive_pool_helper_generates_multiport_candidates() {
   [[ "$(wc -l < "$tmp_dir/ct.csv" | tr -d ' ')" == 4 ]] || fail "CT pool must cover every configured port"
 }
 
+test_linux_publication_rejects_all_zero_speeds() {
+  (
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    CFOPT_SOURCE_ONLY=1 source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+    CSV_PATH="$tmp_dir/result.csv"
+    PREVIOUS_NODES_PATH="$tmp_dir/previous.csv"
+    LOG_FILE="$tmp_dir/runner.log"
+    : > "$PREVIOUS_NODES_PATH"
+    printf '%s\n' 'IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)' \
+      '192.0.2.1,443,N/A,DE,true,2,2,0,100,0' > "$CSV_PATH"
+    if assert_publication_safety; then
+      fail "an all-zero result must not replace the published CSV"
+    fi
+    grep -q 'no node has a positive measured download speed' "$LOG_FILE" || fail "missing all-zero publication diagnosis"
+    printf '%s\n' '192.0.2.2,443,FRA,DE,true,2,2,0,100,1.25' >> "$CSV_PATH"
+    assert_publication_safety || fail "a result with a measured speed should pass the zero-speed guard"
+  )
+}
+
 
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
@@ -1418,6 +1438,7 @@ test_candidate_pool_defaults_are_expanded_before_precheck
 test_missing_cfbestip_country_is_optional
 test_ip164746_source_defaults_and_parser
 test_adaptive_pool_helper_generates_multiport_candidates
+test_linux_publication_rejects_all_zero_speeds
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_http_latency
 test_proxyip_best_generator_rejects_tcp_only_candidates

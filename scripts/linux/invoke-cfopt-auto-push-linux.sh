@@ -1425,6 +1425,15 @@ publish_to_github() {
 }
 
 assert_publication_safety() {
+  # A whole run of failed downloads can still satisfy the row-retention quota.
+  # Keep the last published CSV instead of replacing it with fallback rows at 0 MB/s.
+  if ! awk -F',' '
+    FNR > 1 && ($NF + 0) > 0 { measured++ }
+    END { exit(measured > 0 ? 0 : 1) }
+  ' "$CSV_PATH"; then
+    log "ERROR: Publication safety check blocked upload: no node has a positive measured download speed. Inspect bestcf-probe-diagnostics.csv."
+    return 1
+  fi
   [[ -s "$PREVIOUS_NODES_PATH" ]] || return 0
   if ! awk -F',' -v ratio="$MIN_PUBLISH_RETENTION_RATIO" '
     FILENAME == ARGV[1] { previous[$3]++; previous_total++; next }
