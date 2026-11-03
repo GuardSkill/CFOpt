@@ -8,11 +8,14 @@ WORK_DIR="${WORK_DIR:-$HOME/cfopt-auto-push}"
 CFST_PATH="${CFST_PATH:-$WORK_DIR/cfst}"
 PORT="${PORT:-}"
 PORTS="${PORTS:-443,2053,2083,2087,2096,8443}"
-DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-https://671F0401.bestcf.cmliussss.hidns.vip/__down?bytes=20000000}"
+DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-}"
 ENABLE_BESTCF_PROBE="${ENABLE_BESTCF_PROBE:-1}"
-BESTCF_PROBE_HOST_SUFFIX="${BESTCF_PROBE_HOST_SUFFIX:-bestcf.cmliussss.hidns.vip}"
-BESTCF_IDENTITY_TEST_URL="${BESTCF_IDENTITY_TEST_URL:-https://671F0401.bestcf.cmliussss.hidns.vip/ip.json}"
+BESTCF_PROBE_HOST_SUFFIX="${BESTCF_PROBE_HOST_SUFFIX:-}"
+BESTCF_IDENTITY_TEST_URL="${BESTCF_IDENTITY_TEST_URL:-}"
 BESTCF_PROBE_CONCURRENCY="${BESTCF_PROBE_CONCURRENCY:-1}"
+PROBE_ENDPOINT_REGISTRY="${PROBE_ENDPOINT_REGISTRY:-$ROOT_DIR/config/probe-endpoints.json}"
+PROBE_ENDPOINT_PROVIDER="${PROBE_ENDPOINT_PROVIDER:-auto}"
+PROBE_ENDPOINT_REFERENCES="${PROBE_ENDPOINT_REFERENCES:-104.16.0.1,172.64.0.1,103.31.4.1}"
 COUNTRIES_CSV="${COUNTRIES_CSV:-HK,TW,JP,KR,SG,PH,VN,MY,KZ,MN,IE,US,DE,GB,NL,IT}"
 OWNER="${OWNER:-GuardSkill}"
 REPO="${REPO:-CFOpt}"
@@ -122,6 +125,9 @@ DOMAIN_CANDIDATE_SCRIPT="${DOMAIN_CANDIDATE_SCRIPT:-$ROOT_DIR/scripts/domain_can
 DOMAIN_WORK_ITEMS_PATH="$WORK_DIR/domain-work-items.csv"
 BESTCF_PROBE_SCRIPT="${BESTCF_PROBE_SCRIPT:-$ROOT_DIR/scripts/bestcf_probe.py}"
 BESTCF_PROBE_DIAGNOSTICS_PATH="${BESTCF_PROBE_DIAGNOSTICS_PATH:-$WORK_DIR/bestcf-probe-diagnostics.csv}"
+PROBE_ENDPOINT_SCRIPT="${PROBE_ENDPOINT_SCRIPT:-$ROOT_DIR/scripts/probe_endpoints.py}"
+PROBE_ENDPOINT_PROFILE_PATH="$WORK_DIR/selected-probe-endpoint.json"
+PROBE_ENDPOINT_DIAGNOSTICS_PATH="$WORK_DIR/probe-endpoint-health.json"
 CHANNEL_LATENCY_TOP_PER_COUNTRY="${CHANNEL_LATENCY_TOP_PER_COUNTRY:-20}"
 ADAPTIVE_POOL_SCRIPT="${ADAPTIVE_POOL_SCRIPT:-$ROOT_DIR/scripts/adaptive_pool.py}"
 STATE_FILE="$WORK_DIR/last-success.txt"
@@ -134,6 +140,41 @@ fi
 log() {
   mkdir -p "$WORK_DIR"
   printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"
+}
+
+initialize_probe_endpoint() {
+  [[ "$ENABLE_BESTCF_PROBE" == "1" ]] || return 0
+  rm -f "$PROBE_ENDPOINT_PROFILE_PATH"
+  if ! python3 "$PROBE_ENDPOINT_SCRIPT" \
+    --registry "$PROBE_ENDPOINT_REGISTRY" --provider "$PROBE_ENDPOINT_PROVIDER" \
+    --references "$PROBE_ENDPOINT_REFERENCES" \
+    --output "$PROBE_ENDPOINT_PROFILE_PATH" --diagnostics "$PROBE_ENDPOINT_DIAGNOSTICS_PATH"; then
+    log "ERROR: Probe endpoint health check failed; no benchmark or upload. See $PROBE_ENDPOINT_DIAGNOSTICS_PATH"
+    return 1
+  fi
+  local profile_output
+  if ! profile_output="$(python3 - "$PROBE_ENDPOINT_PROFILE_PATH" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+profile = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(profile["name"])
+print(profile["host"])
+print("https://" + profile["host"] + profile["identity_path"])
+print("https://" + profile["host"] + profile["download_path"].replace("{bytes}", "20000000"))
+PY
+  )"; then
+    log "ERROR: Invalid selected probe endpoint profile."
+    return 1
+  fi
+  local -a profile_values
+  mapfile -t profile_values <<< "$profile_output"
+  [[ "${#profile_values[@]}" == 4 ]] || { log "ERROR: Invalid selected probe endpoint profile."; return 1; }
+  BESTCF_PROBE_HOST_SUFFIX="${BESTCF_PROBE_HOST_SUFFIX:-${profile_values[1]}}"
+  BESTCF_IDENTITY_TEST_URL="${BESTCF_IDENTITY_TEST_URL:-${profile_values[2]}}"
+  DOWNLOAD_TEST_URL="${DOWNLOAD_TEST_URL:-${profile_values[3]}}"
+  log "Paired probe provider fixed for this run: ${profile_values[0]}; identity and download host=${profile_values[1]}."
 }
 
 normalize_country_min_speed_map() {
@@ -1051,6 +1092,7 @@ run_bestcf_probes() {
       --csv "$csv_path" --map "$map_path" --diagnostics "$BESTCF_PROBE_DIAGNOSTICS_PATH" \
       --port "$port" --scope "$scope" --limit "$download_test_count" --duration "$download_test_time" \
       --concurrency "$BESTCF_PROBE_CONCURRENCY" --host-suffix "$BESTCF_PROBE_HOST_SUFFIX" \
+      --endpoint-profile "$PROBE_ENDPOINT_PROFILE_PATH" \
       --min-speed-mbps "$MIN_SPEED_MBPS" --country-speed-floors "$COUNTRY_MIN_SPEED_MB_PER_SEC" \
       2> >(awk -v prefix="bestcf[$port/$scope] stderr: " '{ print prefix $0 }' | tee -a "$LOG_FILE" >&2) \
       | tee -a "$LOG_FILE"
@@ -1425,13 +1467,45 @@ publish_to_github() {
 }
 
 assert_publication_safety() {
-  # A whole run of failed downloads can still satisfy the row-retention quota.
-  # Keep the last published CSV instead of replacing it with fallback rows at 0 MB/s.
-  if ! awk -F',' '
-    FNR > 1 && ($NF + 0) > 0 { measured++ }
-    END { exit(measured > 0 ? 0 : 1) }
-  ' "$CSV_PATH"; then
-    log "ERROR: Publication safety check blocked upload: no node has a positive measured download speed. Inspect bestcf-probe-diagnostics.csv."
+  if [[ "$ENABLE_BESTCF_PROBE" == "1" ]]; then
+    if ! python3 - "$CSV_PATH" "$BESTCF_PROBE_DIAGNOSTICS_PATH" "$MIN_NODES_PER_COUNTRY" <<'PY'
+import csv
+import math
+import sys
+
+csv_path, diagnostics_path, minimum = sys.argv[1:]
+required = max(1, math.ceil(int(minimum) * 0.6))
+try:
+    with open(diagnostics_path, encoding="utf-8-sig", newline="") as stream:
+        diagnostics = {
+            (row["IP"], row["Port"])
+            for row in csv.DictReader(stream)
+            if row["Status"] in ("ok", "low_speed")
+            and int(row["DownloadBytes"]) >= 16384
+            and float(row["SpeedMBps"]) > 0
+            and row["ConfirmedColo"] and row["ConfirmedCountry"]
+        }
+    with open(csv_path, encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    measured = sum(
+        (row["IP地址"], row["端口"]) in diagnostics
+        and float(row["下载速度(MB/s)"]) > 0
+        for row in rows
+    )
+except (OSError, ValueError, KeyError, TypeError) as error:
+    print(f"Publication safety check blocked upload: invalid CSV or probe diagnostics: {error}", file=sys.stderr)
+    raise SystemExit(1)
+if measured < required:
+    print(f"Publication safety check blocked upload: only {measured} verified downloads; need {required} with speed > 0 and at least 16384 bytes.", file=sys.stderr)
+    raise SystemExit(1)
+print(f"Publication download check passed: {measured} verified downloads (required {required}).")
+PY
+    then
+      log "ERROR: Publication safety check blocked upload. Inspect $BESTCF_PROBE_DIAGNOSTICS_PATH."
+      return 1
+    fi
+  elif ! awk -F',' 'FNR > 1 && ($NF + 0) > 0 { measured++ } END { exit(measured > 0 ? 0 : 1) }' "$CSV_PATH"; then
+    log "ERROR: Publication safety check blocked upload: no node has a positive measured download speed."
     return 1
   fi
   [[ -s "$PREVIOUS_NODES_PATH" ]] || return 0
@@ -1511,6 +1585,8 @@ main() {
     log "ERROR: cfst executable not found or not executable: $CFST_PATH"
     exit 1
   fi
+
+  initialize_probe_endpoint
 
   rm -rf "$EXTRACT_DIR"
   mkdir -p "$EXTRACT_DIR"

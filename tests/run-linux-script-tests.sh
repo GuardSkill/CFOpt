@@ -1416,6 +1416,53 @@ test_linux_publication_rejects_all_zero_speeds() {
   )
 }
 
+test_linux_probe_profile_and_publication_gate() {
+  (
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+    export WORK_DIR="$tmp_dir" ENABLE_BESTCF_PROBE=1 CFOPT_SOURCE_ONLY=1
+    source "$ROOT_DIR/scripts/linux/invoke-cfopt-auto-push-linux.sh"
+    PROBE_ENDPOINT_SCRIPT="$tmp_dir/select.py"
+    cat > "$PROBE_ENDPOINT_SCRIPT" <<'PY'
+import argparse
+import json
+from pathlib import Path
+parser = argparse.ArgumentParser()
+for option in ("registry", "provider", "references", "output", "diagnostics"):
+    parser.add_argument("--" + option, required=True)
+args = parser.parse_args()
+assert args.provider == "auto"
+assert args.references == "104.16.0.1,172.64.0.1,103.31.4.1"
+profile = {"name": "7rs", "host": "w.7rs.net", "identity_path": "/cdn-cgi/trace",
+           "identity_format": "trace", "download_path": "/speedtest/?bytes={bytes}"}
+Path(args.output).write_text(json.dumps(profile))
+Path(args.diagnostics).write_text(json.dumps({"selected": profile}))
+PY
+    initialize_probe_endpoint
+    [[ "$BESTCF_PROBE_HOST_SUFFIX" == "w.7rs.net" ]] || fail "Linux probe must use selected host"
+    [[ "$BESTCF_IDENTITY_TEST_URL" == "https://w.7rs.net/cdn-cgi/trace" ]] || fail "Linux probe must use selected identity path"
+    [[ "$DOWNLOAD_TEST_URL" == "https://w.7rs.net/speedtest/?bytes=20000000" ]] || fail "Linux probe must use selected download path"
+    printf '%s\n' 'raise SystemExit(1)' > "$PROBE_ENDPOINT_SCRIPT"
+    if initialize_probe_endpoint; then fail "failed health check must stop the Linux runner"; fi
+    [[ ! -e "$PROBE_ENDPOINT_PROFILE_PATH" ]] || fail "failed health check must remove stale profile"
+
+    CSV_PATH="$tmp_dir/result.csv"
+    BESTCF_PROBE_DIAGNOSTICS_PATH="$tmp_dir/diagnostics.csv"
+    PREVIOUS_NODES_PATH="$tmp_dir/previous.csv"
+    MIN_NODES_PER_COUNTRY=3
+    : > "$PREVIOUS_NODES_PATH"
+    printf '%s\n' 'IP地址,端口,数据中心,城市,TLS,已发送,已接收,丢包率,平均延迟,下载速度(MB/s)' \
+      '192.0.2.1,443,FRA,DE,true,2,2,0,100,1.25' \
+      '192.0.2.2,443,FRA,DE,true,2,2,0,100,1.25' > "$CSV_PATH"
+    printf '%s\n' 'Scope,IP,Port,Status,IdentityHTTP,DownloadHTTP,Error,ExpectedCountry,ConfirmedCountry,ConfirmedColo,IdentityLatencyMs,DownloadBytes,ElapsedSeconds,SpeedMBps' \
+      'all,192.0.2.1,443,ok,200,200,,DE,DE,FRA,100,16384,1,1.25' \
+      'all,192.0.2.2,443,identity_tls_error,0,200,,DE,,,0,20000,1,1.25' > "$BESTCF_PROBE_DIAGNOSTICS_PATH"
+    if assert_publication_safety; then fail "identity TLS failures must not count toward verified downloads"; fi
+    sed -i 's/identity_tls_error,0,200,,DE,,,0,20000/ok,200,200,,DE,DE,FRA,0,20000/' "$BESTCF_PROBE_DIAGNOSTICS_PATH"
+    assert_publication_safety || fail "two verified downloads should meet the minimum"
+  )
+}
+
 
 test_cfst_log_prefix_handles_scopes
 test_linux_defaults_are_not_overly_strict_for_local_runs
@@ -1439,6 +1486,7 @@ test_missing_cfbestip_country_is_optional
 test_ip164746_source_defaults_and_parser
 test_adaptive_pool_helper_generates_multiport_candidates
 test_linux_publication_rejects_all_zero_speeds
+test_linux_probe_profile_and_publication_gate
 test_linux_tcp_precheck_caps_new_candidates_and_keeps_previous
 test_proxyip_best_generator_ranks_candidates_by_http_latency
 test_proxyip_best_generator_rejects_tcp_only_candidates
