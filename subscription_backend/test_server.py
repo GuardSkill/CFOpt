@@ -274,6 +274,15 @@ class BuilderTests(unittest.TestCase):
 
 
 class UsageCacheTests(unittest.TestCase):
+    def test_form_token_handles_null_origin_and_rejects_forgery(self):
+        c = {'admin_password': 'test-password', 'subscription_token': 'test-token'}
+        token = server.admin_form_token(c)
+        self.assertTrue(server.allowed_admin_write(c, {'csrf_token': [token]}, 'null', '192.168.0.122:19090'))
+        self.assertFalse(server.allowed_admin_write(c, {}, 'null', '192.168.0.122:19090'))
+        self.assertFalse(server.allowed_admin_write(c, {'csrf_token': ['forged']}, 'http://192.168.0.122:19090', '192.168.0.122:19090'))
+        page = server.protect_admin_forms('<form method="post"></form><form></form>', c)
+        self.assertEqual(page.count('name="csrf_token"'), 2)
+
     def setUp(self):
         server.USAGE_CACHE.clear()
         server.USAGE_RETRY_AFTER.clear()
