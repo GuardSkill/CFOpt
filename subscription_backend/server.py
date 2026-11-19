@@ -440,7 +440,7 @@ def custom_admin_page(c):
         page += f'<label><input type="checkbox" name="custom_node_enabled_{i}" {checked}> 启用</label>'
         page += f'<label><input type="checkbox" name="custom_node_skip_{i}" {verify}> 跳过证书验证</label>'
         page += field(f'custom_node_name_{i}', '节点名称', node.get('name', ''))
-        page += field(f'custom_node_uuid_{i}', 'UUID', node.get('uuid', ''), 'password')
+        page += field(f'custom_node_uuid_{i}', 'UUID', node.get('uuid', ''))
         page += field(f'custom_node_servername_{i}', 'TLS Server Name / WS Host', node.get('servername', ''))
         page += field(f'custom_node_fingerprint_{i}', '客户端指纹', node.get('client_fingerprint', 'chrome'))
         page += '<div class="wide">' + field(f'custom_node_path_{i}', 'WebSocket Path', node.get('path', '')) + '</div>'
@@ -601,6 +601,8 @@ def usage_json(url, headers=None, expected_type=dict):
             data = json.loads(raw)
             if not isinstance(data, expected_type):
                 raise ValueError('Invalid usage response')
+            if isinstance(data, dict) and data.get('success') is False:
+                raise ValueError('Usage provider reported failure')
         except Exception:
             USAGE_RETRY_AFTER[key] = time.monotonic() + USAGE_RETRY_SECONDS
             raise
