@@ -148,6 +148,24 @@ def custom_subscription_link(c):
     return f'{base}/admin/custom/sub/{token}'
 
 
+def admin_form_token(c):
+    key = str(c.get('subscription_token', '')).encode()
+    message = ('CFOpt admin form v1:' + str(c.get('admin_password', ''))).encode()
+    return hmac.new(key, message, hashlib.sha256).hexdigest()
+
+
+def protect_admin_forms(page, c):
+    hidden = '<input type="hidden" name="csrf_token" value="' + admin_form_token(c) + '">'
+    return re.sub(r'(<form\b[^>]*>)', lambda match: match.group(1) + hidden, page)
+
+
+def allowed_admin_write(c, fields, origin, host):
+    supplied = fields.get('csrf_token', [''])[0]
+    if supplied:
+        return hmac.compare_digest(supplied, admin_form_token(c))
+    return allowed_admin_origin(c, origin, host)
+
+
 def allowed_admin_origin(c, origin, host):
     """Allow same-host writes and the explicitly configured public origin."""
     if not origin:
@@ -406,7 +424,7 @@ def admin_page(c):
     page = page.replace('<h1>CFOpt 订阅管理</h1>', '<nav><a class="active" href="/admin">动态 EdgeTunnel</a><a href="/admin/custom">自建节点订阅</a><a href="#subscriptions">订阅地址</a><a href="#routing">节点与规则</a><a href="#proxyip">国家 ProxyIP</a><a href="#hosts">域名与用量</a><a href="#sources">优选 CSV</a><a href="#diagnostics">Pool 验证</a></nav><div class="eyebrow">PRIVATE NETWORK CONSOLE</div><h1>CFOpt 订阅管理</h1><div class="metrics"><div class="metric"><small>生成节点</small><span id="metric-nodes">—</span></div><div class="metric"><small>ProxyIP 链式节点</small><span id="metric-chains">—</span></div><div class="metric"><small>路由规则</small><span id="metric-rules">—</span></div><div class="metric"><small>策略组</small><span id="metric-groups">—</span></div></div>')
     page = page.replace('<fieldset><legend>订阅地址', '<fieldset id="subscriptions"><legend>订阅地址', 1).replace('<fieldset><legend>节点与远程', '<fieldset id="routing"><legend>节点与远程', 1).replace('<fieldset><legend>优选 CSV', '<fieldset id="sources"><legend>优选 CSV', 1)
     page += '<fieldset id="diagnostics"><legend>生成与 Pool 验证</legend><p id="status-message" role="status">等待检查</p><button id="refresh-status" type="button">重新验证</button><div class="status-box"><div id="pool-counts" class="pool-list"></div></div></fieldset>'
-    return page
+    return protect_admin_forms(page, c)
 
 
 def custom_admin_page(c):
@@ -462,7 +480,7 @@ def custom_admin_page(c):
     page += ('<fieldset id="diagnostics"><legend>生成验证</legend><p id="status-message" data-endpoint="/admin/custom/status" role="status">等待检查</p>'
              '<button id="refresh-status" type="button">重新验证</button><div class="status-box"><div id="pool-counts" class="pool-list"></div></div></fieldset>'
              '<script src="/admin.js" defer></script>')
-    return page
+    return protect_admin_forms(page, c)
 
 
 def form_custom_config(c, fields):
@@ -1126,14 +1144,13 @@ class Handler(BaseHTTPRequestHandler):
         c = config()
         if self.path not in ('/admin', '/admin/custom') or not self.admin(c):
             return
-        origin = self.headers.get('Origin', '')
-        if not allowed_admin_origin(c, origin, self.headers.get('Host', '')):
-            return self.reply(403, {'error': 'Cross-origin write rejected'})
         try:
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 < length <= 65536:
                 raise ValueError()
             fields = urllib.parse.parse_qs(self.rfile.read(length).decode())
+            if not allowed_admin_write(c, fields, self.headers.get('Origin', ''), self.headers.get('Host', '')):
+                return self.reply(403, {'error': 'Cross-origin write rejected; reload the admin page and try again'})
             if self.path == '/admin/custom':
                 new = form_custom_config(c, fields)
             else:
