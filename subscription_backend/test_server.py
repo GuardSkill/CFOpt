@@ -9,6 +9,16 @@ import server
 
 
 class BuilderTests(unittest.TestCase):
+    def test_random_ws_path_preserves_transport_parameters(self):
+        suffix = '/ranking/out.html/proxyip=1.1.1.1:443,8.8.8.8:8443?ed=2560&x=1'
+        paths = [server.random_ws_path(suffix) for _ in range(40)]
+        self.assertGreater(len(set(paths)), 1)
+        for path in paths:
+            self.assertTrue(path.endswith(suffix))
+            prefix = path[:-len(suffix)]
+            self.assertIn(len(prefix.strip('/').split('/')), (1, 2, 3))
+        self.assertNotIn('//', server.random_ws_path('/?ed=2560'))
+
     def test_subscription_link_origin_validation(self):
         c = {'subscription_token': 'secret&x', 'public_base_url': 'https://sub.example/'}
         links = server.subscription_links(c)

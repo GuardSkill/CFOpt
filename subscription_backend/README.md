@@ -8,6 +8,7 @@
 - 从远程 subconverter INI 编译规则和策略组；
 - 从 `proxyip-best.txt` 生成国家 ProxyIP 链式节点；
 - 在可视化后台管理配置和订阅文件名。
+- EdgeTunnel 订阅可开启“随机 WS 路径”：每次生成时为每个节点增加 1～3 段随机目录，保留原路径、ProxyIP 和查询参数；自建节点始终保留配置的固定 Path。
 - 在独立的“自建节点订阅”页面维护一个或多个 VLESS WS TLS 基础节点：合并配置的 CFOpt CSV，分别从 JP、KR、HK、SG、TW 选出 2 个入口。优先选择下载速度大于配置阈值（默认 10 MB/s）且延迟最低的入口；达标入口不足 2 个时回退为该地区延迟最低的 2 个。
 - 自建节点订阅沿用远程 INI 的域名/IP 分流规则，但不复制国家 Pool 或 `url-test`。规则涉及的每个业务组均为手动 `select`，直接提供生成节点和 `DIRECT`；固定槽位名称不包含 IP、延迟或速度，CSV 更新不会因为改名而丢失 Clash 的组选择。
 - 将 UsagePanel 请求次数通过 `Subscription-Userinfo` 映射到 Clash Party 的流量卡片；默认 1000 次代表 1 KB，所以 70 万次显示为 700 KB。该数值表示请求额度，不是真实网络流量。

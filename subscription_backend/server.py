@@ -11,6 +11,7 @@ import ipaddress
 import json
 import os
 import re
+import secrets
 import threading
 import time
 import urllib.parse
@@ -98,6 +99,21 @@ def proxyip_pool(c):
         pool = {code: values[:limit] for code, values in json.loads(snapshot.read_text()).items()}
         stale = True
     return pool, stale
+
+
+def random_ws_path(path):
+    words = ('about', 'account', 'activity', 'album', 'api', 'app', 'archives',
+             'article', 'blog', 'book', 'category', 'channel', 'collection',
+             'content', 'course', 'data', 'directory', 'doc', 'document',
+             'download', 'event', 'file', 'forum', 'friend', 'game', 'help',
+             'home', 'image', 'index', 'info', 'items', 'library', 'list',
+             'mall', 'media', 'member', 'mobile', 'movie', 'music', 'news',
+             'novel', 'page', 'photos', 'play', 'read', 'search', 'service',
+             'shop', 'static', 'story', 'support', 'trade', 'video', 'wiki')
+    prefix = '/' + '/'.join(secrets.choice(words) for _ in range(1 + secrets.randbelow(3)))
+    parsed = urllib.parse.urlsplit(path)
+    suffix = parsed.path if parsed.path != '/' else ''
+    return prefix + suffix + ('?' + parsed.query if parsed.query else '')
 
 
 def add_chains(c, ordinary):
@@ -390,6 +406,10 @@ def admin_page(c):
     page += field('quota_requests_per_kib', '每 1 KB 代表的请求次数', quota.get('requests_per_kib', 1000), 'number')
     page += field('quota_expire', '显示到期时间（Unix 秒）', quota.get('expire', 4102329600), 'number') + '</fieldset>'
     page += field('node_uri', 'VLESS 节点 URI', c['node_uri'], 'password')
+    checked = 'checked' if c.get('random_ws_path', False) else ''
+    page += '<input type="hidden" name="random_ws_path_present" value="1">'
+    page += f'<label><input type="checkbox" name="random_ws_path" {checked}> 随机 WS 路径（仅 EdgeTunnel 订阅）</label>'
+    page += '<small>每次生成时，为每个节点增加 1～3 段随机目录，保留原路径、ProxyIP 和查询参数。节点名称不受影响。自建节点保持固定路径。</small>'
     page += field('rule_template_url', 'GitHub 路由模板 INI 地址（空白则使用原配置规则）', c.get('rule_template_url', ''))
     page += field('rule_cache_seconds', '规则缓存秒数（60–86400）', c.get('rule_cache_seconds', 300), 'number')
     page += '<small>INI、ruleset 与国家 Pool 按模板实时编译。下载失败保留上次完整成功快照。</small></fieldset><fieldset id="proxyip"><legend>国家 ProxyIP 链式节点</legend>'
@@ -520,6 +540,8 @@ def form_custom_config(c, fields):
 
 def form_config(c, fields):
     new = copy.deepcopy(c)
+    if 'random_ws_path_present' in fields:
+        new['random_ws_path'] = 'random_ws_path' in fields
     value = lambda k: fields.get(k, [''])[0].strip()
     new['public_base_url'] = public_base_url(fields.get('public_base_url', [c.get('public_base_url', DEFAULT_PUBLIC_URL)])[0])
     new['output_style'] = fields.get('output_style', [c.get('output_style', 'pools')])[0].strip()
@@ -966,6 +988,9 @@ def build(c, isp='', region='', seed='', output_style=''):
     if not nodes:
         raise ValueError('No usable CSV nodes; old subscription should be retained')
     nodes, chain_status = add_chains(c, nodes)
+    if c.get('random_ws_path', False):
+        for node in nodes:
+            node['ws-opts']['path'] = random_ws_path(node['ws-opts']['path'])
     names = [n['name'] for n in nodes]
     groups = template['proxy-groups']
     valid = {g['name'] for g in groups} | {'DIRECT', 'REJECT'}
