@@ -971,6 +971,39 @@ def build(c, isp='', region='', seed='', output_style=''):
                       'host_counts': {h['name']: sum(n['servername'] == h['name'] for n in nodes) for h, _ in weights}}
 
 
+def subscription_yaml(value):
+    """Emit block YAML for JSON-compatible config without extra dependencies.
+
+    Quoted JSON strings are YAML strings too, avoiding ambiguous names, rule
+    punctuation, and implicit boolean/date conversions in clients.
+    """
+    def scalar(item):
+        return json.dumps(item, ensure_ascii=False, allow_nan=False)
+
+    def lines(item, indent=0):
+        prefix = ' ' * indent
+        if isinstance(item, dict) and item:
+            for key, child in item.items():
+                key = str(key)
+                label = key if re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', key) else scalar(key)
+                if isinstance(child, (dict, list)) and child:
+                    yield prefix + label + ':'
+                    yield from lines(child, indent + 2)
+                else:
+                    yield prefix + label + ': ' + scalar(child)
+        elif isinstance(item, list) and item:
+            for child in item:
+                if isinstance(child, (dict, list)) and child:
+                    nested = iter(lines(child, indent + 2))
+                    yield prefix + '- ' + next(nested)[indent + 2:]
+                    yield from nested
+                else:
+                    yield prefix + '- ' + scalar(child)
+        else:
+            yield prefix + scalar(item)
+    return '\n'.join(lines(value)) + '\n'
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass  # Never log token URLs, client addresses, or credentials.
@@ -1043,7 +1076,7 @@ class Handler(BaseHTTPRequestHandler):
                 headers = {'Content-Disposition': f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}",
                            'profile-title': urllib.parse.quote(filename.rsplit('.', 1)[0]),
                            'Subscription-Userinfo': subscription_userinfo(c)}
-                return self.reply(200, result, headers=headers)
+                return self.reply(200, subscription_yaml(result), 'application/yaml', headers=headers)
             except Exception:
                 return self.reply(503, {'error': 'Generation failed; keep existing profile and check configuration/sources'})
         admin_status = url.path == '/admin/status'
@@ -1083,7 +1116,7 @@ class Handler(BaseHTTPRequestHandler):
             headers = {'Content-Disposition': f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quoted}",
                        'profile-title': urllib.parse.quote(filename.rsplit('.', 1)[0]),
                        'Subscription-Userinfo': subscription_userinfo(c)}
-            return self.reply(200, result, headers=headers)
+            return self.reply(200, subscription_yaml(result), 'application/yaml', headers=headers)
         except Exception:
             return self.reply(503, {'error': 'Generation failed; keep existing profile and check configuration/sources'})
 
